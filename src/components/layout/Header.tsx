@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useApp } from "../../context/AppContext";
 import { useTheme } from "../../context/ThemeContext";
 
 interface HeaderProps {
@@ -9,6 +10,8 @@ interface MenuItem {
   label: string;
   action?: () => void;
   separator?: boolean;
+  submenu?: MenuItem[];
+  checked?: boolean;
 }
 
 /** Top bar with File/Edit/View/Terminal/Help menus, theme picker, and mobile toggles. */
@@ -16,26 +19,90 @@ export default function Header({
   onNewSession,
   onToggleLeft,
   onToggleRight,
-}: HeaderProps & { onToggleLeft?: () => void; onToggleRight?: () => void }) {
+  onAbout,
+}: HeaderProps & { onToggleLeft?: () => void; onToggleRight?: () => void; onAbout: () => void }) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const themeRef = useRef<HTMLDivElement>(null);
   const { themeName, setTheme, themeNames } = useTheme();
+  const { uiConfig, updateUiConfig } = useApp();
+
+  const handleZoom = (delta: number) => {
+    const newZoom = Math.max(0.5, Math.min(2.0, uiConfig.zoom_level + delta));
+    updateUiConfig({ zoom_level: parseFloat(newZoom.toFixed(1)) });
+  };
+
+  const handleResetZoom = () => updateUiConfig({ zoom_level: 1.0 });
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   const menus: Record<string, MenuItem[]> = {
     File: [
       { label: "New SSH Connection", action: onNewSession },
       { label: "separator", separator: true },
-      { label: "Exit" },
+      { label: "Exit", action: () => window.close() }, // Assuming window.close() works or using tauri/api
     ],
     Edit: [{ label: "Copy" }, { label: "Paste" }, { label: "Select All" }],
-    View: [{ label: "Toggle Sidebar" }, { label: "Toggle Panel" }],
+    View: [
+      // Layout Submenu
+      {
+        label: "Layout",
+        submenu: [
+          {
+            label: "File Explorer",
+            checked: uiConfig.show_file_explorer,
+            action: () => updateUiConfig({ show_file_explorer: !uiConfig.show_file_explorer }),
+          },
+          {
+            label: "Saved Connections",
+            checked: uiConfig.show_saved_connections,
+            action: () => updateUiConfig({ show_saved_connections: !uiConfig.show_saved_connections }),
+          },
+          {
+            label: "Active Sessions",
+            checked: uiConfig.show_active_sessions,
+            action: () => updateUiConfig({ show_active_sessions: !uiConfig.show_active_sessions }),
+          },
+          {
+            label: "Command History",
+            checked: uiConfig.show_command_history,
+            action: () => updateUiConfig({ show_command_history: !uiConfig.show_command_history }),
+          },
+          {
+            label: "Quick Commands",
+            checked: uiConfig.show_quick_commands,
+            action: () => updateUiConfig({ show_quick_commands: !uiConfig.show_quick_commands }),
+          },
+        ],
+      },
+      // Theme Submenu
+      {
+        label: "Theme",
+        submenu: themeNames.map((t) => ({
+          label: t.name,
+          checked: themeName === t.id,
+          action: () => setTheme(t.id),
+        })),
+      },
+      { label: "separator", separator: true },
+      { label: "Zoom In", action: () => handleZoom(0.1) },
+      { label: "Zoom Out", action: () => handleZoom(-0.1) },
+      { label: "Reset Zoom", action: handleResetZoom },
+      { label: "separator", separator: true },
+      { label: "Fullscreen", action: toggleFullscreen },
+    ],
     Terminal: [
       { label: "New SSH Connection", action: onNewSession },
       { label: "New Local Terminal", action: onNewSession },
     ],
-    Help: [{ label: "About" }],
+    Help: [{ label: "About", action: onAbout }],
   };
 
   // Close menu when clicking outside
@@ -44,15 +111,12 @@ export default function Header({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setActiveMenu(null);
       }
-      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
-        setShowThemePicker(false);
-      }
     };
-    if (activeMenu || showThemePicker) {
+    if (activeMenu) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [activeMenu, showThemePicker]);
+  }, [activeMenu]);
 
   return (
     <header
@@ -62,11 +126,11 @@ export default function Header({
       <div className="flex items-center gap-4" ref={menuRef}>
         {/* Mobile Left Toggle */}
         <button
-          className="lg:hidden"
+          className="lg:hidden flex items-center"
           style={{ color: "var(--df-text-muted)" }}
           onClick={onToggleLeft}
         >
-          <span className="material-icons text-xl">menu</span>
+          <span className="material-icons text-base">menu</span>
         </button>
 
         <nav className="flex items-center gap-0 text-xs font-medium relative">
@@ -90,34 +154,7 @@ export default function Header({
                   className="absolute top-full left-0 mt-1 rounded shadow-xl py-1 min-w-[180px] z-50 border"
                   style={{ backgroundColor: "var(--df-bg-panel)", borderColor: "var(--df-border)" }}
                 >
-                  {menus[item].map((menuItem) =>
-                    menuItem.separator ? (
-                      <div
-                        key={`sep-${menuItem.label}`}
-                        className="my-1 border-t"
-                        style={{ borderColor: "var(--df-border)" }}
-                      />
-                    ) : (
-                      <div
-                        key={menuItem.label}
-                        className="px-3 py-1.5 text-xs cursor-pointer transition-colors"
-                        style={{ color: "var(--df-text)" }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor =
-                            "color-mix(in srgb, var(--df-primary) 20%, transparent)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "";
-                        }}
-                        onClick={() => {
-                          menuItem.action?.();
-                          setActiveMenu(null);
-                        }}
-                      >
-                        {menuItem.label}
-                      </div>
-                    ),
-                  )}
+                  <MenuContent items={menus[item]} onClose={() => setActiveMenu(null)} />
                 </div>
               )}
             </div>
@@ -127,87 +164,86 @@ export default function Header({
       <div className="flex items-center gap-3" style={{ color: "var(--df-text-muted)" }}>
         {/* Mobile Right Toggle */}
         <button
-          className="md:hidden"
+          className="md:hidden flex items-center"
           style={{ color: "var(--df-text-muted)" }}
           onClick={onToggleRight}
         >
-          <span className="material-icons text-xl">view_sidebar</span>
+          <span className="material-icons text-base">view_sidebar</span>
         </button>
 
         <span className="material-icons text-base cursor-pointer hover:opacity-80 transition-opacity hidden sm:block">
           search
         </span>
-
-        {/* Theme Picker */}
-        <div className="relative inline-flex items-center" ref={themeRef}>
-          <span
-            className="material-icons text-base cursor-pointer hover:opacity-80 transition-opacity hidden sm:block"
-            onClick={() => setShowThemePicker(!showThemePicker)}
-            title="Switch Theme"
-          >
-            palette
-          </span>
-          {showThemePicker && (
-            <div
-              className="absolute top-full right-0 mt-2 rounded-lg shadow-2xl py-1.5 min-w-[200px] z-50 border"
-              style={{ backgroundColor: "var(--df-bg-panel)", borderColor: "var(--df-border)" }}
-            >
-              <div
-                className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold"
-                style={{ color: "var(--df-text-dimmed)" }}
-              >
-                Theme
-              </div>
-              {themeNames.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors"
-                  style={{
-                    backgroundColor:
-                      themeName === t.id
-                        ? "color-mix(in srgb, var(--df-primary) 12%, transparent)"
-                        : undefined,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (themeName !== t.id)
-                      e.currentTarget.style.backgroundColor = "var(--df-bg-hover)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (themeName !== t.id) e.currentTarget.style.backgroundColor = "";
-                  }}
-                  onClick={() => {
-                    setTheme(t.id);
-                    setShowThemePicker(false);
-                  }}
-                >
-                  <div
-                    className="w-4 h-4 rounded-full border shrink-0"
-                    style={{ backgroundColor: t.swatch, borderColor: "var(--df-border)" }}
-                  />
-                  <span
-                    className="text-xs font-medium flex-1"
-                    style={{ color: themeName === t.id ? "var(--df-primary)" : "var(--df-text)" }}
-                  >
-                    {t.name}
-                  </span>
-                  {themeName === t.id && (
-                    <span className="material-icons text-sm" style={{ color: "var(--df-primary)" }}>
-                      check
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         <span className="material-icons text-base cursor-pointer hover:opacity-80 transition-opacity hidden sm:block">
           settings
         </span>
-        <span className="material-icons text-base cursor-pointer hover:opacity-80 transition-opacity hidden sm:block">
-          fullscreen
-        </span>
       </div>
     </header>
+  );
+}
+
+function MenuContent({ items, onClose }: { items: MenuItem[]; onClose: () => void }) {
+  return (
+    <>
+      {items.map((menuItem, idx) =>
+        menuItem.separator ? (
+          <div
+            key={`sep-${idx}`}
+            className="my-1 border-t"
+            style={{ borderColor: "var(--df-border)" }}
+          />
+        ) : (
+          <MenuItemRow key={menuItem.label} item={menuItem} onClose={onClose} />
+        ),
+      )}
+    </>
+  );
+}
+
+function MenuItemRow({ item, onClose }: { item: MenuItem; onClose: () => void }) {
+  const [showSubmenu, setShowSubmenu] = useState(false);
+
+  return (
+    <div
+      className="px-3 py-1.5 text-xs cursor-pointer transition-colors relative flex items-center justify-between group"
+      style={{ color: "var(--df-text)" }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor =
+          "color-mix(in srgb, var(--df-primary) 20%, transparent)";
+        if (item.submenu) setShowSubmenu(true);
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "";
+        if (item.submenu) setShowSubmenu(false);
+      }}
+      onClick={() => {
+        if (!item.submenu) {
+          item.action?.();
+          onClose();
+        }
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="w-4 flex items-center justify-center">
+          {item.checked && (
+            <span className="material-icons text-[10px]" style={{ color: "var(--df-primary)" }}>
+              check
+            </span>
+          )}
+        </span>
+        <span>{item.label}</span>
+      </div>
+      {item.submenu && <span className="material-icons text-[10px]">chevron_right</span>}
+
+      {/* Submenu */}
+      {item.submenu && showSubmenu && (
+        <div
+          className="absolute top-0 left-full ml-1 rounded shadow-xl py-1 min-w-[160px] z-50 border"
+          style={{ backgroundColor: "var(--df-bg-panel)", borderColor: "var(--df-border)" }}
+        >
+          <MenuContent items={item.submenu} onClose={onClose} />
+        </div>
+      )}
+    </div>
   );
 }
