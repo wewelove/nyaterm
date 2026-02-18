@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { openUrl, openPath } from "@tauri-apps/plugin-opener";
+import { appLogDir } from "@tauri-apps/api/path";
+import packageJson from "../../../package.json";
 import { useApp } from "../../context/AppContext";
 import { useTheme } from "../../context/ThemeContext";
 
@@ -12,6 +15,7 @@ interface MenuItem {
   separator?: boolean;
   submenu?: MenuItem[];
   checked?: boolean;
+  icon?: string;
 }
 
 /** Top bar with File/Edit/View/Terminal/Help menus, theme picker, and mobile toggles. */
@@ -45,15 +49,20 @@ export default function Header({
 
   const menus: Record<string, MenuItem[]> = {
     File: [
-      { label: "New SSH Connection", action: onNewSession },
+      { label: "New SSH Connection", action: onNewSession, icon: "add" },
       { label: "separator", separator: true },
-      { label: "Exit", action: () => window.close() }, // Assuming window.close() works or using tauri/api
+      { label: "Exit", action: () => window.close(), icon: "exit_to_app" }, // Assuming window.close() works or using tauri/api
     ],
-    Edit: [{ label: "Copy" }, { label: "Paste" }, { label: "Select All" }],
+    Edit: [
+      { label: "Copy", icon: "content_copy" },
+      { label: "Paste", icon: "content_paste" },
+      { label: "Select All", icon: "select_all" },
+    ],
     View: [
       // Layout Submenu
       {
         label: "Layout",
+        icon: "dashboard",
         submenu: [
           {
             label: "File Explorer",
@@ -85,6 +94,7 @@ export default function Header({
       // Theme Submenu
       {
         label: "Theme",
+        icon: "palette",
         submenu: themeNames.map((t) => ({
           label: t.name,
           checked: themeName === t.id,
@@ -92,17 +102,42 @@ export default function Header({
         })),
       },
       { label: "separator", separator: true },
-      { label: "Zoom In", action: () => handleZoom(0.1) },
-      { label: "Zoom Out", action: () => handleZoom(-0.1) },
-      { label: "Reset Zoom", action: handleResetZoom },
+      { label: "Zoom In", action: () => handleZoom(0.1), icon: "zoom_in" },
+      { label: "Zoom Out", action: () => handleZoom(-0.1), icon: "zoom_out" },
+      { label: "Reset Zoom", action: handleResetZoom, icon: "restart_alt" },
       { label: "separator", separator: true },
-      { label: "Fullscreen", action: toggleFullscreen },
+      { label: "Fullscreen", action: toggleFullscreen, icon: "fullscreen" },
     ],
     Terminal: [
-      { label: "New SSH Connection", action: onNewSession },
-      { label: "New Local Terminal", action: onNewSession },
+      { label: "New SSH Connection", action: onNewSession, icon: "add" },
+      { label: "New Local Terminal", action: onNewSession, icon: "computer" },
     ],
-    Help: [{ label: "About", action: onAbout }],
+    Help: [
+      {
+        label: "Documentation",
+        icon: "menu_book",
+        action: () => openUrl(packageJson.homepage + "/docs"),
+      },
+      {
+        label: "Check for Updates",
+        icon: "update",
+        action: () => openUrl(packageJson.homepage + "/releases"),
+      },
+      {
+        label: "View Logs",
+        icon: "article",
+        action: async () => {
+          try {
+            const logDir = await appLogDir();
+            await openPath(logDir);
+          } catch (error) {
+            console.error("Failed to open logs:", error);
+          }
+        },
+      },
+      { label: "separator", separator: true },
+      { label: "About", action: onAbout, icon: "info" },
+    ],
   };
 
   // Close menu when clicking outside
@@ -225,11 +260,15 @@ function MenuItemRow({ item, onClose }: { item: MenuItem; onClose: () => void })
     >
       <div className="flex items-center gap-2">
         <span className="w-4 flex items-center justify-center">
-          {item.checked && (
+          {item.checked ? (
             <span className="material-icons text-[10px]" style={{ color: "var(--df-primary)" }}>
               check
             </span>
-          )}
+          ) : item.icon ? (
+            <span className="material-icons text-[16px] text-[var(--df-text-muted)]">
+              {item.icon}
+            </span>
+          ) : null}
         </span>
         <span>{item.label}</span>
       </div>
