@@ -20,17 +20,19 @@ use std::sync::Arc;
 use tauri::Manager;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-fn init_tracing() {
-    let log_dir = dirs::data_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("dragonfly")
-        .join("logs");
+fn init_tracing(log_dir: std::path::PathBuf) {
     let _ = std::fs::create_dir_all(&log_dir);
 
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "dragonfly.log");
+    let file_appender = tracing_appender::rolling::Builder::new()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("dragonfly")
+        .filename_suffix("log")
+        .max_log_files(7)
+        .build(&log_dir)
+        .expect("failed to initialize rolling file appender");
 
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("dragonfly=debug,warn"));
+        .unwrap_or_else(|_| EnvFilter::new("dragonfly=info,warn"));
 
     tracing_subscriber::registry()
         .with(filter)
@@ -323,7 +325,6 @@ fn save_quick_commands(app: tauri::AppHandle, commands: Vec<QuickCommand>) -> Ap
 /// Initializes tracing, builds the Tauri app, and runs the event loop.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    init_tracing();
 
     let session_manager = Arc::new(SessionManager::new());
 
@@ -336,6 +337,10 @@ pub fn run() {
                 .path()
                 .home_dir()
                 .map_err(|e: tauri::Error| e.to_string())?;
+
+            let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+            init_tracing(log_dir);
+
             let config_dir = home_dir.join(".dragonfly");
             let mgr = session_manager.clone();
             tauri::async_runtime::spawn(async move {
