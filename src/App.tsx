@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MdClose, MdTerminal } from "react-icons/md";
+import { Toaster } from "@/components/ui/sonner";
 import AboutDialog from "./components/dialog/AboutDialog";
-import GlobalContextMenu from "./components/dialog/GlobalContextMenu";
+import LockScreen from "./components/dialog/LockScreen";
 import NewSessionDialog from "./components/dialog/NewSessionDialog";
 import SettingsDialog from "./components/dialog/SettingsDialog";
 import Header from "./components/layout/Header";
@@ -15,9 +17,9 @@ import FileTransfer from "./components/sidebar/FileTransfer";
 import QuickCommands from "./components/terminal/QuickCommands";
 import TabBar from "./components/terminal/TabBar";
 import XTerminal from "./components/terminal/XTerminal";
-import { Toaster } from "@/components/ui/sonner";
-import { TransferProvider } from "./context/TransferContext";
 import { useApp } from "./context/AppContext";
+import { TransferProvider } from "./context/TransferContext";
+import { useIdleLock } from "./hooks/useIdleLock";
 import type { SavedConnection } from "./types";
 
 /** Root layout: header, sidebars, terminal area, dialogs. Wraps content in ToastProvider. */
@@ -35,6 +37,9 @@ function App() {
     editingConnection,
     setEditingConnection,
     refreshConnections,
+    appSettings,
+    isLocked,
+    setIsLocked,
   } = useApp();
   const { t, i18n } = useTranslation();
 
@@ -54,6 +59,9 @@ function App() {
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+
+  // Idle auto-lock
+  useIdleLock(appSettings.security.idle_lock_minutes, () => setIsLocked(true));
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
@@ -91,12 +99,12 @@ function App() {
   );
 
   const handleHistoryCommand = useCallback(
-    (command: string) => {
+    (command: string, execute: boolean = true) => {
       if (activeTab) {
         import("@tauri-apps/api/core").then(({ invoke }) => {
           invoke("write_to_session", {
             sessionId: activeTab.sessionId,
-            data: `${command}\r`,
+            data: execute ? `${command}\r` : command,
           });
         });
       }
@@ -151,7 +159,10 @@ function App() {
   const handleFileTransferResize = useCallback(
     (delta: number) => {
       updateUiConfig({
-        file_transfer_height: Math.max(80, Math.min(500, (uiConfig.file_transfer_height || 240) - delta)),
+        file_transfer_height: Math.max(
+          80,
+          Math.min(500, (uiConfig.file_transfer_height || 240) - delta),
+        ),
       });
     },
     [updateUiConfig, uiConfig.file_transfer_height],
@@ -204,7 +215,7 @@ function App() {
                     onClick={() => setMobileLeftOpen(false)}
                     style={{ color: "var(--df-text-muted)" }}
                   >
-                    <span className="material-icons">close</span>
+                    <MdClose />
                   </button>
                 </div>
 
@@ -221,8 +232,16 @@ function App() {
                         <ResizeHandle direction="vertical" onResize={handleFileTransferResize} />
                       )}
                       <div
-                        style={{ height: uiConfig.show_file_explorer ? (uiConfig.file_transfer_height || 240) : "100%" }}
-                        className={uiConfig.show_file_explorer ? "shrink-0 overflow-hidden" : "flex-1 min-h-0 overflow-hidden"}
+                        style={{
+                          height: uiConfig.show_file_explorer
+                            ? uiConfig.file_transfer_height || 240
+                            : "100%",
+                        }}
+                        className={
+                          uiConfig.show_file_explorer
+                            ? "shrink-0 overflow-hidden"
+                            : "flex-1 min-h-0 overflow-hidden"
+                        }
                       >
                         <FileTransfer activeSessionId={activeTab?.sessionId ?? null} />
                       </div>
@@ -244,7 +263,7 @@ function App() {
             className="flex-1 flex flex-col relative min-w-0 origin-top-left"
             style={{
               backgroundColor: "var(--df-bg-terminal)",
-              zoom: uiConfig.zoom_level
+              zoom: uiConfig.zoom_level,
             }}
           >
             {/* Tab Bar */}
@@ -261,7 +280,7 @@ function App() {
               {tabs.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-slate-500">
                   <div className="text-center space-y-3">
-                    <span className="material-icons text-4xl">terminal</span>
+                    <MdTerminal className="text-4xl mx-auto" />
                     <p className="text-sm">{t("app.noActiveSessions")}</p>
                     <button
                       className="px-4 py-2 text-xs bg-primary hover:bg-primary/80 text-white rounded transition-colors"
@@ -300,82 +319,82 @@ function App() {
           {(uiConfig.show_saved_connections ||
             uiConfig.show_active_sessions ||
             uiConfig.show_command_history) && (
-              <>
-                {/* Only show resize handle on desktop */}
-                <ResizeHandle
-                  direction="horizontal"
-                  onResize={handleRightResize}
-                  className="hidden md:block"
-                />
-                <aside
-                  style={{
-                    width: uiConfig.right_width,
-                    backgroundColor: "var(--df-bg-panel)",
-                    borderColor: "var(--df-border)",
-                  }}
-                  className={`
+            <>
+              {/* Only show resize handle on desktop */}
+              <ResizeHandle
+                direction="horizontal"
+                onResize={handleRightResize}
+                className="hidden md:block"
+              />
+              <aside
+                style={{
+                  width: uiConfig.right_width,
+                  backgroundColor: "var(--df-bg-panel)",
+                  borderColor: "var(--df-border)",
+                }}
+                className={`
                   fixed inset-y-0 right-0 z-50 flex flex-col shadow-xl transition-transform duration-200 border-l
                   md:relative md:translate-x-0 md:z-0 md:shadow-none
                   ${mobileRightOpen ? "translate-x-0" : "translate-x-full"}
                 `}
+              >
+                {/* Mobile placeholder for header height if needed, or close button */}
+                <div
+                  className="md:hidden h-10 flex items-center justify-end px-2 border-b shrink-0"
+                  style={{ borderColor: "var(--df-border)" }}
                 >
-                  {/* Mobile placeholder for header height if needed, or close button */}
-                  <div
-                    className="md:hidden h-10 flex items-center justify-end px-2 border-b shrink-0"
-                    style={{ borderColor: "var(--df-border)" }}
+                  <button
+                    onClick={() => setMobileRightOpen(false)}
+                    style={{ color: "var(--df-text-muted)" }}
                   >
-                    <button
-                      onClick={() => setMobileRightOpen(false)}
-                      style={{ color: "var(--df-text-muted)" }}
+                    <MdClose />
+                  </button>
+                </div>
+
+                {/* Saved Connections - fixed pixel height at top */}
+                {uiConfig.show_saved_connections && (
+                  <>
+                    <div
+                      style={{ height: uiConfig.saved_conn_height }}
+                      className="shrink-0 overflow-hidden"
                     >
-                      <span className="material-icons">close</span>
-                    </button>
-                  </div>
-
-                  {/* Saved Connections - fixed pixel height at top */}
-                  {uiConfig.show_saved_connections && (
-                    <>
-                      <div
-                        style={{ height: uiConfig.saved_conn_height }}
-                        className="shrink-0 overflow-hidden"
-                      >
-                        <SavedConnections
-                          onEditConnection={handleEditConnection}
-                          onSessionCreated={handleSessionConnected}
-                        />
-                      </div>
-                      {/* Show resize handle only if there's something below it */}
-                      {(uiConfig.show_active_sessions || uiConfig.show_command_history) && (
-                        <ResizeHandle direction="vertical" onResize={handleSavedConnResize} />
-                      )}
-                    </>
-                  )}
-
-                  {/* Active Sessions - flexible middle */}
-                  {uiConfig.show_active_sessions && (
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                      <ActiveSessions onSessionClick={handleSessionClick} />
+                      <SavedConnections
+                        onEditConnection={handleEditConnection}
+                        onSessionCreated={handleSessionConnected}
+                      />
                     </div>
-                  )}
+                    {/* Show resize handle only if there's something below it */}
+                    {(uiConfig.show_active_sessions || uiConfig.show_command_history) && (
+                      <ResizeHandle direction="vertical" onResize={handleSavedConnResize} />
+                    )}
+                  </>
+                )}
 
-                  {/* Command History - fixed pixel height at bottom */}
-                  {uiConfig.show_command_history && (
-                    <>
-                      {/* Show resize handle only if there's something above it */}
-                      {(uiConfig.show_saved_connections || uiConfig.show_active_sessions) && (
-                        <ResizeHandle direction="vertical" onResize={handleHistoryResize} />
-                      )}
-                      <div
-                        style={{ height: uiConfig.history_height }}
-                        className="shrink-0 overflow-hidden"
-                      >
-                        <CommandHistory onCommandSend={handleHistoryCommand} />
-                      </div>
-                    </>
-                  )}
-                </aside>
-              </>
-            )}
+                {/* Active Sessions - flexible middle */}
+                {uiConfig.show_active_sessions && (
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <ActiveSessions onSessionClick={handleSessionClick} />
+                  </div>
+                )}
+
+                {/* Command History - fixed pixel height at bottom */}
+                {uiConfig.show_command_history && (
+                  <>
+                    {/* Show resize handle only if there's something above it */}
+                    {(uiConfig.show_saved_connections || uiConfig.show_active_sessions) && (
+                      <ResizeHandle direction="vertical" onResize={handleHistoryResize} />
+                    )}
+                    <div
+                      style={{ height: uiConfig.history_height }}
+                      className="shrink-0 overflow-hidden"
+                    >
+                      <CommandHistory onCommandSend={handleHistoryCommand} />
+                    </div>
+                  </>
+                )}
+              </aside>
+            </>
+          )}
         </main>
 
         {/* Status Bar */}
@@ -400,8 +419,15 @@ function App() {
         <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
         <SettingsDialog />
 
-        <GlobalContextMenu />
         <Toaster position="bottom-right" />
+
+        {/* Lock Screen Overlay */}
+        {isLocked && (
+          <LockScreen
+            hasPassword={!!appSettings.security.lock_password}
+            onUnlock={() => setIsLocked(false)}
+          />
+        )}
       </div>
     </TransferProvider>
   );

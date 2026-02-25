@@ -1,3 +1,4 @@
+import { MdCheckCircle, MdClose, MdError, MdInfo, MdWarning } from "react-icons/md";
 import type { ToastType } from "./ToastContext";
 import { useToast } from "./ToastContext";
 
@@ -8,11 +9,11 @@ const colorMap: Record<ToastType, { bg: string; border: string }> = {
   success: { bg: "rgba(5,150,105,0.9)", border: "rgba(5,150,105,0.6)" },
 };
 
-const iconMap: Record<ToastType, string> = {
-  error: "error",
-  warn: "warning",
-  info: "info",
-  success: "check_circle",
+const iconMap: Record<ToastType, React.ElementType> = {
+  error: MdError,
+  warn: MdWarning,
+  info: MdInfo,
+  success: MdCheckCircle,
 };
 
 /** Renders toasts from ToastContext as fixed overlay. Type-based colors and icons. */
@@ -32,16 +33,15 @@ export default function ToastContainer() {
               borderColor: colors.border,
             }}
           >
-            <span className="material-icons text-base text-white/90 mt-0.5">
-              {iconMap[toast.type]}
-            </span>
+            {(() => {
+              const Icon = iconMap[toast.type];
+              return <Icon className="text-base text-white/90 mt-0.5" />;
+            })()}
             <span className="text-xs text-white flex-1 leading-relaxed">{toast.message}</span>
-            <span
-              className="material-icons text-sm text-white/60 cursor-pointer hover:text-white mt-0.5 transition-colors"
+            <MdClose
+              className="text-sm text-white/60 cursor-pointer hover:text-white mt-0.5 transition-colors"
               onClick={() => dismiss(toast.id)}
-            >
-              close
-            </span>
+            />
           </div>
         );
       })}
