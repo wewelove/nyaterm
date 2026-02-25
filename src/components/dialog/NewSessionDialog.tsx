@@ -2,7 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Group, SavedConnection } from "../../types";
+import { MdAdd, MdExpandMore, MdFolderOpen, MdTerminal } from "react-icons/md";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,10 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { Group, SavedConnection } from "../../types";
 
 interface NewSessionDialogProps {
   open: boolean;
@@ -69,7 +70,7 @@ export default function NewSessionDialog({
     if (open) {
       invoke<Group[]>("get_groups")
         .then(setGroups)
-        .catch(() => { });
+        .catch(() => {});
     }
   }, [open]);
 
@@ -176,7 +177,7 @@ export default function NewSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="w-[480px] sm:max-w-[480px] p-0 gap-0">
+      <DialogContent aria-describedby={undefined} className="w-[480px] sm:max-w-[480px] p-0 gap-0">
         <DialogHeader className="px-5 py-3 border-b">
           <DialogTitle className="text-sm">
             {initialData ? t("dialog.editConnection") : t("dialog.newConnection")}
@@ -192,10 +193,12 @@ export default function NewSessionDialog({
               onClick={handleConnectLocal}
               disabled={connecting}
             >
-              <span className="material-icons text-xl text-cyan-400">terminal</span>
+              <MdTerminal className="text-xl text-cyan-400" />
               <div>
                 <div className="text-xs font-medium">{t("dialog.localTerminal")}</div>
-                <div className="text-[10px] text-muted-foreground">{t("dialog.openLocalShell")}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {t("dialog.openLocalShell")}
+                </div>
               </div>
             </Button>
           )}
@@ -211,7 +214,9 @@ export default function NewSessionDialog({
           {/* Name + Group */}
           <div className="flex gap-3">
             <div className="flex-1">
-              <Label className="text-[11px] text-muted-foreground">{t("dialog.connectionName")}</Label>
+              <Label className="text-[11px] text-muted-foreground">
+                {t("dialog.connectionName")}
+              </Label>
               <Input
                 className="mt-1 text-xs h-8"
                 placeholder={t("dialog.serverPlaceholder")}
@@ -230,7 +235,7 @@ export default function NewSessionDialog({
                 <span className={group ? "" : "text-muted-foreground"}>
                   {group || t("dialog.none")}
                 </span>
-                <span className="material-icons text-xs text-muted-foreground">expand_more</span>
+                <MdExpandMore className="text-xs text-muted-foreground" />
               </Button>
               {showGroupDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-1 border rounded-md shadow-xl z-10 overflow-hidden bg-popover">
@@ -282,7 +287,7 @@ export default function NewSessionDialog({
                           }
                         }}
                       >
-                        <span className="material-icons text-sm">add</span>
+                        <MdAdd className="text-sm" />
                       </Button>
                     </div>
                   </div>
@@ -325,7 +330,9 @@ export default function NewSessionDialog({
 
           {/* Auth Type */}
           <div>
-            <Label className="text-[11px] text-muted-foreground">{t("dialog.authentication")}</Label>
+            <Label className="text-[11px] text-muted-foreground">
+              {t("dialog.authentication")}
+            </Label>
             <div className="flex gap-2 mt-1">
               <Button
                 variant={authType === "password" ? "default" : "outline"}
@@ -360,12 +367,15 @@ export default function NewSessionDialog({
           ) : (
             <>
               <div>
-                <Label className="text-[11px] text-muted-foreground">{t("dialog.privateKey")}</Label>
+                <Label className="text-[11px] text-muted-foreground">
+                  {t("dialog.privateKey")}
+                </Label>
                 <div className="flex items-center w-full rounded-md border overflow-hidden mt-1 bg-transparent">
                   <div
                     className={`flex-1 px-3 py-2 text-xs truncate ${keyFileName || hasKeyData ? "text-foreground" : "text-muted-foreground opacity-50"}`}
                   >
-                    {keyFileName || (hasKeyData ? t("dialog.keyFileLoaded") : t("dialog.selectKeyFile"))}
+                    {keyFileName ||
+                      (hasKeyData ? t("dialog.keyFileLoaded") : t("dialog.selectKeyFile"))}
                   </div>
                   <Button
                     type="button"
@@ -385,12 +395,14 @@ export default function NewSessionDialog({
                       }
                     }}
                   >
-                    <span className="material-icons text-sm">folder_open</span>
+                    <MdFolderOpen className="text-sm" />
                   </Button>
                 </div>
               </div>
               <div>
-                <Label className="text-[11px] text-muted-foreground">{t("dialog.passphrase")}</Label>
+                <Label className="text-[11px] text-muted-foreground">
+                  {t("dialog.passphrase")}
+                </Label>
                 <Input
                   type="password"
                   className="mt-1 text-xs h-8"
@@ -431,12 +443,7 @@ export default function NewSessionDialog({
           <Button variant="ghost" size="sm" className="text-xs" onClick={handleClose}>
             {t("dialog.cancel")}
           </Button>
-          <Button
-            size="sm"
-            className="text-xs"
-            onClick={handleSave}
-            disabled={connecting || !host}
-          >
+          <Button size="sm" className="text-xs" onClick={handleSave} disabled={connecting || !host}>
             {connecting ? t("dialog.saving") : t("dialog.save")}
           </Button>
         </DialogFooter>
