@@ -84,7 +84,7 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
     if (!loaded.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      invoke("save_quick_commands", { commands }).catch(() => {});
+      invoke("save_quick_commands", { commands }).catch(() => { });
     }, 300);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -92,7 +92,7 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
   }, [commands]);
 
   const saveCommands = useCallback((cmds: QuickCommand[]) => {
-    invoke("save_quick_commands", { commands: cmds }).catch(() => {});
+    invoke("save_quick_commands", { commands: cmds }).catch(() => { });
   }, []);
 
   const handleDelete = useCallback(
@@ -263,7 +263,7 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
       </div>
 
       {/* Commands List */}
-      <TooltipProvider>
+      <TooltipProvider delayDuration={500}>
         <div className="flex-1 overflow-y-auto overflow-x-hidden terminal-scroll p-1.5">
           <div className="flex flex-wrap gap-1.5 content-start">
             {filteredCommands.length === 0 ? (
