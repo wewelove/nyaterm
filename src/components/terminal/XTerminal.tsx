@@ -148,7 +148,7 @@ export default function XTerminal({ sessionId, active }: XTerminalProps) {
             si.commandStartX,
           ).trim();
           if (command) {
-            invoke("add_command_history", { sessionId, command }).catch(() => {});
+            invoke("add_command_history", { sessionId, command }).catch(() => { });
           }
         }
         currentLineRef.current = "";
@@ -213,7 +213,7 @@ export default function XTerminal({ sessionId, active }: XTerminalProps) {
             invoke("write_to_session", {
               sessionId,
               data: eraseChars + selected.command,
-            }).catch(() => {});
+            }).catch(() => { });
             currentLineRef.current = selected.command;
             dismissSuggestions();
           }
@@ -249,12 +249,12 @@ export default function XTerminal({ sessionId, active }: XTerminalProps) {
             invoke("write_to_session", {
               sessionId,
               data: `${eraseChars + selected.command}\r`,
-            }).catch(() => {});
+            }).catch(() => { });
             if (!shellIntegrationRef.current.enabled) {
               invoke("add_command_history", {
                 sessionId,
                 command: selected.command,
-              }).catch(() => {});
+              }).catch(() => { });
             }
             currentLineRef.current = "";
             shellIntegrationRef.current.fallbackNeedsDetection = true;
@@ -302,11 +302,11 @@ export default function XTerminal({ sessionId, active }: XTerminalProps) {
         dismissSuggestions();
       }
 
-      invoke("write_to_session", { sessionId, data }).catch(() => {});
+      invoke("write_to_session", { sessionId, data }).catch(() => { });
     });
 
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-      invoke("resize_session", { sessionId, cols, rows }).catch(() => {});
+      invoke("resize_session", { sessionId, cols, rows }).catch(() => { });
     });
 
     const observer = new ResizeObserver(() => {
@@ -320,7 +320,7 @@ export default function XTerminal({ sessionId, active }: XTerminalProps) {
       if (appSettingsRef.current?.interaction?.copy_on_select) {
         const text = terminal.getSelection();
         if (text) {
-          navigator.clipboard.writeText(text).catch(() => {});
+          navigator.clipboard.writeText(text).catch(() => { });
         }
       }
     });
