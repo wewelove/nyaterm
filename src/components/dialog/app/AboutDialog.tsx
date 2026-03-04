@@ -7,12 +7,11 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import pkg from "../../../package.json";
-import DragonflyLogo from "../DragonflyLogo";
+import pkg from "../../../../package.json";
+import DragonflyLogo from "../../DragonflyLogo";
 
 interface AboutDialogProps {
   open: boolean;

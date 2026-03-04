@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MdLock, MdLockOpen } from "react-icons/md";
-import DragonflyLogo from "../DragonflyLogo";
+import DragonflyLogo from "../../DragonflyLogo";
 
 interface LockScreenProps {
   hasPassword: boolean;
@@ -83,12 +83,12 @@ export default function LockScreen({ hasPassword, onUnlock }: LockScreenProps) {
 
         {/* Title */}
         <h2 className="text-xl font-semibold text-white/90 mt-1">
-          {t("lockScreen.title", "Application Locked")}
+          {t("lockScreen.title")}
         </h2>
 
         {/* Message */}
         <p className="text-sm text-white/50 text-center max-w-xs">
-          {t("lockScreen.message", "This application has been locked due to inactivity.")}
+          {t("lockScreen.message")}
         </p>
 
         {/* Password input */}
@@ -103,14 +103,14 @@ export default function LockScreen({ hasPassword, onUnlock }: LockScreenProps) {
                 setError(false);
               }}
               onKeyDown={handleKeyDown}
-              placeholder={t("lockScreen.passwordPlaceholder", "Enter unlock password")}
+              placeholder={t("lockScreen.passwordPlaceholder")}
               className="w-full px-4 py-2.5 rounded-lg text-sm text-white bg-white/10 border border-white/20 placeholder-white/30 outline-none focus:border-white/40 transition-colors"
               autoComplete="off"
               disabled={verifying}
             />
             {error && (
               <p className="text-xs text-red-400">
-                {t("lockScreen.wrongPassword", "Incorrect password, please try again.")}
+                {t("lockScreen.wrongPassword")}
               </p>
             )}
           </div>
@@ -128,8 +128,8 @@ export default function LockScreen({ hasPassword, onUnlock }: LockScreenProps) {
           }}
         >
           <span className="flex items-center gap-2">
-            <MdLockOpen className="text-[18px]" />
-            {t("lockScreen.unlock", "Unlock")}
+            <MdLockOpen className="text-[1.125rem]" />
+            {t("lockScreen.unlock")}
           </span>
         </button>
       </div>

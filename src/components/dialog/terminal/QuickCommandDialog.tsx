@@ -19,14 +19,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { QuickCommand } from "../../types";
-import { QUICK_ICONS } from "../icons";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import type { QuickCommand, QuickCommandCategory } from "../../../types";
 
-interface EditQuickCommandDialogProps {
+function generateId() {
+  return crypto.randomUUID();
+}
+import { QUICK_ICONS } from "../../icons";
+
+interface QuickCommandDialogProps {
   open: boolean;
   onClose: () => void;
-  onSave: (cmd: QuickCommand) => void;
+  onSave: (cmd: QuickCommand, newCategory?: QuickCommandCategory) => void;
   initialData?: QuickCommand | null;
+  savedCategories?: QuickCommandCategory[];
 }
 
 const THEME_COLORS = ["default", "red", "green", "blue", "yellow", "purple"];
@@ -39,21 +49,32 @@ const COLOR_CLASSES: Record<string, string> = {
   purple: "bg-purple-400",
 };
 
-export default function EditQuickCommandDialog({
+export default function QuickCommandDialog({
   open,
   onClose,
   onSave,
   initialData,
-}: EditQuickCommandDialogProps) {
+  savedCategories = [],
+}: QuickCommandDialogProps) {
   const { t } = useTranslation();
   const [label, setLabel] = useState("");
   const [command, setCommand] = useState("");
-  const [category, setCategory] = useState("");
+  const [categoryId, setCategoryId] = useState("none");
+  const [categorySearchQuery, setCategorySearchQuery] = useState("");
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [description, setDescription] = useState("");
+
+  const filteredCategories = savedCategories.filter((c) =>
+    c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())
+  );
+  const exactMatchExists = savedCategories.some(
+    (c) => c.name.toLowerCase() === categorySearchQuery.trim().toLowerCase()
+  );
+
   const [colorTag, setColorTag] = useState("default");
   const [iconTag, setIconTag] = useState<string | undefined>(undefined);
   const [pinned, setPinned] = useState(false);
-  const [executionMode, setExecutionMode] = useState("execute");
+  const [executionMode, setExecutionMode] = useState<"execute" | "append">("execute");
 
   const [errors, setErrors] = useState<{ label?: string; command?: string; general?: string }>({});
 
@@ -62,16 +83,18 @@ export default function EditQuickCommandDialog({
       if (initialData) {
         setLabel(initialData.label || "");
         setCommand(initialData.command || "");
-        setCategory(initialData.category || "");
+        setCategoryId(initialData.category_id || "none");
+        setCategorySearchQuery("");
         setDescription(initialData.description || "");
         setColorTag(initialData.color_tag || "default");
         setIconTag(initialData.icon_tag);
         setPinned(initialData.pinned || false);
-        setExecutionMode(initialData.execution_mode || "execute");
+        setExecutionMode((initialData.execution_mode as "execute" | "append") || "execute");
       } else {
         setLabel("");
         setCommand("");
-        setCategory("");
+        setCategoryId("none");
+        setCategorySearchQuery("");
         setDescription("");
         setColorTag("default");
         setIconTag(undefined);
@@ -96,17 +119,25 @@ export default function EditQuickCommandDialog({
       return;
     }
 
+    let finalCategoryId = categoryId === "none" ? undefined : categoryId;
+    let newCategory: QuickCommandCategory | undefined;
+    if (categoryId === "new" && categorySearchQuery.trim()) {
+      const newId = generateId();
+      newCategory = { id: newId, name: categorySearchQuery.trim() };
+      finalCategoryId = newId;
+    }
+
     onSave({
       id: initialData?.id || `qc-${Date.now()}`,
       label: label.trim(),
       command: command.trim(),
-      category: category.trim() || undefined,
+      category_id: finalCategoryId,
       description: description.trim() || undefined,
       color_tag: colorTag === "default" && !iconTag ? undefined : colorTag,
       icon_tag: iconTag,
       pinned,
       execution_mode: executionMode,
-    });
+    }, newCategory);
   };
 
   return (
@@ -121,15 +152,17 @@ export default function EditQuickCommandDialog({
         </DialogHeader>
 
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto terminal-scroll">
-          {/* Label + Category */}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1 space-y-1.5">
-              <Label htmlFor="qc-label" className="text-xs text-muted-foreground">
-                {t("quickCommands.labelName") || "Label"}
-              </Label>
+              <div className="flex justify-between items-center">
+                <Label htmlFor="qc-label" className="text-xs text-muted-foreground">
+                  {t("quickCommands.labelName") || "Label"}
+                </Label>
+                {errors.label && <span className="text-[0.6875rem] text-destructive">{errors.label}</span>}
+              </div>
               <Input
                 id="qc-label"
-                className={`text-sm h-9 ${errors.label ? "border-destructive" : ""}`}
+                className={`text-sm h-9 ${errors.label ? "border-destructive focus-visible:ring-destructive" : ""}`}
                 placeholder={t("quickCommands.labelPlaceholder") || "e.g. List files"}
                 value={label}
                 onChange={(e) => {
@@ -138,17 +171,97 @@ export default function EditQuickCommandDialog({
                 }}
               />
             </div>
+
             <div className="flex-1 space-y-1.5">
               <Label htmlFor="qc-category" className="text-xs text-muted-foreground">
                 {t("quickCommands.category") || "Category"}
               </Label>
-              <Input
-                id="qc-category"
-                className="text-sm h-9"
-                placeholder={t("quickCommands.categoryPlaceholder") || "e.g. K8s"}
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              />
+              <Popover open={showCategoryDropdown} onOpenChange={(open) => {
+                setShowCategoryDropdown(open);
+                if (!open) {
+                  setCategorySearchQuery("");
+                }
+              }}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-9 justify-between text-sm font-normal px-3"
+                  >
+                    <span className={categoryId !== "none" ? "" : "text-muted-foreground truncate"}>
+                      {categoryId === "new"
+                        ? categorySearchQuery.trim()
+                        : (categoryId === "none"
+                          ? (t("quickCommands.uncategorized") || "None")
+                          : savedCategories.find((c) => c.id === categoryId)?.name || categoryId)}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="p-0 flex flex-col shadow-xl"
+                  style={{ width: "var(--radix-popover-trigger-width)" }}
+                  align="start"
+                  sideOffset={4}
+                >
+                  <div className="p-1 border-b">
+                    <Input
+                      autoFocus
+                      className="h-8 text-sm bg-transparent border-none focus-visible:ring-0 shadow-none px-2"
+                      placeholder={t("quickCommands.searchOrCreateCategory") || "Search or create category..."}
+                      value={categorySearchQuery}
+                      onChange={(e) => setCategorySearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && categorySearchQuery.trim() && !exactMatchExists) {
+                          setCategoryId("new");
+                          setShowCategoryDropdown(false);
+                          e.preventDefault();
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto terminal-scroll py-1">
+                    {!categorySearchQuery && (
+                      <div
+                        className={`px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-accent ${categoryId === "none" ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}
+                        onClick={() => {
+                          setCategoryId("none");
+                          setShowCategoryDropdown(false);
+                          setCategorySearchQuery("");
+                        }}
+                      >
+                        {t("quickCommands.uncategorized") || "None (Uncategorized)"}
+                      </div>
+                    )}
+
+                    {filteredCategories.map((c) => (
+                      <div
+                        key={c.id}
+                        className={`px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-accent ${categoryId === c.id ? "bg-primary/15 text-primary" : ""}`}
+                        onClick={() => {
+                          setCategoryId(c.id);
+                          setShowCategoryDropdown(false);
+                          setCategorySearchQuery("");
+                        }}
+                      >
+                        {c.name}
+                      </div>
+                    ))}
+
+                    {categorySearchQuery.trim() && !exactMatchExists && (
+                      <div
+                        className="px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-accent text-primary flex items-center"
+                        onClick={() => {
+                          setCategoryId("new");
+                          setShowCategoryDropdown(false);
+                        }}
+                      >
+                        {t("quickCommands.createCategory", { name: categorySearchQuery.trim() }) || `Create "${categorySearchQuery.trim()}"`}
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -160,16 +273,14 @@ export default function EditQuickCommandDialog({
             <Input
               id="qc-desc"
               className="text-sm h-9"
-              placeholder={
-                t("quickCommands.descriptionPlaceholder") || "Details about this command"
-              }
+              placeholder={t("quickCommands.descriptionPlaceholder") || "Details about this command"}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
 
-          {/* Color Tag & Pinned */}
-          <div className="flex gap-4 items-end">
+          {/* Color Tag & Pinned*/}
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-end">
             <div className="flex-1 space-y-2">
               <Label className="text-xs text-muted-foreground">
                 {t("quickCommands.colorTag") || "Color Tag"}
@@ -183,18 +294,16 @@ export default function EditQuickCommandDialog({
                       setColorTag(color);
                       setIconTag(undefined);
                     }}
-                    className={`w-6 h-6 rounded-full border-2 focus:outline-none transition-all ${
-                      colorTag === color && !iconTag
-                        ? "border-foreground scale-110 shadow-sm"
-                        : "border-transparent hover:scale-105"
-                    } ${COLOR_CLASSES[color]}`}
+                    className={`w-7 h-7 rounded-full border-2 focus:outline-none transition-all ${colorTag === color && !iconTag
+                      ? "border-foreground scale-110 shadow-sm"
+                      : "border-transparent hover:scale-105"
+                      } ${COLOR_CLASSES[color]}`}
                     title={color}
                   />
                 ))}
 
-                {/* Icon selected state */}
                 {iconTag && QUICK_ICONS[iconTag] && (
-                  <div className="w-6 h-6 rounded-full border-2 border-foreground scale-110 shadow-sm flex items-center justify-center bg-secondary">
+                  <div className="w-7 h-7 rounded-full border-2 border-foreground scale-110 shadow-sm flex items-center justify-center bg-secondary">
                     {(() => {
                       const iconDef = QUICK_ICONS[iconTag];
                       return <iconDef.icon className="text-sm" style={{ color: iconDef.color }} />;
@@ -202,12 +311,11 @@ export default function EditQuickCommandDialog({
                   </div>
                 )}
 
-                {/* Add Icon Button */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="w-6 h-6 rounded-full border-2 border-dashed border-muted-foreground/50 hover:border-foreground flex items-center justify-center transition-all hover:scale-110"
+                      className="w-7 h-7 rounded-full border-2 border-dashed border-muted-foreground/50 hover:border-foreground flex items-center justify-center transition-all hover:scale-110 ml-1"
                       title={t("quickCommands.selectIcon")}
                     >
                       <MdAdd className="text-sm" />
@@ -233,9 +341,9 @@ export default function EditQuickCommandDialog({
               </div>
             </div>
 
-            <div className="flex-1 flex items-center gap-2 h-9">
+            <div className="flex-1 flex items-center sm:justify-end gap-2 h-9">
               <Switch checked={pinned} onCheckedChange={setPinned} id="qc-pinned" />
-              <Label htmlFor="qc-pinned" className="text-sm cursor-pointer">
+              <Label htmlFor="qc-pinned" className="text-sm cursor-pointer select-none">
                 {t("quickCommands.pin") || "Pin to top"}
               </Label>
             </div>
@@ -266,27 +374,29 @@ export default function EditQuickCommandDialog({
                 {t("quickCommands.appendOnly") || "Append to prompt"}
               </Button>
             </div>
-            <p className="text-[11px] text-muted-foreground pl-1">
+            <p className="text-[0.6875rem] text-muted-foreground pl-1">
               {executionMode === "execute"
-                ? t("quickCommands.executeHint") ||
-                  "Command will be executed automatically when clicked."
-                : t("quickCommands.appendHint") ||
-                  "Command will be placed at the prompt for review before executing."}
+                ? t("quickCommands.executeHint") || "Command will be executed automatically when clicked."
+                : t("quickCommands.appendHint") || "Command will be placed at the prompt for review before executing."}
             </p>
           </div>
 
           {/* Script / Command */}
           <div className="space-y-1.5">
-            <Label htmlFor="qc-command" className="text-xs text-muted-foreground">
-              {t("quickCommands.commandScript") || "Command Script"}
-            </Label>
+            <div className="flex justify-between items-center">
+              <Label htmlFor="qc-command" className="text-xs text-muted-foreground">
+                {t("quickCommands.commandScript") || "Command Script"}
+              </Label>
+              {errors.command && <span className="text-[0.6875rem] text-destructive">{errors.command}</span>}
+            </div>
             <Textarea
               id="qc-command"
-              className={`font-mono text-sm resize-none h-28 ${errors.command ? "border-destructive" : ""}`}
+              className={`font-mono text-sm resize-none h-28 bg-muted/30 ${errors.command ? "border-destructive focus-visible:ring-destructive" : ""
+                }`}
               style={{ fieldSizing: "fixed" } as any}
               placeholder={
                 t("quickCommands.commandPlaceholder") ||
-                "e.g. ls -la\nUse ${varName} for variables."
+                "e.g. ls -la\nUse {{varName}} for variables."
               }
               value={command}
               onChange={(e) => {
@@ -296,11 +406,9 @@ export default function EditQuickCommandDialog({
             />
           </div>
 
-          {(errors.label || errors.command || errors.general) && (
-            <div className="text-sm text-red-500 bg-red-500/10 p-2.5 rounded border border-red-500/30">
-              {errors.label && <div>{errors.label}</div>}
-              {errors.command && <div>{errors.command}</div>}
-              {errors.general && <div>{errors.general}</div>}
+          {errors.general && (
+            <div className="text-sm text-destructive bg-destructive/10 p-2.5 rounded border border-destructive/30">
+              {errors.general}
             </div>
           )}
         </div>

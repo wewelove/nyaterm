@@ -13,39 +13,42 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export interface MoveDialogData {
+export interface RenameDialogData {
   sessionId: string;
   oldPath: string;
   name: string;
+  currentDirPath: string;
 }
 
-interface MoveDialogProps {
-  data: MoveDialogData;
+interface RenameDialogProps {
+  data: RenameDialogData;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function MoveDialog({ data, onClose, onSuccess }: MoveDialogProps) {
+export default function RenameDialog({ data, onClose, onSuccess }: RenameDialogProps) {
   const { t } = useTranslation();
-  const [dialogInput, setDialogInput] = useState(data.oldPath);
+  const [dialogInput, setDialogInput] = useState(data.name);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    setDialogInput(data.oldPath);
-  }, [data.oldPath]);
+    setDialogInput(data.name);
+  }, [data.name]);
 
-  const handleMoveSubmit = async () => {
-    if (!dialogInput || dialogInput === data.oldPath) {
+  const handleRenameSubmit = async () => {
+    if (!dialogInput || dialogInput === data.name) {
       onClose();
       return;
     }
 
     try {
       setIsSubmitting(true);
+      const newPath =
+        data.currentDirPath === "/" ? `/${dialogInput}` : `${data.currentDirPath}/${dialogInput}`;
       await invoke("rename_remote_file", {
         sessionId: data.sessionId,
         oldPath: data.oldPath,
-        newPath: dialogInput,
+        newPath,
       });
       onSuccess();
       onClose();
@@ -58,19 +61,19 @@ export default function MoveDialog({ data, onClose, onSuccess }: MoveDialogProps
 
   return (
     <Dialog open onOpenChange={(v) => !v && !isSubmitting && onClose()}>
-      <DialogContent aria-describedby={undefined} className="w-96 sm:max-w-96">
+      <DialogContent aria-describedby={undefined} className="w-80 sm:max-w-80">
         <DialogHeader>
           <DialogTitle className="text-sm">
-            {t("fileExplorer.moveTo", { name: data.name })}
+            {t("fileExplorer.renameTo", { name: data.name })}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <Label className="text-xs">{t("fileExplorer.moveTo", { name: data.name })}</Label>
+          <Label className="text-xs">{t("fileExplorer.renameTo", { name: data.name })}</Label>
           <Input
             className="text-sm"
             value={dialogInput}
             onChange={(e) => setDialogInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !isSubmitting && handleMoveSubmit()}
+            onKeyDown={(e) => e.key === "Enter" && !isSubmitting && handleRenameSubmit()}
             disabled={isSubmitting}
             autoFocus
           />
@@ -79,8 +82,8 @@ export default function MoveDialog({ data, onClose, onSuccess }: MoveDialogProps
           <Button variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
             {t("dialog.cancel")}
           </Button>
-          <Button size="sm" onClick={handleMoveSubmit} disabled={isSubmitting}>
-            {isSubmitting && <MdRefresh className="text-[14px] animate-spin" />}
+          <Button size="sm" onClick={handleRenameSubmit} disabled={isSubmitting}>
+            {isSubmitting && <MdRefresh className="text-[0.875rem] animate-spin" />}
             {t("dialog.save")}
           </Button>
         </DialogFooter>

@@ -163,10 +163,10 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
   };
 
   const getFileType = () => {
-    if (data.is_dir) return t("fileExplorer.folder", "Folder");
+    if (data.is_dir) return t("fileExplorer.folder");
     const ext = data.name.split(".").pop()?.toLowerCase();
-    if (ext === "sh" || ext === "bash") return t("fileExplorer.shellScript", "Shell Script");
-    return t("fileExplorer.file", "File");
+    if (ext === "sh" || ext === "bash") return t("fileExplorer.shellScript");
+    return t("fileExplorer.file");
   };
 
   const getLocation = () => {
@@ -197,7 +197,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
           {loading ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center space-y-2 text-muted-foreground">
               <MdRefresh className="animate-spin text-3xl" />
-              <span className="text-xs">{t("fileExplorer.loading", "Loading...")}</span>
+              <span className="text-xs">{t("fileExplorer.loading")}</span>
             </div>
           ) : error ? (
             <div className="absolute inset-0 flex items-center justify-center text-destructive text-xs px-5 text-center">
@@ -208,13 +208,13 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
               {/* General Information */}
               <div>
                 <h3 className="text-xs font-semibold mb-3 tracking-wider uppercase text-muted-foreground">
-                  {t("fileExplorer.general", "General")}
+                  {t("fileExplorer.general")}
                 </h3>
                 <div className="space-y-2.5 text-xs text-left">
                   {[
-                    [t("fileExplorer.type", "Type"), getFileType()],
+                    [t("fileExplorer.type"), getFileType()],
                     [
-                      t("fileExplorer.location", "Location"),
+                      t("fileExplorer.location"),
                       <span
                         key="loc"
                         className="truncate break-all select-all font-mono"
@@ -223,28 +223,28 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                         {getLocation()}
                       </span>,
                     ],
-                    [t("fileExplorer.size", "Size"), formatSize(properties.size)],
+                    [t("fileExplorer.size"), formatSize(properties.size)],
                     [
-                      t("fileExplorer.mtime", "Modified"),
+                      t("fileExplorer.mtime"),
                       <span key="mt" className="font-mono">
                         {formatTime(properties.mtime)}
                       </span>,
                     ],
                     [
-                      t("fileExplorer.atime", "Accessed"),
+                      t("fileExplorer.atime"),
                       <span key="at" className="font-mono">
                         {formatTime(properties.atime)}
                       </span>,
                     ],
                     [
-                      t("fileExplorer.owner", "Owner"),
+                      t("fileExplorer.owner"),
                       <span key="ow">
                         {properties.owner}{" "}
                         <span className="font-mono opacity-70">[{properties.uid}]</span>
                       </span>,
                     ],
                     [
-                      t("fileExplorer.group", "Group"),
+                      t("fileExplorer.group"),
                       <span key="gr">
                         {properties.group}{" "}
                         <span className="font-mono opacity-70">[{properties.gid}]</span>
@@ -264,7 +264,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
               {/* Permissions */}
               <div>
                 <h3 className="text-xs font-semibold mb-3 tracking-wider uppercase text-muted-foreground">
-                  {t("fileExplorer.permissions", "Permissions")}
+                  {t("fileExplorer.permissions")}
                 </h3>
                 <div className="rounded-md border overflow-hidden bg-background">
                   <table className="w-full text-xs text-left select-none">
@@ -275,14 +275,14 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                         <th className="font-normal px-2 py-2 text-center w-14">W</th>
                         <th className="font-normal px-2 py-2 text-center w-14">X</th>
                         <th className="font-normal px-2 py-2 text-center">
-                          {t("fileExplorer.special", "Special")}
+                          {t("fileExplorer.special")}
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {[
                         {
-                          label: t("fileExplorer.permUser", "User"),
+                          label: t("fileExplorer.permUser"),
                           idx: 1,
                           sIdx: 0,
                           sBit: 4,
@@ -290,7 +290,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                           alt: true,
                         },
                         {
-                          label: t("fileExplorer.permGroup", "Group"),
+                          label: t("fileExplorer.permGroup"),
                           idx: 2,
                           sIdx: 0,
                           sBit: 2,
@@ -298,11 +298,11 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                           alt: false,
                         },
                         {
-                          label: t("fileExplorer.permOther", "Other"),
+                          label: t("fileExplorer.permOther"),
                           idx: 3,
                           sIdx: 0,
                           sBit: 1,
-                          sLabel: t("fileExplorer.permSticky", "Sticky"),
+                          sLabel: t("fileExplorer.permSticky"),
                           alt: true,
                         },
                       ].map((row) => (
@@ -333,7 +333,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                             />
                           </td>
                           <td className="px-2 py-2 text-center">
-                            <label className="flex items-center justify-center gap-1.5 cursor-pointer text-[10px]">
+                            <label className="flex items-center justify-center gap-1.5 cursor-pointer text-[0.625rem]">
                               <input
                                 type="checkbox"
                                 className="accent-primary cursor-pointer"
@@ -351,7 +351,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
 
                 <div className="flex items-center justify-between mt-4">
                   <span className="text-xs text-muted-foreground">
-                    {t("fileExplorer.octal", "Octal Mode")}:
+                    {t("fileExplorer.octal")}:
                   </span>
                   <div className="flex items-center">
                     <span className="text-xs font-mono mr-2 opacity-50">0</span>
@@ -381,7 +381,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
             onClick={onClose}
             disabled={isSaving}
           >
-            {t("dialog.cancel", "Cancel")}
+            {t("dialog.cancel")}
           </Button>
           <Button
             size="sm"
@@ -389,8 +389,8 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
             onClick={handleSave}
             disabled={isSaving || loading || !!error}
           >
-            {isSaving && <MdRefresh className="text-[14px] animate-spin" />}
-            {t("dialog.save", "Save Changes")}
+            {isSaving && <MdRefresh className="text-[0.875rem] animate-spin" />}
+            {t("dialog.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

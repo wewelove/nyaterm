@@ -17,14 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useApp } from "../../context/AppContext";
+
 
 export interface VariableDef {
   raw: string;
   name: string;
   options?: string[];
   defaultValue?: string;
-  isSystem: boolean;
 }
 
 interface VariablePromptDialogProps {
@@ -43,7 +42,6 @@ export default function VariablePromptDialog({
   onSubmit,
 }: VariablePromptDialogProps) {
   const { t } = useTranslation();
-  const { tabs, activeTabId } = useApp();
 
   const [values, setValues] = useState<Record<string, string>>({});
 
@@ -51,49 +49,21 @@ export default function VariablePromptDialog({
     if (open) {
       const initial: Record<string, string> = {};
 
-      const activeTab = tabs.find((t) => t.id === activeTabId);
-
       variables.forEach((v) => {
-        if (v.isSystem) {
-          if (v.name === "DATE") {
-            const now = new Date();
-            initial[v.name] = now.toISOString().split("T")[0];
-          } else if (v.name === "TIME") {
-            const now = new Date();
-            initial[v.name] = now.toTimeString().split(" ")[0];
-          } else if (v.name === "TIMESTAMP") {
-            initial[v.name] = Date.now().toString();
-          } else if (v.name === "CURRENT_USER") {
-            initial[v.name] = (window as any).__TAURI__ ? "..." : "user"; // Maybe we can fetch real user, but for now placeholder
-          } else if (v.name === "CONNECTION_IP" && activeTab) {
-            // we don't have direct access to IP in Tab interface easily, but we can put placeholder
-            initial[v.name] = "127.0.0.1";
-          } else {
-            initial[v.name] = "";
-          }
-        } else {
-          initial[v.name] =
-            v.defaultValue || (v.options && v.options.length > 0 ? v.options[0] : "");
-        }
+        initial[v.name] =
+          v.defaultValue || (v.options && v.options.length > 0 ? v.options[0] : "");
       });
       setValues(initial);
     }
-  }, [open, variables, tabs, activeTabId]);
+  }, [open, variables]);
 
   const handleSubmit = () => {
     let finalCmd = command;
     variables.forEach((v) => {
-      // Replace all occurrences of this specific variable's raw string
       finalCmd = finalCmd.split(v.raw).join(values[v.name] || "");
     });
     onSubmit(finalCmd);
   };
-
-  const userVars = variables.filter((v) => !v.isSystem);
-
-  // If there are no user variables, we can actually auto-submit,
-  // but usually this dialog shouldn't even open if so.
-  // Handled by the caller.
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
@@ -105,9 +75,9 @@ export default function VariablePromptDialog({
         </DialogHeader>
 
         <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
-          {userVars.map((v) => (
+          {variables.map((v) => (
             <div key={v.name}>
-              <Label className="text-[11px] text-muted-foreground">{v.name}</Label>
+              <Label className="text-[0.6875rem] text-muted-foreground">{v.name}</Label>
               {v.options && v.options.length > 0 ? (
                 <Select
                   value={values[v.name] || ""}
@@ -141,10 +111,10 @@ export default function VariablePromptDialog({
           ))}
 
           <div className="bg-muted/50 p-2 rounded relative mt-4">
-            <Label className="text-[10px] text-muted-foreground absolute -top-2 left-2 px-1 bg-popover">
+            <Label className="text-[0.625rem] text-muted-foreground absolute -top-2 left-2 px-1 bg-popover">
               Preview
             </Label>
-            <div className="text-[11px] font-mono break-all text-muted-foreground mt-2">
+            <div className="text-[0.6875rem] font-mono break-all text-muted-foreground mt-2">
               {(() => {
                 let preview = command;
                 variables.forEach((v) => {
@@ -169,12 +139,9 @@ export default function VariablePromptDialog({
   );
 }
 
-// Utility function to parse command
 export function parseCommandVariables(command: string): VariableDef[] {
-  const regex = /\$\{([^}]+)\}/g;
+  const regex = /\{\{([^}]+)\}\}/g;
   const matches = [...command.matchAll(regex)];
-
-  const SYSTEM_VARS = ["DATE", "TIME", "TIMESTAMP", "CURRENT_USER", "CONNECTION_IP"];
 
   const vars: VariableDef[] = [];
   const seen = new Set<string>();
@@ -186,27 +153,17 @@ export function parseCommandVariables(command: string): VariableDef[] {
     if (seen.has(raw)) continue;
     seen.add(raw);
 
-    const isSystem = SYSTEM_VARS.includes(content);
-
-    if (isSystem) {
-      vars.push({ raw, name: content, isSystem: true });
-      continue;
-    }
-
-    // Try parsing enum | value1,value2
     if (content.includes("|")) {
       const [name, optsStr] = content.split("|");
       const options = optsStr.split(",").map((s) => s.trim());
-      vars.push({ raw, name: name.trim(), options, isSystem: false });
+      vars.push({ raw, name: name.trim(), options });
     }
-    // Try parsing default =value
     else if (content.includes("=")) {
       const [name, defaultVal] = content.split("=");
-      vars.push({ raw, name: name.trim(), defaultValue: defaultVal.trim(), isSystem: false });
+      vars.push({ raw, name: name.trim(), defaultValue: defaultVal.trim() });
     }
-    // Normal var
     else {
-      vars.push({ raw, name: content.trim(), isSystem: false });
+      vars.push({ raw, name: content.trim() });
     }
   }
 

@@ -30,7 +30,6 @@ export default function AutoUploadDialog({ data, onClose, onAlwaysUpload }: Auto
     if (always) {
       onAlwaysUpload(data.sessionId, data.localPath);
     }
-    // Fire and forget — progress is tracked in FileTransfer panel
     invoke("upload_local_file", {
       sessionId: data.sessionId,
       localPath: data.localPath,
@@ -48,17 +47,14 @@ export default function AutoUploadDialog({ data, onClose, onAlwaysUpload }: Auto
               className="flex items-center justify-center w-8 h-8 rounded-full"
               style={{ backgroundColor: "color-mix(in srgb, var(--df-primary) 15%, transparent)" }}
             >
-              <MdCloudSync className="text-[18px] text-primary" />
+              <MdCloudSync className="text-[1.125rem] text-primary" />
             </div>
             <DialogTitle className="text-sm font-semibold">
-              {t("fileExplorer.fileModified", "File Modified Locally")}
+              {t("fileExplorer.fileModified")}
             </DialogTitle>
           </div>
           <DialogDescription className="text-xs break-all leading-relaxed">
-            {t(
-              "fileExplorer.uploadPrompt",
-              "The following file was modified. Do you want to upload it to the remote server?",
-            )}
+            {t("fileExplorer.uploadPrompt")}
             <br />
             <br />
             <span
@@ -80,10 +76,10 @@ export default function AutoUploadDialog({ data, onClose, onAlwaysUpload }: Auto
             className="text-xs flex-1"
             onClick={() => handleUpload(true)}
           >
-            {t("fileExplorer.alwaysUpload", "Always")}
+            {t("fileExplorer.alwaysUpload")}
           </Button>
           <Button size="sm" className="text-xs flex-1" onClick={() => handleUpload(false)}>
-            {t("fileExplorer.uploadOnce", "Upload")}
+            {t("fileExplorer.uploadOnce")}
           </Button>
         </DialogFooter>
       </DialogContent>

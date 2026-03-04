@@ -10,18 +10,20 @@ import {
   MdSettings,
   MdTerminal,
   MdTranslate,
+  MdVpnKey,
 } from "react-icons/md";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/context/AppContext";
-import { AppearanceTab } from "./settings/AppearanceTab";
-import { GeneralTab } from "./settings/GeneralTab";
-import { InteractionTab } from "./settings/InteractionTab";
-import { ProxyTab } from "./settings/ProxyTab";
-import { SearchTab } from "./settings/SearchTab";
-import { SecurityTab } from "./settings/SecurityTab";
-import { TerminalTab } from "./settings/TerminalTab";
-import { TranslationTab } from "./settings/TranslationTab";
+import { AppearanceTab } from "../settings/AppearanceTab";
+import { GeneralTab } from "../settings/GeneralTab";
+import { InteractionTab } from "../settings/InteractionTab";
+import { ProxyTab } from "../settings/ProxyTab";
+import { SearchTab } from "../settings/SearchTab";
+import { SecurityTab } from "../settings/SecurityTab";
+import { TerminalTab } from "../settings/TerminalTab";
+import { KeyManagementTab } from "../settings/KeyManagementTab";
+import { TranslationTab } from "../settings/TranslationTab";
 
 export default function SettingsDialog() {
   const { t } = useTranslation();
@@ -31,39 +33,45 @@ export default function SettingsDialog() {
   const tabs = [
     {
       id: "general",
-      label: t("settings.general", "General"),
+      label: t("settings.general"),
       icon: "settings",
       Component: GeneralTab,
     },
     {
       id: "appearance",
-      label: t("settings.appearance", "Appearance"),
+      label: t("settings.appearance"),
       icon: "palette",
       Component: AppearanceTab,
     },
-    { id: "proxy", label: t("settings.proxy", "Proxy"), icon: "router", Component: ProxyTab },
-    { id: "search", label: t("settings.search", "Search"), icon: "search", Component: SearchTab },
+    { id: "proxy", label: t("settings.proxy"), icon: "router", Component: ProxyTab },
+    { id: "search", label: t("settings.search"), icon: "search", Component: SearchTab },
     {
       id: "translation",
-      label: t("settings.translation", "Translation"),
+      label: t("settings.translation"),
       icon: "translate",
       Component: TranslationTab,
     },
     {
       id: "security",
-      label: t("settings.security", "Security"),
+      label: t("settings.security"),
       icon: "security",
       Component: SecurityTab,
     },
     {
+      id: "keyManagement",
+      label: t("settings.keyManagement"),
+      icon: "vpnKey",
+      Component: KeyManagementTab,
+    },
+    {
       id: "terminal",
-      label: t("settings.terminal", "Terminal Core"),
+      label: t("settings.terminal"),
       icon: "terminal",
       Component: TerminalTab,
     },
     {
       id: "interaction",
-      label: t("settings.interaction", "Interaction"),
+      label: t("settings.interaction"),
       icon: "mouse",
       Component: InteractionTab,
     },
@@ -78,6 +86,7 @@ export default function SettingsDialog() {
     search: MdSearch,
     translate: MdTranslate,
     security: MdSecurity,
+    vpnKey: MdVpnKey,
     terminal: MdTerminal,
     mouse: MdMouse,
     close: MdClose,
@@ -102,7 +111,7 @@ export default function SettingsDialog() {
           <div className="p-6 border-b shrink-0 flex items-center gap-3">
             <MdSettings className="text-2xl text-primary" />
             <DialogTitle className="text-xl font-semibold">
-              {t("settings.title", "Settings")}
+              {t("settings.title")}
             </DialogTitle>
           </div>
           <div className="flex-1 py-3 px-3 space-y-1">
@@ -115,7 +124,7 @@ export default function SettingsDialog() {
               >
                 <DynamicIcon
                   name={tab.icon}
-                  className={`text-[18px] ${activeTab === tab.id ? "text-primary" : ""}`}
+                  className={`text-[1.125rem] ${activeTab === tab.id ? "text-primary" : ""}`}
                 />
                 {tab.label}
               </Button>
