@@ -20,6 +20,7 @@ export default function StatusBar() {
   const { setIsLocked, tabs, activeTabId, appSettings } = useApp();
   const [time, setTime] = useState(new Date());
   const [remoteStats, setRemoteStats] = useState<RemoteStats | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const showRemoteStats = appSettings.ui.show_remote_stats ?? false;
@@ -27,7 +28,7 @@ export default function StatusBar() {
   const isSSHTab = activeTab?.type === "SSH" && !activeTab?.connecting;
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
+    const timer = setInterval(() => setTime(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
 

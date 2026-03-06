@@ -1,6 +1,7 @@
 use crate::config::{self, Group, QuickCommandsConfig, SavedConnection, SshKey};
 use crate::crypto;
 use crate::error::{AppError, AppResult};
+use tauri::Emitter;
 
 #[tauri::command]
 pub fn get_saved_connections(app: tauri::AppHandle) -> AppResult<Vec<SavedConnection>> {
@@ -32,6 +33,7 @@ pub fn save_connection(app: tauri::AppHandle, mut connection: SavedConnection) -
         cfg.connections.push(connection);
     }
     config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
     Ok(target_id)
 }
 
@@ -39,7 +41,9 @@ pub fn save_connection(app: tauri::AppHandle, mut connection: SavedConnection) -
 pub fn delete_connection(app: tauri::AppHandle, id: String) -> AppResult<()> {
     let mut cfg = config::load_config(&app)?;
     cfg.connections.retain(|c| c.id != id);
-    config::save_config(&app, &cfg)
+    config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -65,7 +69,9 @@ pub fn reorder_items(
             grp.sort_order = update.sort_order;
         }
     }
-    config::save_config(&app, &cfg)
+    config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -140,6 +146,7 @@ pub fn save_group(app: tauri::AppHandle, mut group: Group) -> AppResult<String> 
         cfg.groups.push(group);
     }
     config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
     Ok(target_id)
 }
 
@@ -170,7 +177,9 @@ pub fn delete_group(app: tauri::AppHandle, id: String) -> AppResult<()> {
         }
     }
 
-    config::save_config(&app, &cfg)
+    config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -178,7 +187,9 @@ pub fn clear_all_connections(app: tauri::AppHandle) -> AppResult<()> {
     let mut cfg = config::load_config(&app)?;
     cfg.connections.clear();
     cfg.groups.clear();
-    config::save_config(&app, &cfg)
+    config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
+    Ok(())
 }
 
 #[tauri::command]

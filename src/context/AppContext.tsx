@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "../lib/invoke";
 import { logger } from "../lib/logger";
 import type { AppSettings, Group, SavedConnection, SessionType, Tab, UiConfig } from "../types";
@@ -237,8 +238,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshConnections();
-    const interval = setInterval(refreshConnections, 5000);
-    return () => clearInterval(interval);
+    const unlisten = listen("connections-changed", () => {
+      refreshConnections();
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, [refreshConnections]);
 
   // 4. Tab Logic

@@ -5,6 +5,7 @@ use crate::error::{AppError, AppResult};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
+use tauri::Emitter;
 
 struct ImportedSession {
     name: String,
@@ -426,5 +427,6 @@ pub fn import_sessions(app: tauri::AppHandle, file_path: String) -> AppResult<us
     }
 
     config::save_config(&app, &cfg)?;
+    let _ = app.emit("connections-changed", ());
     Ok(count)
 }

@@ -60,7 +60,6 @@ function App() {
     closeTab,
     updateUi,
     updateAppSettings,
-    refreshConnections,
     appSettings,
     isLocked,
     setIsLocked,
@@ -115,16 +114,10 @@ function App() {
       ),
     );
 
-    unsubs.push(
-      listen("session-saved", () => {
-        refreshConnections();
-      }),
-    );
-
     return () => {
       unsubs.forEach((p) => p.then((unsub) => unsub()));
     };
-  }, [addTab, refreshConnections, updateAppSettings]);
+  }, [addTab, updateAppSettings]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 

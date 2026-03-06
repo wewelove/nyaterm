@@ -78,6 +78,8 @@ pub fn run() {
             let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
             init_tracing(log_dir);
 
+            session_manager.set_app_handle(app.handle().clone());
+
             let config_dir = home_dir.join(".dragonfly");
             let mgr = session_manager.clone();
             tauri::async_runtime::spawn(async move {

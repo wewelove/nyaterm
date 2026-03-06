@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { memo, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MdChevronRight, MdHistory } from "react-icons/md";
@@ -12,20 +13,22 @@ function CommandHistory({ onCommandSend }: CommandHistoryProps) {
   const { t } = useTranslation();
   const [history, setHistory] = useState<string[]>([]);
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const cmds = await invoke<string[]>("get_command_history");
-        setHistory(cmds);
-      } catch {
-        // Backend might not be ready
-      }
-    };
-
-    fetchHistory();
-    const interval = setInterval(fetchHistory, 3000);
-    return () => clearInterval(interval);
+  const fetchHistory = useCallback(async () => {
+    try {
+      const cmds = await invoke<string[]>("get_command_history");
+      setHistory(cmds);
+    } catch {
+      // Backend might not be ready
+    }
   }, []);
+
+  useEffect(() => {
+    fetchHistory();
+    const unlisten = listen("command-history-changed", () => {
+      fetchHistory();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [fetchHistory]);
 
   const handleDoubleClick = useCallback(
     (command: string) => {

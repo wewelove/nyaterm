@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use tauri::Emitter;
 use tokio::sync::{mpsc, Mutex};
 
 /// Distinguishes SSH vs local PTY sessions for UI and routing.
@@ -55,6 +56,7 @@ pub struct SessionManager {
     pub sessions: Arc<Mutex<HashMap<String, SessionHandle>>>,
     pub command_history: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub history_store: Arc<Mutex<CommandHistoryStore>>,
+    app_handle: OnceLock<tauri::AppHandle>,
 }
 
 impl SessionManager {
@@ -64,7 +66,13 @@ impl SessionManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             command_history: Arc::new(Mutex::new(HashMap::new())),
             history_store: Arc::new(Mutex::new(CommandHistoryStore::new())),
+            app_handle: OnceLock::new(),
         }
+    }
+
+    /// Store the app handle so the manager can emit events to the frontend.
+    pub fn set_app_handle(&self, app: tauri::AppHandle) {
+        let _ = self.app_handle.set(app);
     }
 
     /// Loads history from config_dir/history.json for fuzzy search.
@@ -81,12 +89,21 @@ impl SessionManager {
         let id = handle.info.id.clone();
         self.sessions.lock().await.insert(id.clone(), handle);
         self.command_history.lock().await.insert(id, Vec::new());
+        if let Some(app) = self.app_handle.get() {
+            let _ = app.emit("sessions-changed", ());
+        }
     }
 
     /// Removes session and its history; returns true if the session existed.
     pub async fn remove_session(&self, id: &str) -> bool {
         self.command_history.lock().await.remove(id);
-        self.sessions.lock().await.remove(id).is_some()
+        let removed = self.sessions.lock().await.remove(id).is_some();
+        if removed {
+            if let Some(app) = self.app_handle.get() {
+                let _ = app.emit("sessions-changed", ());
+            }
+        }
+        removed
     }
 
     /// Sends a command to a session's I/O loop; errors if session not found.
@@ -125,6 +142,9 @@ impl SessionManager {
             if let Err(e) = store.save() {
                 tracing::warn!("Failed to save command history: {}", e);
             }
+        }
+        if let Some(app) = self.app_handle.get() {
+            let _ = app.emit("command-history-changed", ());
         }
     }
 

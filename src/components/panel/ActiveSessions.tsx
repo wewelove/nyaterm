@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { memo, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { memo, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionInfo } from "../../types";
 
@@ -12,20 +13,22 @@ function ActiveSessions({ onSessionClick }: ActiveSessionsProps) {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
 
-  useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        const sess = await invoke<SessionInfo[]>("list_sessions");
-        setSessions(sess);
-      } catch {
-        // Backend might not be ready yet
-      }
-    };
-
-    fetchSessions();
-    const interval = setInterval(fetchSessions, 2000);
-    return () => clearInterval(interval);
+  const fetchSessions = useCallback(async () => {
+    try {
+      const sess = await invoke<SessionInfo[]>("list_sessions");
+      setSessions(sess);
+    } catch {
+      // Backend might not be ready yet
+    }
   }, []);
+
+  useEffect(() => {
+    fetchSessions();
+    const unlisten = listen("sessions-changed", () => {
+      fetchSessions();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [fetchSessions]);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
