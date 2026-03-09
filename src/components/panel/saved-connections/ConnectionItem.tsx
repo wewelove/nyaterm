@@ -119,6 +119,10 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
           <MdLink className="text-[0.875rem] text-muted-foreground mr-2" />
           {t("savedConnections.connect")}
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => onEditConnection(conn)}>
+          <MdEdit className="text-[0.875rem] text-muted-foreground mr-2" />
+          {t("savedConnections.edit")}
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => { setRenameValue(conn.name); setRenamingConn(conn); }}>
           <MdDriveFileRenameOutline className="text-[0.875rem] text-muted-foreground mr-2" />
