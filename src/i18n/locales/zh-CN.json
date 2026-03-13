@@ -308,6 +308,7 @@
     "sessionSecurity": "会话安全",
     "enableProxy": "启用代理",
     "enableProxyDesc": "启用应用程序的代理。",
+    "fontBuiltIn": "内置",
     "fontFamily": "字体系列",
     "fontFamilyDesc": "终端和应用程序 UI 中使用的字体系列。最顶部的字体优先级最高。",
     "fontPrimary": "首选字体",

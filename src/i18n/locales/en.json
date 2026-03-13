@@ -308,6 +308,7 @@
     "sessionSecurity": "Session Security",
     "enableProxy": "Enable Proxy",
     "enableProxyDesc": "Enable proxy for the application.",
+    "fontBuiltIn": "Built-in",
     "fontFamily": "Font Family",
     "fontFamilyDesc": "The font family used in the terminal and app UI. Topmost font has highest priority.",
     "fontPrimary": "Primary",
