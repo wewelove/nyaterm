@@ -136,7 +136,7 @@ pub async fn get_remote_stats(
 ) -> AppResult<RemoteStats> {
     use russh::ChannelMsg;
 
-    let handle = {
+    let handle_mtx = {
         let sessions = state.sessions.lock().await;
         let session = sessions.get(&session_id).ok_or_else(|| {
             AppError::SessionNotFound(format!("Session '{}' not found", session_id))
@@ -147,15 +147,18 @@ pub async fn get_remote_stats(
             .as_ref()
             .ok_or_else(|| AppError::Config("Not an SSH session".to_string()))?
             .clone()
-            .downcast::<client::Handle<SshHandler>>()
+            .downcast::<tokio::sync::Mutex<client::Handle<SshHandler>>>()
             .map_err(|_| AppError::Config("Failed to get SSH handle".to_string()))?
     };
 
     let output = tokio::time::timeout(Duration::from_secs(15), async {
-        let mut channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Channel(format!("Failed to open channel: {}", e)))?;
+        let mut channel = {
+            let handle = handle_mtx.lock().await;
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::Channel(format!("Failed to open channel: {}", e)))?
+        };
 
         channel
             .exec(true, SYSINFO_SCRIPT)

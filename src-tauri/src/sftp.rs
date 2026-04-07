@@ -58,7 +58,7 @@ pub struct FileProperties {
 
 /// Opens an SFTP session by reusing the existing SSH connection's handle.
 async fn open_sftp(manager: &SessionManager, session_id: &str) -> AppResult<SftpSession> {
-    let handle = {
+    let handle_mtx = {
         let sessions = manager.sessions.lock().await;
         let session = sessions.get(session_id).ok_or_else(|| {
             AppError::SessionNotFound(format!("Session '{}' not found", session_id))
@@ -69,14 +69,17 @@ async fn open_sftp(manager: &SessionManager, session_id: &str) -> AppResult<Sftp
             .as_ref()
             .ok_or_else(|| AppError::Config("Not an SSH session".to_string()))?
             .clone()
-            .downcast::<client::Handle<SshHandler>>()
+            .downcast::<tokio::sync::Mutex<client::Handle<SshHandler>>>()
             .map_err(|_| AppError::Config("Failed to get SSH handle".to_string()))?
     };
 
-    let channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| AppError::Channel(format!("Failed to open SFTP channel: {}", e)))?;
+    let channel = {
+        let handle = handle_mtx.lock().await;
+        handle
+            .channel_open_session()
+            .await
+            .map_err(|e| AppError::Channel(format!("Failed to open SFTP channel: {}", e)))?
+    };
     channel
         .request_subsystem(true, "sftp")
         .await
