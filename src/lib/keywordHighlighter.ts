@@ -57,6 +57,11 @@ export class KeywordHighlighter implements IDisposable {
   private disposables: IDisposable[] = [];
   private lastViewportY = -1;
 
+  /** Marker anchored at buffer line 0 to detect scrollback trimming. */
+  private sentinelMarker: IMarker | null = null;
+  private sentinelDisposable: IDisposable | null = null;
+  private bufferTrimmed = false;
+
   /**
    * How many lines above and below the visible viewport to keep decorated.
    * Large enough to absorb typical keyboard/mouse scroll bursts without flicker,
@@ -124,6 +129,35 @@ export class KeywordHighlighter implements IDisposable {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
   }
 
+  /**
+   * Place a marker at buffer line 0. When xterm trims the scrollback (buffer
+   * full), this line is evicted and the marker is disposed, letting us detect
+   * the shift and invalidate all index-based caches.
+   */
+  private installSentinel(): void {
+    this.disposeSentinel();
+    const buffer = this.term.buffer.active;
+    if (!buffer || buffer.length === 0) return;
+
+    const cursorAbsoluteY = buffer.baseY + buffer.cursorY;
+    const marker = this.term.registerMarker(-cursorAbsoluteY);
+    if (!marker || marker.line < 0) return;
+
+    this.sentinelMarker = marker;
+    this.sentinelDisposable = marker.onDispose(() => {
+      this.bufferTrimmed = true;
+      this.sentinelMarker = null;
+      this.sentinelDisposable = null;
+    });
+  }
+
+  private disposeSentinel(): void {
+    this.sentinelDisposable?.dispose();
+    this.sentinelMarker?.dispose();
+    this.sentinelMarker = null;
+    this.sentinelDisposable = null;
+  }
+
   private triggerRefresh(): void {
     if (!this.enabled || this.compiledRules.length === 0) return;
 
@@ -143,13 +177,15 @@ export class KeywordHighlighter implements IDisposable {
    * Clear map before disposing so the per-decoration onDispose callbacks find
    * an empty map and become no-ops, avoiding re-entrant mutation.
    * Also resets the scanned-line memoization so all lines are re-scanned after
-   * a rule change.
+   * a rule change, and tears down the trim-detection sentinel.
    */
   private clearAllDecorations(): void {
     const entries = [...this.decorationCache.values()];
     this.decorationCache.clear();
     this.lineToKeys.clear();
     this.scannedLines.clear();
+    this.disposeSentinel();
+    this.bufferTrimmed = false;
     for (const { decoration, marker } of entries) {
       decoration.dispose();
       marker.dispose();
@@ -468,6 +504,24 @@ export class KeywordHighlighter implements IDisposable {
 
   private refreshViewport(): void {
     if (!this.term?.buffer?.active) return;
+
+    // When xterm trims the scrollback, all buffer indices shift and our caches
+    // become stale. Detect this via the sentinel marker and wipe everything.
+    if (this.bufferTrimmed) {
+      const entries = [...this.decorationCache.values()];
+      this.decorationCache.clear();
+      this.lineToKeys.clear();
+      this.scannedLines.clear();
+      this.bufferTrimmed = false;
+      for (const { decoration, marker } of entries) {
+        decoration.dispose();
+        marker.dispose();
+      }
+    }
+
+    if (!this.sentinelMarker) {
+      this.installSentinel();
+    }
 
     const buffer = this.term.buffer.active;
     const viewportY = buffer.viewportY;
