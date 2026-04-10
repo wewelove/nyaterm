@@ -84,19 +84,18 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
     if (!loaded.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      invoke("save_quick_commands", { config: { commands, categories: savedCategories } }).catch(() => { });
+      invoke("save_quick_commands", { config: { commands, categories: savedCategories } }).catch(
+        () => {},
+      );
     }, 300);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [commands, savedCategories]);
 
-  const handleDelete = useCallback(
-    (id: string) => {
-      setCommands((prev) => prev.filter((c) => c.id !== id));
-    },
-    [],
-  );
+  const handleDelete = useCallback((id: string) => {
+    setCommands((prev) => prev.filter((c) => c.id !== id));
+  }, []);
 
   // Listen for quick-command-saved events from child window
   useEffect(() => {
@@ -115,7 +114,9 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
         }
       },
     );
-    return () => { unsub.then((fn) => fn()); };
+    return () => {
+      unsub.then((fn) => fn());
+    };
   }, []);
 
   const handleCommandClick = useCallback(
@@ -147,7 +148,9 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
   // Derived state for categories and filtering
   const allCategories = useMemo(() => {
     const catsMap = new Map<string, QuickCommandCategory>();
-    savedCategories.forEach((c) => catsMap.set(c.id, c));
+    savedCategories.forEach((c) => {
+      catsMap.set(c.id, c);
+    });
     commands.forEach((c) => {
       if (c.category_id && !catsMap.has(c.category_id)) {
         catsMap.set(c.category_id, { id: c.category_id, name: c.category_id });
@@ -173,7 +176,7 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
         (c) =>
           c.label.toLowerCase().includes(q) ||
           c.command.toLowerCase().includes(q) ||
-          (c.description && c.description.toLowerCase().includes(q)),
+          c.description?.toLowerCase().includes(q),
       );
     }
 
@@ -248,9 +251,7 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
             {filteredCommands.length === 0 ? (
               <div className="flex flex-col items-center justify-center w-full mt-10 p-4 border border-dashed rounded-lg text-muted-foreground opacity-70">
                 <MdTerminal className="text-2xl mb-2" />
-                <span className="text-xs mb-3">
-                  {t("quickCommands.noCommandsFound")}
-                </span>
+                <span className="text-xs mb-3">{t("quickCommands.noCommandsFound")}</span>
                 <Button
                   variant="outline"
                   size="sm"
@@ -299,6 +300,7 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
                       <TooltipContent
                         side="top"
                         align="start"
+                        showArrow={false}
                         className="w-[320px] p-0 shadow-2xl border-border/60 bg-popover/95 backdrop-blur-md rounded-xl overflow-hidden"
                       >
                         <div className="flex flex-col">
@@ -319,11 +321,14 @@ function QuickCommands({ onSend }: QuickCommandsProps) {
                                   className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`}
                                 />
                               )}
-                              <span className="font-semibold text-sm text-foreground truncate">{cmd.label}</span>
+                              <span className="font-semibold text-sm text-foreground truncate">
+                                {cmd.label}
+                              </span>
                               <div className="flex-1" />
                               {cmd.category_id && (
                                 <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20">
-                                  {allCategories.find((c) => c.id === cmd.category_id)?.name || cmd.category_id}
+                                  {allCategories.find((c) => c.id === cmd.category_id)?.name ||
+                                    cmd.category_id}
                                 </span>
                               )}
                             </div>
