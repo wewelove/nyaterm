@@ -131,7 +131,7 @@ export function AppearanceTab() {
                     });
                   }}
                 >
-                  <SelectTrigger className="h-9 w-full flex-1 px-3 text-sm shadow-xs focus:ring-1 focus:ring-ring focus:outline-none">
+                  <SelectTrigger className="h-9 min-w-0 w-full flex-1 px-3 text-sm shadow-xs focus:ring-1 focus:ring-ring focus:outline-none">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper">
