@@ -127,12 +127,43 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
             .chain(&settings.ui.activity_bar_layout.right_bottom)
             .map(|s| s.as_str())
             .collect();
+        if !all_ids.contains(&"serialSend") {
+            let right_bottom = &mut settings.ui.activity_bar_layout.right_bottom;
+            if let Some(quick_cmd_index) = right_bottom.iter().position(|id| id == "quickCmdBar") {
+                right_bottom.insert(quick_cmd_index + 1, "serialSend".to_string());
+            } else if let Some(recording_index) =
+                right_bottom.iter().position(|id| id == "recording")
+            {
+                right_bottom.insert(recording_index, "serialSend".to_string());
+            } else if let Some(lock_index) = right_bottom.iter().position(|id| id == "lock") {
+                right_bottom.insert(lock_index, "serialSend".to_string());
+            } else {
+                right_bottom.push("serialSend".to_string());
+            }
+            migrated = true;
+        }
+    }
+
+    {
+        let all_ids: Vec<&str> = settings
+            .ui
+            .activity_bar_layout
+            .left_top
+            .iter()
+            .chain(&settings.ui.activity_bar_layout.left_bottom)
+            .chain(&settings.ui.activity_bar_layout.right_top)
+            .chain(&settings.ui.activity_bar_layout.right_bottom)
+            .map(|s| s.as_str())
+            .collect();
         if !all_ids.contains(&"recording") {
-            settings
-                .ui
-                .activity_bar_layout
-                .right_bottom
-                .insert(1, "recording".to_string());
+            let right_bottom = &mut settings.ui.activity_bar_layout.right_bottom;
+            if let Some(serial_send_index) = right_bottom.iter().position(|id| id == "serialSend") {
+                right_bottom.insert(serial_send_index + 1, "recording".to_string());
+            } else if let Some(lock_index) = right_bottom.iter().position(|id| id == "lock") {
+                right_bottom.insert(lock_index, "recording".to_string());
+            } else {
+                right_bottom.push("recording".to_string());
+            }
             migrated = true;
         }
     }

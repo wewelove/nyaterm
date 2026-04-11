@@ -13,6 +13,7 @@ import {
   MdLink,
   MdLock,
   MdOutlineMonitorHeart,
+  MdSend,
   MdSettings,
   MdTerminal,
 } from "react-icons/md";
@@ -35,6 +36,7 @@ import ResourceMonitor from "./components/panel/ResourceMonitor";
 import SavedConnections from "./components/panel/saved-connections";
 import SecurityAuthPanel from "./components/panel/security-auth";
 import QuickCommands from "./components/terminal/QuickCommands";
+import SerialSendPanel from "./components/terminal/SerialSendPanel";
 import TabBar from "./components/terminal/TabBar";
 import XTerminal from "./components/terminal/XTerminal";
 import { useApp } from "./context/AppContext";
@@ -62,7 +64,7 @@ import type {
 } from "./types/global";
 
 /** Item IDs that are not regular panels — they have special action on click. */
-const NON_PANEL_IDS = new Set(["settings", "lock", "quickCmdBar", "recording"]);
+const NON_PANEL_IDS = new Set(["settings", "lock", "quickCmdBar", "serialSend", "recording"]);
 
 /** Determine which visual side (left/right) a given item currently lives on. */
 function getItemSide(id: string, layout: ActivityBarLayout): "left" | "right" | null {
@@ -499,6 +501,15 @@ function App() {
     [updateUi],
   );
 
+  const handleSerialSendResize = useCallback(
+    (delta: number) => {
+      updateUi((prev) => ({
+        serial_send_height: Math.max(60, Math.min(300, (prev.serial_send_height || 120) - delta)),
+      }));
+    },
+    [updateUi],
+  );
+
   // --- Activity bar item registry & dynamic zone arrays ---
 
   const itemRegistry = useMemo<Record<string, { icon: ReactNode; tooltip: string }>>(
@@ -512,6 +523,7 @@ function App() {
       commandHistory: { icon: <MdHistory />, tooltip: t("panel.commandHistory") },
       resourceMonitor: { icon: <MdOutlineMonitorHeart />, tooltip: t("panel.resourceMonitor") },
       quickCmdBar: { icon: <MdBolt />, tooltip: t("panel.quickCommands") },
+      serialSend: { icon: <MdSend />, tooltip: t("panel.serialSend", "Serial Send") },
       recording: {
         icon: (
           <PiRecordFill
@@ -539,15 +551,38 @@ function App() {
       ...layout.right_top,
       ...layout.right_bottom,
     ];
-    if (allIds.includes("recording")) return;
+    const needsSerialSend = !allIds.includes("serialSend");
+    const needsRecording = !allIds.includes("recording");
+    if (!needsSerialSend && !needsRecording) return;
 
     updateUi((prev) => {
       const nextRightBottom = [...prev.activity_bar_layout.right_bottom];
-      const lockIndex = nextRightBottom.indexOf("lock");
-      if (lockIndex === -1) {
-        nextRightBottom.push("recording");
-      } else {
-        nextRightBottom.splice(lockIndex, 0, "recording");
+
+      if (!nextRightBottom.includes("serialSend")) {
+        const quickCmdIndex = nextRightBottom.indexOf("quickCmdBar");
+        const recordingIndex = nextRightBottom.indexOf("recording");
+        const lockIndex = nextRightBottom.indexOf("lock");
+        if (quickCmdIndex !== -1) {
+          nextRightBottom.splice(quickCmdIndex + 1, 0, "serialSend");
+        } else if (recordingIndex !== -1) {
+          nextRightBottom.splice(recordingIndex, 0, "serialSend");
+        } else if (lockIndex !== -1) {
+          nextRightBottom.splice(lockIndex, 0, "serialSend");
+        } else {
+          nextRightBottom.push("serialSend");
+        }
+      }
+
+      if (!nextRightBottom.includes("recording")) {
+        const serialSendIndex = nextRightBottom.indexOf("serialSend");
+        const lockIndex = nextRightBottom.indexOf("lock");
+        if (serialSendIndex !== -1) {
+          nextRightBottom.splice(serialSendIndex + 1, 0, "recording");
+        } else if (lockIndex !== -1) {
+          nextRightBottom.splice(lockIndex, 0, "recording");
+        } else {
+          nextRightBottom.push("recording");
+        }
       }
 
       return {
@@ -581,9 +616,15 @@ function App() {
   const toggleActiveIds = useMemo(() => {
     const s = new Set<string>();
     if (uiConfig.show_quick_cmd_bar) s.add("quickCmdBar");
+    if (uiConfig.show_serial_send_panel) s.add("serialSend");
     if (activeTab && recordingSessions.has(activeTab.sessionId)) s.add("recording");
     return s;
-  }, [activeTab, recordingSessions, uiConfig.show_quick_cmd_bar]);
+  }, [activeTab, recordingSessions, uiConfig.show_quick_cmd_bar, uiConfig.show_serial_send_panel]);
+
+  useEffect(() => {
+    if (!uiConfig.show_quick_cmd_bar || !uiConfig.show_serial_send_panel) return;
+    updateUi({ show_quick_cmd_bar: false });
+  }, [uiConfig.show_quick_cmd_bar, uiConfig.show_serial_send_panel, updateUi]);
 
   // Unified item select — routes to left or right panel based on current layout position
   const handleItemSelect = useCallback(
@@ -597,7 +638,17 @@ function App() {
         return;
       }
       if (id === "quickCmdBar") {
-        updateUi((prev) => ({ show_quick_cmd_bar: !prev.show_quick_cmd_bar }));
+        updateUi((prev) => ({
+          show_quick_cmd_bar: !prev.show_quick_cmd_bar,
+          ...(prev.show_serial_send_panel ? { show_serial_send_panel: false } : {}),
+        }));
+        return;
+      }
+      if (id === "serialSend") {
+        updateUi((prev) => ({
+          show_serial_send_panel: !prev.show_serial_send_panel,
+          ...(prev.show_quick_cmd_bar ? { show_quick_cmd_bar: false } : {}),
+        }));
         return;
       }
       if (id === "recording") {
@@ -668,6 +719,13 @@ function App() {
   // --- Panel content rendering (side-independent) ---
 
   const activeSessionId = activeTab?.connecting ? null : (activeTab?.sessionId ?? null);
+  const activeBottomPanel = uiConfig.show_serial_send_panel
+    ? "serialSend"
+    : uiConfig.show_quick_cmd_bar
+      ? "quickCmdBar"
+      : null;
+  const canShowSerialSendPanel =
+    !!activeTab && activeTab.type === "Serial" && !activeTab.connecting;
 
   const handleTransferResize = useCallback(
     (delta: number) => {
@@ -881,8 +939,8 @@ function App() {
               )}
             </div>
 
-            {/* Quick Commands Bar */}
-            {uiConfig.show_quick_cmd_bar && (
+            {/* Bottom Panel: only one window can be visible at a time */}
+            {activeBottomPanel === "quickCmdBar" && (
               <>
                 <ResizeHandle direction="vertical" onResize={handleQuickCmdResize} />
                 <div
@@ -890,6 +948,35 @@ function App() {
                   className="shrink-0 overflow-hidden"
                 >
                   <QuickCommands onSend={handleHistoryCommand} />
+                </div>
+              </>
+            )}
+
+            {activeBottomPanel === "serialSend" && (
+              <>
+                <ResizeHandle direction="vertical" onResize={handleSerialSendResize} />
+                <div
+                  style={{ height: uiConfig.serial_send_height || 120 }}
+                  className="shrink-0 overflow-hidden"
+                >
+                  {canShowSerialSendPanel && activeTab ? (
+                    <SerialSendPanel sessionId={activeTab.sessionId} />
+                  ) : (
+                    <div
+                      className="h-full flex flex-col items-center justify-center gap-1 px-4 text-center"
+                      style={{
+                        backgroundColor: "var(--df-bg-panel)",
+                        color: "var(--df-text-dimmed)",
+                      }}
+                    >
+                      <div className="text-xs font-medium" style={{ color: "var(--df-text)" }}>
+                        {t("serialSend.unavailable")}
+                      </div>
+                      <div className="text-[0.6875rem]">
+                        {t("serialSend.unavailableDesc")}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}

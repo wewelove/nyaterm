@@ -369,6 +369,7 @@
     "noCommandsYet": "暂无命令记录",
     "noSavedConnections": "暂无已保存的连接",
     "quickCommands": "快捷命令",
+    "serialSend": "串口发送",
     "resourceMonitor": "资源监控",
     "resourceMonitorDisabled": "请在设置中启用「显示远程资源统计」以使用此功能",
     "resourceMonitorError": "获取资源统计失败",
@@ -384,6 +385,17 @@
     "passwordPlaceholder": "输入密码",
     "passwordUnchanged": "留空保持当前密码不变",
     "title": "密码"
+  },
+  "serialSend": {
+    "title": "串口发送",
+    "text": "文本",
+    "hex": "十六进制",
+    "textPlaceholder": "输入要发送的文本...",
+    "hexPlaceholder": "例如 48 65 6C 6C 6F",
+    "hexError": "无效的十六进制输入，请使用十六进制字符（0-9, A-F），以空格分隔。",
+    "noLineEnding": "无",
+    "unavailable": "串口发送仅适用于串口会话",
+    "unavailableDesc": "切换到串口标签页后即可在这里发送文本或十六进制数据。"
   },
   "quickCommands": {
     "add": "添加",

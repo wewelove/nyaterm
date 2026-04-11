@@ -172,6 +172,8 @@ export interface UiConfig {
   /** ID of whichever panel is currently open on the right side. */
   active_right_panel: string | null;
   show_quick_cmd_bar: boolean;
+  show_serial_send_panel: boolean;
+  serial_send_height: number;
   zoom_level: number;
   language?: string;
   show_remote_stats: boolean;

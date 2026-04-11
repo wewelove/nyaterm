@@ -58,6 +58,7 @@ fn default_right_top() -> Vec<String> {
 fn default_right_bottom() -> Vec<String> {
     vec![
         "quickCmdBar".to_string(),
+        "serialSend".to_string(),
         "recording".to_string(),
         "lock".to_string(),
     ]
@@ -80,6 +81,10 @@ pub struct UiConfig {
     pub active_right_panel: Option<String>,
     #[serde(default = "default_true_fn")]
     pub show_quick_cmd_bar: bool,
+    #[serde(default = "default_false")]
+    pub show_serial_send_panel: bool,
+    #[serde(default = "default_serial_send_height")]
+    pub serial_send_height: f64,
     #[serde(default = "default_zoom")]
     pub zoom_level: f64,
     #[serde(default = "default_language")]
@@ -132,6 +137,10 @@ fn default_transfer_height() -> f64 {
     180.0
 }
 
+fn default_serial_send_height() -> f64 {
+    120.0
+}
+
 fn default_sort_mode() -> String {
     "default".to_string()
 }
@@ -150,6 +159,8 @@ impl Default for UiConfig {
             active_left_panel: default_active_left_panel(),
             active_right_panel: default_active_right_panel(),
             show_quick_cmd_bar: true,
+            show_serial_send_panel: false,
+            serial_send_height: default_serial_send_height(),
             zoom_level: default_zoom(),
             language: default_language(),
             show_remote_stats: false,
