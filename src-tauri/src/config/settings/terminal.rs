@@ -52,16 +52,20 @@ pub struct TerminalSettings {
     pub keep_alive_interval: u32,
     #[serde(default = "default_false")]
     pub hardware_acceleration: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub keyword_highlights_enabled: bool,
     #[serde(default = "default_false")]
     pub keyword_highlights_across_wrapped_lines: bool,
     #[serde(default)]
     pub keyword_highlights: Vec<KeywordHighlightRule>,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub action_links_enabled: bool,
     #[serde(default)]
     pub action_links_matchers: ActionLinksMatcherSettings,
+    #[serde(default = "default_false")]
+    pub show_line_numbers: bool,
+    #[serde(default = "default_false")]
+    pub show_timestamps: bool,
 }
 
 fn default_scrollback() -> u32 {
@@ -77,11 +81,13 @@ impl Default for TerminalSettings {
             scrollback_lines: default_scrollback(),
             keep_alive_interval: default_keep_alive(),
             hardware_acceleration: false,
-            keyword_highlights_enabled: true,
+            keyword_highlights_enabled: false,
             keyword_highlights_across_wrapped_lines: false,
             keyword_highlights: Vec::new(),
-            action_links_enabled: true,
+            action_links_enabled: false,
             action_links_matchers: ActionLinksMatcherSettings::default(),
+            show_line_numbers: false,
+            show_timestamps: false,
         }
     }
 }

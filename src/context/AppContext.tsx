@@ -181,6 +181,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
       archive: true,
       host_port: true,
     },
+    show_line_numbers: false,
+    show_timestamps: false,
   },
   interaction: {
     copy_on_select: false,

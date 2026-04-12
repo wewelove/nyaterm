@@ -184,6 +184,9 @@ function App() {
   // Recording state: tracks which sessions are currently being recorded
   const [recordingSessions, setRecordingSessions] = useState<Set<string>>(new Set());
 
+  // Unread output tracking: session IDs with unread terminal output
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(new Set());
+
   // Child window modal overlay
   const [childWindowCount, setChildWindowCount] = useState(0);
 
@@ -372,6 +375,49 @@ function App() {
     );
     previousActiveTabIdRef.current = activeTabId;
   }, [activeTabId, tabs]);
+
+  // Listen for background session output and mark as unread
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { sessionId } = (e as CustomEvent<{ sessionId: string }>).detail;
+      const tab = findTabBySessionId(tabs, sessionId);
+      if (tab && tab.id !== activeTabId) {
+        setUnreadSessionIds((prev) => {
+          if (prev.has(sessionId)) return prev;
+          const next = new Set(prev);
+          next.add(sessionId);
+          return next;
+        });
+      }
+    };
+    window.addEventListener("dragonfly:session-output", handler);
+    return () => window.removeEventListener("dragonfly:session-output", handler);
+  }, [tabs, activeTabId]);
+
+  // Clear unread state when switching to a tab
+  useEffect(() => {
+    if (!activeTabId) return;
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab) return;
+    const panes = collectSessionPanes(tab.root);
+    const paneSessionIds = new Set(panes.map((p) => p.sessionId));
+    setUnreadSessionIds((prev) => {
+      const hasAny = [...prev].some((id) => paneSessionIds.has(id));
+      if (!hasAny) return prev;
+      const next = new Set(prev);
+      for (const id of paneSessionIds) next.delete(id);
+      return next;
+    });
+  }, [activeTabId, tabs]);
+
+  const unreadTabIds = useMemo(() => {
+    const result = new Set<string>();
+    for (const sessionId of unreadSessionIds) {
+      const tab = findTabBySessionId(tabs, sessionId);
+      if (tab) result.add(tab.id);
+    }
+    return result;
+  }, [unreadSessionIds, tabs]);
 
   const handleSelectLeafTab = useCallback(
     (leafId: string, tabId: string) => {
@@ -1348,11 +1394,13 @@ function App() {
                   </div>
                 </div>
               ) : terminalWindows ? (
-                <TabWindowsWorkspace
-                  layout={terminalWindows}
-                  tabsById={tabsById}
-                  onSelectTab={handleSelectLeafTab}
-                  onAddTab={handleAddTabFromLeaf}
+                  <TabWindowsWorkspace
+                    layout={terminalWindows}
+                    tabsById={tabsById}
+                    focusedTabId={activeTabId}
+                    unreadTabIds={unreadTabIds}
+                    onSelectTab={handleSelectLeafTab}
+                    onAddTab={handleAddTabFromLeaf}
                   onTabClose={handleCloseWorkspaceTab}
                   onDuplicateSession={handleDuplicateSession}
                   onReconnectSession={handleReconnectSession}

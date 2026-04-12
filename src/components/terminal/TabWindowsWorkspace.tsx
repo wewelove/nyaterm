@@ -13,6 +13,8 @@ import TabBar from "./TabBar";
 interface TabWindowsWorkspaceProps {
   layout: TerminalWindowNode | null;
   tabsById: Map<string, Tab>;
+  focusedTabId?: string | null;
+  unreadTabIds?: Set<string>;
   onSelectTab: (leafId: string, tabId: string) => void;
   onAddTab: (leafId: string) => void;
   onTabClose: (tab: Tab) => void | Promise<void>;
@@ -34,6 +36,8 @@ interface TabWindowsWorkspaceProps {
 function SplitWindow({
   split,
   tabsById,
+  focusedTabId,
+  unreadTabIds,
   onSelectTab,
   onAddTab,
   onTabClose,
@@ -78,6 +82,8 @@ function SplitWindow({
         <WindowNodeView
           node={split.first}
           tabsById={tabsById}
+          focusedTabId={focusedTabId}
+          unreadTabIds={unreadTabIds}
           onSelectTab={onSelectTab}
           onAddTab={onAddTab}
           onTabClose={onTabClose}
@@ -101,6 +107,8 @@ function SplitWindow({
         <WindowNodeView
           node={split.second}
           tabsById={tabsById}
+          focusedTabId={focusedTabId}
+          unreadTabIds={unreadTabIds}
           onSelectTab={onSelectTab}
           onAddTab={onAddTab}
           onTabClose={onTabClose}
@@ -126,6 +134,8 @@ function SplitWindow({
 function LeafWindow({
   leaf,
   tabsById,
+  focusedTabId,
+  unreadTabIds,
   onSelectTab,
   onAddTab,
   onTabClose,
@@ -171,6 +181,8 @@ function LeafWindow({
       <TabBar
         tabs={tabs}
         activeTabId={activeTab?.id ?? null}
+        focusedTabId={focusedTabId}
+        unreadTabIds={unreadTabIds}
         onTabChange={(tabId) => onSelectTab(leaf.id, tabId)}
         onTabClose={onTabClose}
         onAddTab={() => onAddTab(leaf.id)}
@@ -207,6 +219,8 @@ function LeafWindow({
 function WindowNodeView({
   node,
   tabsById,
+  focusedTabId,
+  unreadTabIds,
   onSelectTab,
   onAddTab,
   onTabClose,
@@ -231,6 +245,8 @@ function WindowNodeView({
       <SplitWindow
         split={node}
         tabsById={tabsById}
+        focusedTabId={focusedTabId}
+        unreadTabIds={unreadTabIds}
         onSelectTab={onSelectTab}
         onAddTab={onAddTab}
         onTabClose={onTabClose}
@@ -255,6 +271,8 @@ function WindowNodeView({
     <LeafWindow
       leaf={node}
       tabsById={tabsById}
+      focusedTabId={focusedTabId}
+      unreadTabIds={unreadTabIds}
       onSelectTab={onSelectTab}
       onAddTab={onAddTab}
       onTabClose={onTabClose}

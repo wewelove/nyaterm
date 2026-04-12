@@ -427,6 +427,8 @@ export interface TerminalSettings {
   keyword_highlights: KeywordHighlightRule[];
   action_links_enabled: boolean;
   action_links_matchers: ActionLinksMatcherSettings;
+  show_line_numbers: boolean;
+  show_timestamps: boolean;
 }
 
 export interface TransferSettings {
