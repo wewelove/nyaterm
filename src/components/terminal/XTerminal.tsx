@@ -345,9 +345,6 @@ export default function XTerminal({
             return false;
         }
       }
-
-      if (e.key === "F11") return false;
-
       return true;
     });
 
@@ -433,9 +430,13 @@ export default function XTerminal({
         terminal.focus();
       });
 
-      await invoke("attach_session", { sessionId });
+      try {
+        await invoke("attach_session", { sessionId });
+      } catch {
+        // The session may already be gone during mount/unmount races.
+      }
     };
-    setupListeners();
+    void setupListeners();
 
     const dataDisposable = terminal.onData((data) => {
       if (disconnectedRef.current) {
@@ -450,8 +451,12 @@ export default function XTerminal({
             })
             .catch((err) => {
               reconnectingRef.current = false;
-              terminal.write(`\r\n\x1b[31m[${tRef.current("terminal.reconnectFailed")}: ${err}]\x1b[0m\r\n`);
-              terminal.write(`\x1b[33m[${tRef.current("terminal.pressEnterToReconnect")}]\x1b[0m\r\n`);
+              terminal.write(
+                `\r\n\x1b[31m[${tRef.current("terminal.reconnectFailed")}: ${err}]\x1b[0m\r\n`,
+              );
+              terminal.write(
+                `\x1b[33m[${tRef.current("terminal.pressEnterToReconnect")}]\x1b[0m\r\n`,
+              );
             });
         }
         return;
