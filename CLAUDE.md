@@ -30,7 +30,9 @@ Example single-test command:
 - `cargo test --manifest-path src-tauri/Cargo.toml normalizes_trailing_slashes_without_breaking_roots`
 
 ### Docs site
-- `pnpm --dir docs-site start` — run the Docusaurus docs site locally
+- `pnpm --dir docs-site start` — build and serve the docs site locally for all locales (`/` and `/en/`)
+- `pnpm --dir docs-site start:zh` — run the zh-CN docs dev server with hot reload
+- `pnpm --dir docs-site start:en` — run the English docs dev server with hot reload
 - `pnpm --dir docs-site build` — build the docs site
 
 ## Big-picture architecture

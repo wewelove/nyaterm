@@ -105,6 +105,15 @@ pnpm tauri dev
 pnpm --dir docs-site start
 ```
 
+This builds and serves all locales, so both `/` and `/en/` are available.
+
+For locale-specific hot reload during editing:
+
+```bash
+pnpm --dir docs-site start:zh
+pnpm --dir docs-site start:en
+```
+
 ### Build
 
 ```bash
