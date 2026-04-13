@@ -92,7 +92,7 @@ const BUILTIN_PATTERNS = {
     "\\b\\d+(?:\\.\\d+)?\\s*(?:[kmgtep]i?b|b|bytes?|[kmgtep]bps)\\b"
   ],
   duration: [
-    "\\b[-+]?\\d+(?:\\.\\d+)?\\s*(?:[nµum]?s|sec|m|mins?|minutes|h|hrs?|hours|d|days|weeks|months|years)\\b"
+    "\\b[-+]?\\d+(?:\\.\\d+)?\\s*(?:ns|µs|us|ms|sec|mins?|minutes|hrs?|hours|days|weeks|months|years)\\b"
   ],
 } as const;
 
