@@ -6,10 +6,12 @@ import {
   MdComputer,
   MdMonitorHeart,
   MdOutlineLocalFireDepartment,
+  MdRefresh,
   MdStorage,
   MdSwapVert,
 } from "react-icons/md";
 import PanelHeader from "@/components/layout/PanelHeader";
+import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/AppContext";
 import { invoke } from "@/lib/invoke";
 import type { RemoteStats } from "@/types/global";
@@ -165,6 +167,7 @@ export default function ResourceMonitor({ activeSessionId }: ResourceMonitorProp
   const { appSettings } = useApp();
   const [stats, setStats] = useState<RemoteStats | null>(null);
   const [error, setError] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchingRef = useRef(false);
   const failCountRef = useRef(0);
@@ -172,27 +175,32 @@ export default function ResourceMonitor({ activeSessionId }: ResourceMonitorProp
   const enabled = appSettings.ui.show_remote_stats ?? false;
   const pollIntervalMs = Math.max(1, appSettings.ui.remote_stats_interval ?? 3) * 1000;
 
-  const fetchStats = useCallback((sessionId: string) => {
+  const fetchStats = useCallback(async (sessionId: string) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
+    setIsFetching(true);
 
-    invoke<RemoteStats>("get_remote_stats", { sessionId })
-      .then((data) => {
-        setStats(data);
-        setError(false);
-        failCountRef.current = 0;
-      })
-      .catch(() => {
-        failCountRef.current += 1;
-        setError(true);
-        if (failCountRef.current >= MAX_CONSECUTIVE_FAILURES) {
-          setStats(null);
-        }
-      })
-      .finally(() => {
-        fetchingRef.current = false;
-      });
+    try {
+      const data = await invoke<RemoteStats>("get_remote_stats", { sessionId });
+      setStats(data);
+      setError(false);
+      failCountRef.current = 0;
+    } catch {
+      failCountRef.current += 1;
+      setError(true);
+      if (failCountRef.current >= MAX_CONSECUTIVE_FAILURES) {
+        setStats(null);
+      }
+    } finally {
+      fetchingRef.current = false;
+      setIsFetching(false);
+    }
   }, []);
+
+  const handleRefresh = useCallback(() => {
+    if (!enabled || !activeSessionId) return;
+    void fetchStats(activeSessionId);
+  }, [activeSessionId, enabled, fetchStats]);
 
   useEffect(() => {
     if (pollRef.current) {
@@ -220,7 +228,22 @@ export default function ResourceMonitor({ activeSessionId }: ResourceMonitorProp
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: "var(--df-bg-panel)" }}>
-      <PanelHeader title={t("panel.resourceMonitor")} />
+      <PanelHeader
+        title={t("panel.resourceMonitor")}
+        actions={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground disabled:opacity-40"
+            onClick={handleRefresh}
+            disabled={!enabled || !activeSessionId || isFetching}
+            aria-label={t("resourceMonitor.refresh")}
+            title={t("resourceMonitor.refresh")}
+          >
+            <MdRefresh className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto p-3 terminal-scroll">
         {!activeSessionId ? (
