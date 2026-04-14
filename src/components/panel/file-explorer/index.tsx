@@ -7,6 +7,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useRef,
@@ -119,6 +120,18 @@ function ToolbarIconButton({ label, children, ...props }: ToolbarIconButtonProps
   );
 }
 
+type FileExplorerSessionCache = {
+  files: FileEntry[];
+  currentPath: string;
+  homeDir: string;
+  history: string[];
+  historyIndex: number;
+};
+
+type LoadDirectoryOptions = {
+  history?: "push" | "preserve";
+};
+
 /** Remote file browser for active SSH session. Lists dirs/files, supports navigation. */
 export default function FileExplorer({ activeSessionId, activeSessionType }: FileExplorerProps) {
   const { t } = useTranslation();
@@ -155,16 +168,32 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
   const homeDirRef = useRef("");
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const pathInputRef = useRef<HTMLInputElement | null>(null);
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const dragSelectionRef = useRef<{
+    anchor: string;
+    baseSelection: Set<string>;
+    additive: boolean;
+  } | null>(null);
 
-  const sessionCacheRef = useRef<
-    Map<string, { files: FileEntry[]; currentPath: string; homeDir: string }>
-  >(new Map());
+  const sessionCacheRef = useRef<Map<string, FileExplorerSessionCache>>(new Map());
   const prevSessionIdRef = useRef<string | null>(null);
   const pendingManualRefreshUploadsRef = useRef<Set<string>>(new Set());
 
   filesRef.current = files;
   currentPathRef.current = currentPath;
   homeDirRef.current = homeDir;
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      dragSelectionRef.current = null;
+    };
+
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   // Resolve whether backend terminal-path tracking is available for this session.
   useEffect(() => {
@@ -227,10 +256,25 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     };
   }, []);
 
+  const pushDirectoryHistory = useCallback((path: string) => {
+    const normalizedPath = normalizeDirectoryPath(path);
+    const currentIndex = historyIndexRef.current;
+    const currentEntry = currentIndex >= 0 ? historyRef.current[currentIndex] : null;
+    if (currentEntry === normalizedPath) {
+      return;
+    }
+
+    const nextHistory = historyRef.current.slice(0, currentIndex + 1);
+    nextHistory.push(normalizedPath);
+    historyRef.current = nextHistory;
+    historyIndexRef.current = nextHistory.length - 1;
+  }, []);
+
   const loadDirectory = useCallback(
-    async (path: string) => {
-      if (!canBrowseFiles || !activeSessionId) return;
+    async (path: string, options?: LoadDirectoryOptions) => {
+      if (!canBrowseFiles || !activeSessionId) return false;
       const normalizedPath = normalizeDirectoryPath(path);
+      const historyMode = options?.history ?? "push";
       setDirectoryLoading(true);
       setError(null);
 
@@ -243,15 +287,37 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
           if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
+
+        const pathChanged = normalizeDirectoryPath(currentPathRef.current) !== normalizedPath;
+        if (historyMode === "push") {
+          pushDirectoryHistory(normalizedPath);
+        }
+
         setFiles(entries);
         setCurrentPath(normalizedPath);
+        setSelectedFiles((prev) => {
+          if (pathChanged) {
+            lastSelectedRef.current = null;
+            return new Set();
+          }
+
+          const entryNames = new Set(entries.map((entry) => entry.name));
+          const next = new Set([...prev].filter((name) => entryNames.has(name)));
+          if (lastSelectedRef.current && !entryNames.has(lastSelectedRef.current)) {
+            lastSelectedRef.current = null;
+          }
+          return next;
+        });
 
         const cached = sessionCacheRef.current.get(activeSessionId);
         sessionCacheRef.current.set(activeSessionId, {
           files: entries,
           currentPath: normalizedPath,
           homeDir: cached?.homeDir ?? homeDirRef.current,
+          history: [...historyRef.current],
+          historyIndex: historyIndexRef.current,
         });
+        return true;
       } catch (e) {
         const msg = String(e);
         if (filesRef.current.length > 0) {
@@ -259,11 +325,12 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         } else {
           setError(msg);
         }
+        return false;
       } finally {
         setDirectoryLoading(false);
       }
     },
-    [activeSessionId, canBrowseFiles],
+    [activeSessionId, canBrowseFiles, pushDirectoryHistory],
   );
 
   useEffect(() => {
@@ -275,6 +342,8 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         files: filesRef.current,
         currentPath: currentPathRef.current,
         homeDir: homeDirRef.current,
+        history: [...historyRef.current],
+        historyIndex: historyIndexRef.current,
       });
     }
     prevSessionIdRef.current = activeSessionId;
@@ -285,6 +354,9 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
       setHomeDir("");
       setError(null);
       setSelectedFiles(new Set());
+      historyRef.current = [];
+      historyIndexRef.current = -1;
+      lastSelectedRef.current = null;
       return;
     }
 
@@ -293,9 +365,18 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
       setFiles(cached.files);
       setCurrentPath(cached.currentPath);
       setHomeDir(cached.homeDir);
+      setSelectedFiles(new Set());
       setError(null);
+      historyRef.current = [...cached.history];
+      historyIndexRef.current = cached.historyIndex;
+      lastSelectedRef.current = null;
       return;
     }
+
+    historyRef.current = [];
+    historyIndexRef.current = -1;
+    lastSelectedRef.current = null;
+    setSelectedFiles(new Set());
 
     let cancelled = false;
     (async () => {
@@ -338,7 +419,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         return;
       }
 
-      if (status === "completed" || status === "error") {
+      if (status === "completed" || status === "error" || status === "cancelled") {
         pendingManualRefreshUploadsRef.current.delete(uploadKey);
       }
 
@@ -352,47 +433,115 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     };
   }, [activeSessionId, canBrowseFiles, currentPath, loadDirectory]);
 
-  const handleSelect = useCallback(
-    (entry: FileEntry, event: React.MouseEvent) => {
-      listContainerRef.current?.focus();
-      setSelectedFiles((prev) => {
-        const isContextMenuEvent = event.button === 2 || event.type === "contextmenu";
-        if (isContextMenuEvent) {
-          if (prev.has(entry.name)) {
-            return prev;
-          }
-          lastSelectedRef.current = entry.name;
-          return new Set([entry.name]);
-        }
+  const getRangeSelection = useCallback(
+    (
+      anchorName: string,
+      targetName: string,
+      baseSelection = new Set<string>(),
+      additive = false,
+    ) => {
+      const names = files.map((file) => file.name);
+      const anchorIndex = names.indexOf(anchorName);
+      const targetIndex = names.indexOf(targetName);
+      if (anchorIndex < 0 || targetIndex < 0) {
+        return additive ? new Set(baseSelection) : new Set<string>();
+      }
 
-        if (event.ctrlKey || event.metaKey) {
-          const next = new Set(prev);
+      const [start, end] =
+        anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+      const next = additive ? new Set(baseSelection) : new Set<string>();
+      for (let index = start; index <= end; index += 1) {
+        next.add(names[index]);
+      }
+      return next;
+    },
+    [files],
+  );
+
+  const handleSelectionStart = useCallback(
+    (entry: FileEntry, event: ReactMouseEvent) => {
+      if (event.button !== 0) return;
+
+      listContainerRef.current?.focus();
+      const additive = event.ctrlKey || event.metaKey;
+      setSelectedFiles((prev) => {
+        const hasRangeAnchor = event.shiftKey && !!lastSelectedRef.current;
+        const anchor = hasRangeAnchor ? lastSelectedRef.current ?? entry.name : entry.name;
+        const baseSelection = additive ? new Set(prev) : new Set<string>();
+        let next: Set<string>;
+
+        if (hasRangeAnchor) {
+          next = getRangeSelection(anchor, entry.name, baseSelection, additive);
+        } else if (additive) {
+          next = new Set(prev);
           if (next.has(entry.name)) {
             next.delete(entry.name);
           } else {
             next.add(entry.name);
           }
-          lastSelectedRef.current = entry.name;
-          return next;
+        } else {
+          next = new Set([entry.name]);
         }
-        if (event.shiftKey && lastSelectedRef.current) {
-          const names = files.map((f) => f.name);
-          const lastIdx = names.indexOf(lastSelectedRef.current);
-          const curIdx = names.indexOf(entry.name);
-          if (lastIdx >= 0 && curIdx >= 0) {
-            const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
-            const next = new Set(prev);
-            for (let i = start; i <= end; i++) {
-              next.add(names[i]);
-            }
-            return next;
-          }
-        }
+
+        dragSelectionRef.current = {
+          anchor,
+          baseSelection,
+          additive,
+        };
         lastSelectedRef.current = entry.name;
-        return new Set([entry.name]);
+        return next;
       });
     },
-    [files],
+    [getRangeSelection],
+  );
+
+  const handleSelectionDrag = useCallback(
+    (entry: FileEntry, event: ReactMouseEvent) => {
+      const dragSelection = dragSelectionRef.current;
+      if (!dragSelection || (event.buttons & 1) !== 1) {
+        return;
+      }
+
+      setSelectedFiles(
+        getRangeSelection(
+          dragSelection.anchor,
+          entry.name,
+          dragSelection.baseSelection,
+          dragSelection.additive,
+        ),
+      );
+      lastSelectedRef.current = entry.name;
+    },
+    [getRangeSelection],
+  );
+
+  const handleContextMenuSelection = useCallback((entry: FileEntry, _event: ReactMouseEvent) => {
+    listContainerRef.current?.focus();
+    setSelectedFiles((prev) => {
+      if (prev.has(entry.name)) {
+        return prev;
+      }
+      lastSelectedRef.current = entry.name;
+      return new Set([entry.name]);
+    });
+  }, []);
+
+  const navigateHistory = useCallback(
+    async (direction: -1 | 1) => {
+      const nextIndex = historyIndexRef.current + direction;
+      const nextPath = historyRef.current[nextIndex];
+      if (!nextPath) {
+        return;
+      }
+
+      const previousIndex = historyIndexRef.current;
+      historyIndexRef.current = nextIndex;
+      const loaded = await loadDirectory(nextPath, { history: "preserve" });
+      if (!loaded) {
+        historyIndexRef.current = previousIndex;
+      }
+    },
+    [loadDirectory],
   );
 
   const handleItemClick = (entry: FileEntry) => {
@@ -401,6 +550,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
       loadDirectory(newPath);
     } else {
       setSelectedFiles(new Set([entry.name]));
+      lastSelectedRef.current = entry.name;
     }
   };
 
@@ -455,6 +605,31 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
   };
 
   const handleListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable ||
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT")
+    ) {
+      return;
+    }
+
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "a"
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextSelection = new Set(files.map((entry) => entry.name));
+      setSelectedFiles(nextSelection);
+      lastSelectedRef.current = files[0]?.name ?? null;
+      return;
+    }
+
     if (
       event.key !== "Delete" ||
       event.altKey ||
@@ -463,17 +638,6 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
       event.shiftKey ||
       selectedFiles.size === 0 ||
       deleteDialogData
-    ) {
-      return;
-    }
-
-    const target = event.target;
-    if (
-      target instanceof HTMLElement &&
-      (target.isContentEditable ||
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.tagName === "SELECT")
     ) {
       return;
     }
@@ -489,6 +653,30 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     parts.pop();
     loadDirectory(parts.join("/") || "/");
   };
+
+  const handlePanelMouseDownCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (event.button === 3 || event.button === 4) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, []);
+
+  const handlePanelMouseUpCapture = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (!canBrowseFiles) return;
+
+      if (event.button === 3) {
+        event.preventDefault();
+        event.stopPropagation();
+        void navigateHistory(-1);
+      } else if (event.button === 4) {
+        event.preventDefault();
+        event.stopPropagation();
+        void navigateHistory(1);
+      }
+    },
+    [canBrowseFiles, navigateHistory],
+  );
 
   const handleSyncCwd = useCallback(async () => {
     if (!activeSessionId) return;
@@ -737,6 +925,8 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     <aside
       className="h-full flex flex-col overflow-hidden"
       style={{ backgroundColor: "var(--df-bg-panel)" }}
+      onMouseDownCapture={handlePanelMouseDownCapture}
+      onMouseUpCapture={handlePanelMouseUpCapture}
     >
       <PanelHeader title={t("panel.fileExplorer")} />
 
@@ -928,7 +1118,9 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
                     entry={entry}
                     isSelected={selectedFiles.has(entry.name)}
                     activeSessionId={activeSessionId}
-                    onSelect={handleSelect}
+                    onSelectionStart={handleSelectionStart}
+                    onSelectionDrag={handleSelectionDrag}
+                    onContextMenuSelect={handleContextMenuSelection}
                     onItemClick={handleItemClick}
                     onOpenDefault={handleOpenDefault}
                     onRefresh={() => loadDirectory(currentPath)}
