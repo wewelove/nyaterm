@@ -21,8 +21,13 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
   const {
     isDragEnabled,
     dragTarget,
+    selectedConnectionIds,
     handleConnect,
+    handleConnectOnly,
+    handleConnectSelected,
     handleCopyConnection,
+    handleConnectionSelectionStart,
+    handleConnectionContextMenu,
     onEditConnection,
     setDeleteTarget,
     setRenamingConn,
@@ -40,7 +45,15 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
   const showAfter = isTarget && dragTarget.position === "after";
   const iconDef = conn.icon ? CONNECTION_ICONS[conn.icon] : null;
   const ConnIcon = iconDef ? iconDef.icon : FaServer;
-  const iconStyle = iconDef ? { color: iconDef.color } : undefined;
+  const isSelected = selectedConnectionIds.has(conn.id);
+  const connectLabel =
+    isSelected && selectedConnectionIds.size > 1
+      ? t("savedConnections.connectSelected")
+      : t("savedConnections.connect");
+  const directConnectLabel = t("savedConnections.connect");
+  const iconStyle = iconDef
+    ? { color: isSelected ? "var(--df-primary)" : iconDef.color }
+    : undefined;
   const indentLeft = indented ? `${8 + depth * 16 + 16}px` : "0.5rem";
 
   return (
@@ -67,8 +80,15 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
           )}
           <div
             className={`group/item relative flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer transition-colors df-hover ${isTarget && dragTarget.position === "inside" ? "ring-1 ring-primary/60" : ""}`}
-            style={indented ? { paddingLeft: `${8 + depth * 16 + 16}px` } : undefined}
-            onDoubleClick={() => handleConnect(conn)}
+            style={{
+              ...(indented ? { paddingLeft: `${8 + depth * 16 + 16}px` } : undefined),
+              backgroundColor: isSelected
+                ? "color-mix(in srgb, var(--df-primary) 10%, transparent)"
+                : undefined,
+            }}
+            onMouseDown={(e) => handleConnectionSelectionStart(conn, e)}
+            onContextMenu={(e) => handleConnectionContextMenu(conn, e)}
+            onDoubleClick={() => handleConnectOnly(conn)}
           >
             <ConnIcon
               className={`text-sm shrink-0${iconDef ? "" : " text-emerald-500/70"}`}
@@ -76,7 +96,7 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
             />
             <span
               className="flex-1 min-w-0 truncate text-xs font-medium pr-16"
-              style={{ color: "var(--df-text)" }}
+              style={{ color: isSelected ? "var(--df-primary)" : "var(--df-text)" }}
             >
               {conn.name}
             </span>
@@ -87,10 +107,11 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
               <button
                 className="p-0.5 cursor-pointer transition-colors hover:opacity-80"
                 style={{ color: "var(--df-text-dimmed)" }}
-                title={t("savedConnections.connect")}
+                title={directConnectLabel}
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleConnect(conn);
+                  handleConnectOnly(conn);
                 }}
               >
                 <MdLink className="text-sm cursor-pointer" />
@@ -99,6 +120,7 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
                 className="p-0.5 cursor-pointer transition-colors hover:opacity-80"
                 style={{ color: "var(--df-text-dimmed)" }}
                 title={t("savedConnections.edit")}
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   onEditConnection(conn);
@@ -110,6 +132,7 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
                 className="p-0.5 cursor-pointer hover:text-red-400 transition-colors"
                 style={{ color: "var(--df-text-dimmed)" }}
                 title={t("savedConnections.delete")}
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   setDeleteTarget(conn);
@@ -128,9 +151,17 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[160px]">
-        <ContextMenuItem onClick={() => handleConnect(conn)}>
+        <ContextMenuItem
+          onClick={() => {
+            if (isSelected && selectedConnectionIds.size > 1) {
+              handleConnectSelected();
+              return;
+            }
+            handleConnect(conn);
+          }}
+        >
           <MdLink className="text-[0.875rem] text-muted-foreground mr-2" />
-          {t("savedConnections.connect")}
+          {connectLabel}
         </ContextMenuItem>
         <ContextMenuItem onClick={() => onEditConnection(conn)}>
           <MdEdit className="text-[0.875rem] text-muted-foreground mr-2" />

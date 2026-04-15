@@ -1,11 +1,13 @@
-import { type ComponentProps, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { BiExport, BiImport } from "react-icons/bi";
 import {
   MdAdd,
   MdClose,
   MdCreateNewFolder,
   MdDeleteSweep,
-  MdFileUpload,
+  MdLink,
+  MdMoreVert,
   MdSearch,
   MdSort,
   MdSortByAlpha,
@@ -16,6 +18,7 @@ import DeleteConnectionDialog from "@/components/dialog/connections/DeleteConnec
 import DeleteFolderDialog from "@/components/dialog/connections/DeleteFolderDialog";
 import FolderDialog from "@/components/dialog/connections/FolderDialog";
 import ImportDialog from "@/components/dialog/connections/ImportDialog";
+import OpenGroupConnectionsDialog from "@/components/dialog/connections/OpenGroupConnectionsDialog";
 import RenameConnectionDialog from "@/components/dialog/connections/RenameConnectionDialog";
 import PanelHeader from "@/components/layout/PanelHeader";
 import { Button } from "@/components/ui/button";
@@ -26,8 +29,16 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/context/AppContext";
+import { useConfigTransfer } from "@/hooks/useConfigTransfer";
 import { getErrorMessage, shouldPromptConnectionEditOnFailure } from "@/lib/errors";
 import { invoke } from "@/lib/invoke";
 import { logger } from "@/lib/logger";
@@ -86,12 +97,15 @@ export default function SavedConnections({
     updateUi,
   } = useApp();
   const { t } = useTranslation();
+  const { handleExport, passwordAlert } = useConfigTransfer();
 
   // ── UI state ──────────────────────────────────────────────────────────────
   // Tracks in-flight connections to prevent duplicate invocations (not shown in UI)
-  const connectingIdRef = useRef<string | null>(null);
+  const connectingIdsRef = useRef<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState("");
+  const lastSelectedConnectionIdRef = useRef<string | null>(null);
   const sortMode = (appSettings.ui.saved_connections_sort_mode || "default") as SortMode;
 
   // ── Dialog state ──────────────────────────────────────────────────────────
@@ -101,6 +115,10 @@ export default function SavedConnections({
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<Group | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [openGroupTarget, setOpenGroupTarget] = useState<{
+    groupName: string;
+    connections: SavedConnection[];
+  } | null>(null);
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderDialogName, setFolderDialogName] = useState("");
   const [folderDialogParentId, setFolderDialogParentId] = useState<string | null>(null);
@@ -117,6 +135,10 @@ export default function SavedConnections({
 
   const keyword = filterText.trim().toLowerCase();
   const isDragEnabled = sortMode === "default";
+  const connectionById = useMemo(
+    () => new Map(savedConnections.map((connection) => [connection.id, connection])),
+    [savedConnections],
+  );
 
   // ── Derived tree ──────────────────────────────────────────────────────────
   const { rootNodes, ungrouped } = useMemo(() => {
@@ -182,6 +204,60 @@ export default function SavedConnections({
     return { rootNodes: keyword ? roots.filter(prune) : roots, ungrouped: noGroup };
   }, [savedConnections, savedGroups, keyword, sortMode]);
 
+  const visibleConnectionIds = useMemo(() => {
+    const ids: string[] = [];
+
+    const appendNodeConnections = (node: GroupNode) => {
+      if (!expandedGroups.has(node.group.id)) return;
+
+      node.children.forEach(appendNodeConnections);
+      node.connections.forEach((connection) => {
+        ids.push(connection.id);
+      });
+    };
+
+    rootNodes.forEach(appendNodeConnections);
+    ungrouped.forEach((connection) => {
+      ids.push(connection.id);
+    });
+
+    return ids;
+  }, [expandedGroups, rootNodes, ungrouped]);
+
+  const visibleConnectionIdSet = useMemo(
+    () => new Set(visibleConnectionIds),
+    [visibleConnectionIds],
+  );
+
+  const selectedConnections = useMemo(() => {
+    const orderedVisible = visibleConnectionIds
+      .map((id) => connectionById.get(id))
+      .filter(
+        (connection): connection is SavedConnection =>
+          !!connection && selectedConnectionIds.has(connection.id),
+      );
+
+    const hiddenSelected = Array.from(selectedConnectionIds)
+      .filter((id) => !visibleConnectionIdSet.has(id))
+      .map((id) => connectionById.get(id))
+      .filter((connection): connection is SavedConnection => !!connection);
+
+    return [...orderedVisible, ...hiddenSelected];
+  }, [connectionById, selectedConnectionIds, visibleConnectionIdSet, visibleConnectionIds]);
+
+  useEffect(() => {
+    const validIds = new Set(savedConnections.map((connection) => connection.id));
+
+    setSelectedConnectionIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+
+    if (lastSelectedConnectionIdRef.current && !validIds.has(lastSelectedConnectionIdRef.current)) {
+      lastSelectedConnectionIdRef.current = null;
+    }
+  }, [savedConnections]);
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const toggleGroup = (groupId: string) => {
     setExpandedGroups((prev) => {
@@ -192,9 +268,72 @@ export default function SavedConnections({
     });
   };
 
-  const handleConnect = async (conn: SavedConnection) => {
-    if (connectingIdRef.current === conn.id) return;
-    connectingIdRef.current = conn.id;
+  const getConnectionRangeSelection = (
+    anchorId: string,
+    targetId: string,
+    baseSelection = new Set<string>(),
+    additive = false,
+  ) => {
+    const anchorIndex = visibleConnectionIds.indexOf(anchorId);
+    const targetIndex = visibleConnectionIds.indexOf(targetId);
+
+    if (anchorIndex < 0 || targetIndex < 0) {
+      return additive ? new Set(baseSelection) : new Set<string>();
+    }
+
+    const [start, end] =
+      anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+    const next = additive ? new Set(baseSelection) : new Set<string>();
+
+    for (let index = start; index <= end; index += 1) {
+      next.add(visibleConnectionIds[index]);
+    }
+
+    return next;
+  };
+
+  const handleConnectionSelectionStart = (conn: SavedConnection, event: React.MouseEvent) => {
+    if (event.button !== 0) return;
+
+    const additive = event.ctrlKey || event.metaKey;
+    setSelectedConnectionIds((prev) => {
+      const hasRangeAnchor = event.shiftKey && !!lastSelectedConnectionIdRef.current;
+      const anchor = hasRangeAnchor ? (lastSelectedConnectionIdRef.current ?? conn.id) : conn.id;
+      const baseSelection = additive ? new Set(prev) : new Set<string>();
+      let next: Set<string>;
+
+      if (hasRangeAnchor) {
+        next = getConnectionRangeSelection(anchor, conn.id, baseSelection, additive);
+      } else if (additive) {
+        next = new Set(prev);
+        if (next.has(conn.id)) {
+          next.delete(conn.id);
+        } else {
+          next.add(conn.id);
+        }
+      } else {
+        next = new Set([conn.id]);
+      }
+
+      lastSelectedConnectionIdRef.current = conn.id;
+      return next;
+    });
+  };
+
+  const handleConnectionContextMenu = (conn: SavedConnection, _event: React.MouseEvent) => {
+    setSelectedConnectionIds((prev) => {
+      if (prev.has(conn.id)) {
+        return prev;
+      }
+
+      lastSelectedConnectionIdRef.current = conn.id;
+      return new Set([conn.id]);
+    });
+  };
+
+  const connectConnection = async (conn: SavedConnection) => {
+    if (connectingIdsRef.current.has(conn.id)) return;
+    connectingIdsRef.current.add(conn.id);
     const typeMap: Record<string, import("@/types/global").SessionType> = {
       ssh: "SSH",
       local_terminal: "Local",
@@ -230,8 +369,32 @@ export default function SavedConnections({
         onEditConnection(conn, true, { sourceTabId: tabId });
       }
     } finally {
-      connectingIdRef.current = null;
+      connectingIdsRef.current.delete(conn.id);
     }
+  };
+
+  const openConnections = (connections: SavedConnection[]) => {
+    connections.forEach((connection) => {
+      void connectConnection(connection);
+    });
+  };
+
+  const handleConnectSelected = () => {
+    if (selectedConnections.length === 0) return;
+    openConnections(selectedConnections);
+  };
+
+  const handleConnectOnly = (conn: SavedConnection) => {
+    openConnections([conn]);
+  };
+
+  const handleConnect = (conn: SavedConnection) => {
+    if (selectedConnectionIds.has(conn.id) && selectedConnectionIds.size > 1) {
+      handleConnectSelected();
+      return;
+    }
+
+    openConnections([conn]);
   };
 
   const handleCopyConnection = async (conn: SavedConnection) => {
@@ -331,6 +494,41 @@ export default function SavedConnections({
     } finally {
       setShowClearAllDialog(false);
     }
+  };
+
+  const collectGroupConnections = (groupId: string): SavedConnection[] => {
+    const groupIds = new Set<string>([groupId]);
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+      savedGroups.forEach((group) => {
+        if (group.parent_id && groupIds.has(group.parent_id) && !groupIds.has(group.id)) {
+          groupIds.add(group.id);
+          changed = true;
+        }
+      });
+    }
+
+    return savedConnections.filter(
+      (connection) => connection.group_id && groupIds.has(connection.group_id),
+    );
+  };
+
+  const requestOpenGroupConnections = (node: GroupNode) => {
+    const connections = collectGroupConnections(node.group.id);
+    if (connections.length === 0) return;
+
+    setOpenGroupTarget({
+      groupName: node.group.name,
+      connections,
+    });
+  };
+
+  const handleConfirmOpenGroupConnections = () => {
+    if (!openGroupTarget) return;
+    openConnections(openGroupTarget.connections);
+    setOpenGroupTarget(null);
   };
 
   // ── Drag & Drop ───────────────────────────────────────────────────────────
@@ -604,9 +802,14 @@ export default function SavedConnections({
     isDragEnabled,
     dragTarget,
     expandedGroups,
+    selectedConnectionIds,
     toggleGroup,
     handleConnect,
+    handleConnectOnly,
+    handleConnectSelected,
     handleCopyConnection,
+    handleConnectionSelectionStart,
+    handleConnectionContextMenu,
     onEditConnection,
     onNewConnection,
     setDeleteTarget,
@@ -615,6 +818,7 @@ export default function SavedConnections({
     setDeleteFolderTarget,
     openNewFolderDialog,
     openRenameFolderDialog,
+    requestOpenGroupConnections,
     handleDragStart,
     handleDragEnd,
     handleDragOverItem,
@@ -630,120 +834,119 @@ export default function SavedConnections({
         <PanelHeader
           title={t("panel.savedConnections")}
           actions={
-            <span className="text-[0.6875rem]" style={{ color: "var(--df-text-dimmed)" }}>
-              {savedConnections.length}
-            </span>
+            savedConnections.length > 0 ? (
+              <span className="text-[0.6875rem]" style={{ color: "var(--df-text-dimmed)" }}>
+                {savedConnections.length}
+              </span>
+            ) : null
           }
         />
 
-        {/* Filter + toolbar */}
         <div
-          className="px-2 py-1.5 border-b shrink-0 flex items-center gap-1.5"
-          style={{ borderColor: "var(--df-border)" }}
+          className="flex items-center gap-1.5 px-2 py-1.5 shrink-0 border-b"
+          style={{
+            borderColor: "color-mix(in srgb, var(--df-border) 40%, transparent)",
+            backgroundColor: "var(--df-bg-section-header)",
+          }}
         >
-          <div className="relative flex items-center flex-1 min-w-0">
-            <MdSearch
-              className="absolute left-2 text-sm pointer-events-none"
-              style={{ color: "var(--df-text-dimmed)" }}
-            />
+          <div className="relative flex-1 min-w-0 transition-colors focus-within:text-[var(--df-primary)] text-[var(--df-text-dimmed)]">
+            <MdSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[0.875rem] pointer-events-none" />
             <input
               type="text"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               placeholder={t("savedConnections.filter")}
-              className="w-full pl-6 pr-6 py-1 text-xs rounded bg-transparent outline-none border"
-              style={{
-                borderColor: filterText ? "var(--df-primary)" : "var(--df-border)",
-                color: "var(--df-text)",
-              }}
+              className="w-full pl-8 pr-7 py-1 h-7 text-xs rounded-md bg-[var(--df-bg-hover)] border border-transparent outline-none transition-all placeholder:text-[var(--df-text-dimmed)] focus:bg-transparent focus:border-[var(--df-primary)] focus:ring-1 focus:ring-[var(--df-primary)] text-[var(--df-text)]"
             />
             {filterText && (
               <button
-                className="absolute right-1.5 p-0.5 rounded transition-colors hover:opacity-70"
-                style={{ color: "var(--df-text-dimmed)" }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors hover:text-[var(--df-text)] text-[var(--df-text-dimmed)]"
                 onClick={() => setFilterText("")}
               >
                 <MdClose className="text-xs" />
               </button>
             )}
           </div>
-          <HeaderActionButton
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 h-7 w-7 rounded-md border p-0 transition-colors hover:bg-transparent hover:opacity-80"
-            style={{
-              color: sortActive ? "var(--df-primary)" : "var(--df-text-muted)",
-              borderColor: sortActive ? "var(--df-primary)" : "var(--df-border)",
-              backgroundColor: sortActive
-                ? "color-mix(in srgb, var(--df-primary) 10%, transparent)"
-                : "var(--df-bg-hover)",
-            }}
-            tooltip={sortTitle}
-            onClick={cycleSortMode}
-          >
-            <SortIcon
-              className="text-sm"
-              style={{ transform: sortMode === "name-desc" ? "scaleY(-1)" : undefined }}
-            />
-          </HeaderActionButton>
-          <HeaderActionButton
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 h-7 w-7 rounded-md border p-0 transition-colors hover:bg-transparent hover:opacity-80"
-            style={{
-              color: "var(--df-text-muted)",
-              borderColor: "var(--df-border)",
-              backgroundColor: "var(--df-bg-hover)",
-            }}
-            tooltip={t("savedConnections.importSessions")}
-            onClick={() => setShowImportDialog(true)}
-          >
-            <MdFileUpload className="text-sm" />
-          </HeaderActionButton>
-          <HeaderActionButton
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 h-7 w-7 rounded-md border p-0 transition-colors hover:bg-transparent hover:opacity-80"
-            style={{
-              color: "var(--df-text-muted)",
-              borderColor: "var(--df-border)",
-              backgroundColor: "var(--df-bg-hover)",
-            }}
-            tooltip={t("savedConnections.newFolder")}
-            onClick={() => openNewFolderDialog(null)}
-          >
-            <MdCreateNewFolder className="text-sm" />
-          </HeaderActionButton>
-          <HeaderActionButton
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0 h-7 w-7 rounded-md border p-0 transition-colors hover:bg-transparent hover:opacity-80"
-            style={{
-              color: "var(--df-text-muted)",
-              borderColor: "var(--df-border)",
-              backgroundColor: "var(--df-bg-hover)",
-            }}
-            tooltip={t("savedConnections.newConnection")}
-            onClick={() => onNewConnection()}
-          >
-            <MdAdd className="text-sm" />
-          </HeaderActionButton>
-          {savedConnections.length > 0 && (
+
+          <div className="flex items-center gap-0.5 shrink-0">
             <HeaderActionButton
               variant="ghost"
               size="icon-sm"
-              className="shrink-0 h-7 w-7 rounded-md border p-0 transition-colors hover:bg-transparent hover:opacity-80"
-              style={{
-                color: "var(--df-text-muted)",
-                borderColor: "var(--df-border)",
-                backgroundColor: "var(--df-bg-hover)",
-              }}
-              tooltip={t("savedConnections.clearAll")}
-              onClick={() => setShowClearAllDialog(true)}
+              className="shrink-0 h-6 w-6 rounded-md p-0 transition-colors hover:bg-[var(--df-bg-hover)]"
+              style={{ color: sortActive ? "var(--df-primary)" : "var(--df-text-muted)" }}
+              tooltip={sortTitle}
+              onClick={cycleSortMode}
             >
-              <MdDeleteSweep className="text-sm" />
+              <SortIcon
+                className="text-xs"
+                style={{ transform: sortMode === "name-desc" ? "scaleY(-1)" : undefined }}
+              />
             </HeaderActionButton>
-          )}
+
+            <HeaderActionButton
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 h-6 w-6 rounded-md p-0 transition-colors hover:bg-[var(--df-bg-hover)]"
+              style={{ color: "var(--df-text-muted)" }}
+              tooltip={t("savedConnections.newFolder")}
+              onClick={() => openNewFolderDialog(null)}
+            >
+              <MdCreateNewFolder className="text-[1rem]" />
+            </HeaderActionButton>
+
+            <HeaderActionButton
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 h-6 w-6 rounded-md p-0 transition-colors hover:bg-[var(--df-bg-hover)]"
+              style={{ color: "var(--df-text-muted)" }}
+              tooltip={t("savedConnections.newConnection")}
+              onClick={() => onNewConnection()}
+            >
+              <MdAdd className="text-[1.125rem]" />
+            </HeaderActionButton>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 h-6 w-6 rounded-md p-0 transition-colors outline-none hover:bg-[var(--df-bg-hover)] data-[state=open]:bg-[var(--df-bg-hover)]"
+                  style={{ color: "var(--df-text-muted)" }}
+                  aria-label="More"
+                >
+                  <MdMoreVert className="text-[1.125rem]" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="text-xs w-48">
+                <DropdownMenuItem
+                  onClick={handleExport}
+                  className="cursor-pointer gap-2 py-1.5 focus:bg-[var(--df-bg-hover)]"
+                >
+                  <BiExport className="text-sm text-[var(--df-text-muted)]" />
+                  {t("settings.exportConfig")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShowImportDialog(true)}
+                  className="cursor-pointer gap-2 py-1.5 focus:bg-[var(--df-bg-hover)]"
+                >
+                  <BiImport className="text-sm text-[var(--df-text-muted)]" />
+                  {t("settings.importConfig")}
+                </DropdownMenuItem>
+                {savedConnections.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setShowClearAllDialog(true)}
+                      className="cursor-pointer gap-2 py-1.5 focus:bg-[var(--df-bg-hover)] text-red-500 focus:text-red-500"
+                    >
+                      <MdDeleteSweep className="text-sm" />
+                      {t("savedConnections.clearAll")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* List */}
@@ -751,6 +954,11 @@ export default function SavedConnections({
           <ContextMenuTrigger asChild>
             <div
               className={`flex-1 overflow-y-auto p-1.5 text-xs space-y-0.5 terminal-scroll ${dragTarget?.type === "background" ? "ring-inset ring-2 ring-primary/20" : ""}`}
+              onMouseDown={(event) => {
+                if (event.button !== 0 || event.target !== event.currentTarget) return;
+                setSelectedConnectionIds(new Set());
+                lastSelectedConnectionIdRef.current = null;
+              }}
               onDragEnter={isDragEnabled ? (e) => e.preventDefault() : undefined}
               onDragOver={isDragEnabled ? handleDragOverBg : undefined}
               onDrop={isDragEnabled ? handleDropBg : undefined}
@@ -790,6 +998,15 @@ export default function SavedConnections({
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-[160px]">
+            {selectedConnections.length > 0 && (
+              <ContextMenuItem onClick={handleConnectSelected}>
+                <MdLink className="text-[0.875rem] text-muted-foreground mr-2" />
+                {selectedConnections.length > 1
+                  ? t("savedConnections.connectSelected")
+                  : t("savedConnections.connect")}
+              </ContextMenuItem>
+            )}
+            {selectedConnections.length > 0 && <ContextMenuSeparator />}
             <ContextMenuItem onClick={() => onNewConnection()}>
               <MdAdd className="text-[0.875rem] text-muted-foreground mr-2" />
               {t("savedConnections.newConnection")}
@@ -800,8 +1017,8 @@ export default function SavedConnections({
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => setShowImportDialog(true)}>
-              <MdFileUpload className="text-[0.875rem] text-muted-foreground mr-2" />
-              {t("savedConnections.importSessions")}
+              <BiImport className="text-[0.875rem] text-muted-foreground mr-2" />
+              {t("settings.importConfig")}
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
@@ -839,7 +1056,15 @@ export default function SavedConnections({
           onConfirm={handleClearAll}
           onCancel={() => setShowClearAllDialog(false)}
         />
+        <OpenGroupConnectionsDialog
+          open={!!openGroupTarget}
+          folderName={openGroupTarget?.groupName}
+          count={openGroupTarget?.connections.length}
+          onConfirm={handleConfirmOpenGroupConnections}
+          onCancel={() => setOpenGroupTarget(null)}
+        />
         <ImportDialog open={showImportDialog} onClose={() => setShowImportDialog(false)} />
+        {passwordAlert}
       </div>
     </SavedConnectionsContext.Provider>
   );

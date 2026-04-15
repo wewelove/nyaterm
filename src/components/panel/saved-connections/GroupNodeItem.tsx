@@ -6,6 +6,7 @@ import {
   MdExpandMore,
   MdFolder,
   MdFolderOpen,
+  MdOpenInNew,
 } from "react-icons/md";
 import {
   ContextMenu,
@@ -32,6 +33,7 @@ export default function GroupNodeItem({ node, depth }: GroupNodeItemProps) {
     onNewConnection,
     openNewFolderDialog,
     openRenameFolderDialog,
+    requestOpenGroupConnections,
     setDeleteFolderTarget,
     handleDragStart,
     handleDragEnd,
@@ -131,6 +133,13 @@ export default function GroupNodeItem({ node, depth }: GroupNodeItemProps) {
           {t("savedConnections.newSubfolder")}
         </ContextMenuItem>
         <ContextMenuSeparator />
+        {node.totalCount > 0 && (
+          <ContextMenuItem onClick={() => requestOpenGroupConnections(node)}>
+            <MdOpenInNew className="text-[0.875rem] text-muted-foreground mr-2" />
+            {t("savedConnections.openAllConnections")}
+          </ContextMenuItem>
+        )}
+        {node.totalCount > 0 && <ContextMenuSeparator />}
         <ContextMenuItem onClick={() => openRenameFolderDialog(node.group)}>
           <MdDriveFileRenameOutline className="text-[0.875rem] text-muted-foreground mr-2" />
           {t("savedConnections.renameFolder")}

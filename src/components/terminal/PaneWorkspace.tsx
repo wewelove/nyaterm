@@ -47,9 +47,8 @@ function SplitView({
   return (
     <div
       ref={containerRef}
-      className={`flex h-full w-full min-h-0 min-w-0 ${
-        isHorizontalSplit ? "flex-col" : "flex-row"
-      }`}
+      className={`flex h-full w-full min-h-0 min-w-0 ${isHorizontalSplit ? "flex-col" : "flex-row"
+        }`}
     >
       <div
         className="min-h-0 min-w-0 relative"
@@ -146,9 +145,8 @@ function PaneNodeView({
 
   return (
     <div
-      className={`relative h-full w-full overflow-hidden ${
-        showChrome ? "rounded-sm border" : ""
-      } ${isActive ? "ring-1 ring-primary/60" : ""}`}
+      className={`relative h-full w-full overflow-hidden ${showChrome ? "rounded-sm border" : ""
+        } ${isActive ? "ring-1 ring-primary/60" : ""}`}
       style={{
         borderColor: showChrome ? "var(--df-border)" : undefined,
         backgroundColor: "var(--df-bg-terminal)",

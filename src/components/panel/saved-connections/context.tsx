@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { createContext, useContext } from "react";
 import type { NewSessionTarget } from "@/lib/windowManager";
 import type { Group, SavedConnection } from "@/types/global";
@@ -30,11 +31,16 @@ export interface SavedConnectionsContextValue {
   isDragEnabled: boolean;
   dragTarget: DragTarget | null;
   expandedGroups: Set<string>;
+  selectedConnectionIds: Set<string>;
 
   // List actions
   toggleGroup: (id: string) => void;
   handleConnect: (conn: SavedConnection) => void;
+  handleConnectOnly: (conn: SavedConnection) => void;
+  handleConnectSelected: () => void;
   handleCopyConnection: (conn: SavedConnection) => void;
+  handleConnectionSelectionStart: (conn: SavedConnection, event: ReactMouseEvent) => void;
+  handleConnectionContextMenu: (conn: SavedConnection, event: ReactMouseEvent) => void;
   onEditConnection: (
     conn: SavedConnection,
     autoConnect?: boolean,
@@ -49,6 +55,7 @@ export interface SavedConnectionsContextValue {
   setDeleteFolderTarget: (g: Group | null) => void;
   openNewFolderDialog: (parentId: string | null) => void;
   openRenameFolderDialog: (g: Group) => void;
+  requestOpenGroupConnections: (node: GroupNode) => void;
 
   // Drag handlers
   handleDragStart: (e: React.DragEvent, type: "connection" | "group", id: string) => void;
