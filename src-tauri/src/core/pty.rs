@@ -7,8 +7,8 @@ use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
 use super::update_cwd_if_changed;
-use crate::core::SessionOutputCoalescer;
 use crate::core::ssh::osc::OscStripper;
+use crate::core::SessionOutputCoalescer;
 use crate::error::AppResult;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
