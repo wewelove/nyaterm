@@ -93,16 +93,16 @@ function ActiveSessions({
         className="border-b px-2 py-1.5"
         style={{ borderColor: "var(--df-border)", backgroundColor: "var(--df-bg-panel)" }}
       >
-        <div className="relative">
+        <div className="relative shrink-0">
           <MdSearch
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm"
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[0.875rem]"
             style={{ color: "var(--df-text-dimmed)" }}
           />
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t("activeSessions.searchPlaceholder")}
-            className="h-8 border-0 pl-8 text-xs shadow-none"
+            className="h-7 border-0 pl-7 text-xs shadow-none placeholder:text-[var(--df-text-dimmed)] text-[var(--df-text)] bg-[var(--df-bg-hover)] focus-visible:ring-1 focus-visible:ring-[var(--df-primary)] focus-visible:bg-transparent"
           />
         </div>
       </div>
