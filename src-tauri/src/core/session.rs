@@ -1,19 +1,22 @@
 //! Session manager holding active sessions and command history.
 //!
-//! Tracks SSH/local sessions, routes commands, and persists history for fuzzy search.
+//! Tracks SSH/local sessions, routes commands, coordinates command submission
+//! confirmation, and persists history for fuzzy search.
 
-use super::history::CommandHistoryStore;
+use super::history::{sanitize_history_command, CommandHistoryStore};
 use crate::error::{AppError, AppResult};
-use crate::utils::fuzzy::FuzzyResult;
+use crate::utils::fuzzy::{fuzzy_search_items, FuzzyResult};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::Emitter;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
+
+const HISTORY_SAVE_DEBOUNCE: Duration = Duration::from_millis(100);
 
 pub type SharedCwd = Arc<Mutex<Option<String>>>;
 
@@ -102,11 +105,20 @@ pub struct SessionHandle {
     pub cwd: SharedCwd,
 }
 
+#[derive(Debug, Default)]
+struct CommandSubmissionState {
+    pending_candidate: Option<String>,
+    last_shell_event: Option<String>,
+    awaits_shell_event: bool,
+}
+
 /// Central registry of sessions, history, and fuzzy search store.
 pub struct SessionManager {
     pub sessions: Arc<Mutex<HashMap<String, SessionHandle>>>,
     pub history_store: Arc<Mutex<CommandHistoryStore>>,
-    history_save_scheduled: Arc<AtomicBool>,
+    command_submissions: Arc<Mutex<HashMap<String, CommandSubmissionState>>>,
+    history_save_notify: Arc<Notify>,
+    history_save_worker_started: AtomicBool,
     app_handle: OnceLock<tauri::AppHandle>,
 }
 
@@ -116,7 +128,9 @@ impl SessionManager {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             history_store: Arc::new(Mutex::new(CommandHistoryStore::new())),
-            history_save_scheduled: Arc::new(AtomicBool::new(false)),
+            command_submissions: Arc::new(Mutex::new(HashMap::new())),
+            history_save_notify: Arc::new(Notify::new()),
+            history_save_worker_started: AtomicBool::new(false),
             app_handle: OnceLock::new(),
         }
     }
@@ -128,17 +142,33 @@ impl SessionManager {
 
     /// Loads history from config_dir/history.json for fuzzy search.
     pub async fn init_history_store(&self, config_dir: PathBuf) {
-        let mut store = self.history_store.lock().await;
-        store.set_history_path(config_dir.join("history.json"));
-        if let Err(e) = store.load() {
-            tracing::warn!("Failed to load command history: {}", e);
+        let needs_save = {
+            let mut store = self.history_store.lock().await;
+            store.set_history_path(config_dir.join("history.json"));
+            if let Err(e) = store.load() {
+                tracing::warn!("Failed to load command history: {}", e);
+            }
+            store.is_dirty()
+        };
+
+        self.ensure_history_save_worker();
+        if needs_save {
+            self.request_history_save();
         }
     }
 
     /// Registers a new active session.
     pub async fn add_session(&self, handle: SessionHandle) {
         let id = handle.info.id.clone();
-        self.sessions.lock().await.insert(id, handle);
+        let awaits_shell_event = session_awaits_shell_event(&handle.info);
+        self.sessions.lock().await.insert(id.clone(), handle);
+        self.command_submissions.lock().await.insert(
+            id.clone(),
+            CommandSubmissionState {
+                awaits_shell_event,
+                ..CommandSubmissionState::default()
+            },
+        );
         if let Some(app) = self.app_handle.get() {
             let _ = app.emit("sessions-changed", ());
         }
@@ -147,6 +177,10 @@ impl SessionManager {
     /// Removes a session; returns true if the session existed.
     pub async fn remove_session(&self, id: &str) -> bool {
         let removed = self.sessions.lock().await.remove(id).is_some();
+        if removed {
+            self.flush_pending_submission(id).await;
+            self.command_submissions.lock().await.remove(id);
+        }
         if removed {
             if let Some(app) = self.app_handle.get() {
                 let _ = app.emit("sessions-changed", ());
@@ -179,6 +213,79 @@ impl SessionManager {
 
     /// Appends a command to persistent history and schedules a coalesced save.
     pub async fn add_command(&self, _session_id: &str, command: String) {
+        self.add_history_entry(command).await;
+    }
+
+    /// Registers a client-side command candidate. Sessions with backend shell
+    /// events keep it pending until confirmation; other sessions add directly.
+    pub async fn register_command_submission(&self, session_id: &str, command: String) {
+        let Some(command) = sanitize_history_command(&command) else {
+            return;
+        };
+
+        let should_add_immediately = {
+            let mut submissions = self.command_submissions.lock().await;
+            if let Some(state) = submissions.get_mut(session_id) {
+                if state.awaits_shell_event {
+                    state.pending_candidate = Some(command.clone());
+                    false
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
+        };
+
+        if should_add_immediately {
+            self.add_history_entry(command).await;
+        }
+    }
+
+    /// Records a shell-confirmed command emitted by the backend integration
+    /// channel. Duplicate confirmations are ignored once the pending
+    /// candidate has already been consumed.
+    pub async fn confirm_command_submission(&self, session_id: &str, command: String) {
+        let Some(command) = sanitize_history_command(&command) else {
+            return;
+        };
+
+        let should_add = {
+            let mut submissions = self.command_submissions.lock().await;
+            let state = submissions.entry(session_id.to_string()).or_default();
+
+            if state.pending_candidate.take().is_some() {
+                state.last_shell_event = Some(command.clone());
+                Some(command)
+            } else if state.last_shell_event.as_deref() == Some(command.as_str()) {
+                None
+            } else {
+                state.last_shell_event = Some(command.clone());
+                Some(command)
+            }
+        };
+
+        if let Some(command) = should_add {
+            self.add_history_entry(command).await;
+        }
+    }
+
+    /// Flushes any pending client candidate when a shell-capable session ends
+    /// without sending a matching backend confirmation.
+    pub async fn flush_pending_submission(&self, session_id: &str) {
+        let pending = {
+            let mut submissions = self.command_submissions.lock().await;
+            submissions
+                .get_mut(session_id)
+                .and_then(|state| state.pending_candidate.take())
+        };
+
+        if let Some(command) = pending {
+            self.add_history_entry(command).await;
+        }
+    }
+
+    async fn add_history_entry(&self, command: String) {
         let changed = {
             let mut store = self.history_store.lock().await;
             store.add(command)
@@ -188,57 +295,89 @@ impl SessionManager {
             return;
         }
 
-        self.schedule_history_save();
+        self.request_history_save();
         if let Some(app) = self.app_handle.get() {
             let _ = app.emit("command-history-changed", ());
         }
     }
 
-    fn schedule_history_save(&self) {
-        if self.history_save_scheduled.swap(true, Ordering::SeqCst) {
+    fn ensure_history_save_worker(&self) {
+        if self
+            .history_save_worker_started
+            .swap(true, Ordering::SeqCst)
+        {
             return;
         }
 
         let history_store = self.history_store.clone();
-        let history_save_scheduled = self.history_save_scheduled.clone();
+        let history_save_notify = self.history_save_notify.clone();
         tauri::async_runtime::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                history_save_notify.notified().await;
 
-                let pending = {
-                    let mut store = history_store.lock().await;
-                    store.prepare_save()
-                };
+                loop {
+                    tokio::time::sleep(HISTORY_SAVE_DEBOUNCE).await;
 
-                if let Some((path, bytes)) = pending {
-                    let write_result = tokio::task::spawn_blocking(move || {
-                        super::history::flush_to_disk(&path, &bytes)
-                    })
-                    .await;
-                    match write_result {
-                        Ok(Err(err)) => {
-                            tracing::warn!("Failed to save command history: {}", err);
-                        }
-                        Err(err) => {
-                            tracing::warn!("History save task panicked: {}", err);
-                        }
-                        _ => {}
+                    while tokio::time::timeout(
+                        HISTORY_SAVE_DEBOUNCE,
+                        history_save_notify.notified(),
+                    )
+                    .await
+                    .is_ok()
+                    {}
+
+                    save_history_snapshot(&history_store).await;
+
+                    let needs_resave = {
+                        let store = history_store.lock().await;
+                        store.is_dirty()
+                    };
+                    if !needs_resave {
+                        break;
                     }
                 }
-
-                history_save_scheduled.store(false, Ordering::SeqCst);
-
-                let needs_reschedule = {
-                    let store = history_store.lock().await;
-                    store.is_dirty()
-                };
-                if needs_reschedule && !history_save_scheduled.swap(true, Ordering::SeqCst) {
-                    continue;
-                }
-
-                break;
             }
         });
+    }
+
+    fn request_history_save(&self) {
+        self.ensure_history_save_worker();
+        self.history_save_notify.notify_one();
+    }
+
+    /// Flushes pending shell-submission fallbacks and history state
+    /// synchronously during application shutdown.
+    pub fn flush_history_before_shutdown(&self) {
+        let pending_commands: Vec<String> = {
+            let mut submissions = self.command_submissions.blocking_lock();
+            submissions
+                .values_mut()
+                .filter_map(|state| state.pending_candidate.take())
+                .collect()
+        };
+
+        if !pending_commands.is_empty() {
+            let mut store = self.history_store.blocking_lock();
+            for command in pending_commands {
+                let _ = store.add(command);
+            }
+        }
+
+        loop {
+            let pending = {
+                let mut store = self.history_store.blocking_lock();
+                store.prepare_save()
+            };
+
+            let Some((path, bytes)) = pending else {
+                break;
+            };
+
+            if let Err(err) = super::history::flush_to_disk(&path, &bytes) {
+                tracing::warn!("Failed to flush command history during shutdown: {}", err);
+                break;
+            }
+        }
     }
 
     /// Returns persistent history in stable most-recent-first order.
@@ -249,14 +388,119 @@ impl SessionManager {
 
     /// Fuzzy searches command history; returns top `limit` matches by score.
     pub async fn fuzzy_search(&self, pattern: &str, limit: usize) -> Vec<FuzzyResult> {
-        let store = self.history_store.lock().await;
-        store.search(pattern, limit)
+        let mut results = {
+            let store = self.history_store.lock().await;
+            store.search(pattern, limit)
+        };
+
+        let pending_commands = self.pending_history_candidates().await;
+        if pending_commands.is_empty() {
+            return results;
+        }
+
+        let pending_refs: Vec<(&str, &str)> = pending_commands
+            .iter()
+            .map(|command| (command.as_str(), command.as_str()))
+            .collect();
+        let pending_results = fuzzy_search_items(&pending_refs, pattern, "history", limit);
+        let mut existing = results
+            .iter()
+            .map(|result| result.command.clone())
+            .collect::<HashSet<_>>();
+
+        for result in pending_results {
+            if existing.insert(result.command.clone()) {
+                results.push(result);
+            }
+        }
+
+        results.sort_by(|a, b| b.score.cmp(&a.score).then(a.command.cmp(&b.command)));
+        results.truncate(limit);
+        results
+    }
+}
+
+fn session_awaits_shell_event(info: &SessionInfo) -> bool {
+    matches!(info.session_type, SessionType::SSH | SessionType::Local) && info.injection_active
+}
+
+impl SessionManager {
+    async fn pending_history_candidates(&self) -> Vec<String> {
+        let submissions = self.command_submissions.lock().await;
+        let mut seen = HashSet::new();
+        let mut commands = Vec::new();
+
+        for state in submissions.values() {
+            let Some(command) = state.pending_candidate.as_deref() else {
+                continue;
+            };
+
+            if seen.insert(command.to_string()) {
+                commands.push(command.to_string());
+            }
+        }
+
+        commands
+    }
+}
+
+async fn save_history_snapshot(history_store: &Arc<Mutex<CommandHistoryStore>>) {
+    let pending = {
+        let mut store = history_store.lock().await;
+        store.prepare_save()
+    };
+
+    let Some((path, bytes)) = pending else {
+        return;
+    };
+
+    let write_result =
+        tokio::task::spawn_blocking(move || super::history::flush_to_disk(&path, &bytes)).await;
+    match write_result {
+        Ok(Err(err)) => {
+            tracing::warn!("Failed to save command history: {}", err);
+        }
+        Err(err) => {
+            tracing::warn!("History save task panicked: {}", err);
+        }
+        _ => {}
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_cwd_path;
+    use super::{
+        normalize_cwd_path, SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType,
+    };
+    use std::fs;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::sync::{mpsc, Mutex};
+
+    fn test_handle(id: &str, session_type: SessionType, injection_active: bool) -> SessionHandle {
+        let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
+        SessionHandle {
+            info: SessionInfo {
+                id: id.to_string(),
+                name: id.to_string(),
+                session_type,
+                connected: true,
+                injection_active,
+            },
+            cmd_tx,
+            ssh_config: None,
+            ssh_handle: None,
+            cwd: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn unique_history_path(name: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!("dragonfly-session-history-{name}-{nanos}.json"))
+    }
 
     #[test]
     fn normalizes_trailing_slashes_without_breaking_roots() {
@@ -264,5 +508,119 @@ mod tests {
         assert_eq!(normalize_cwd_path("/"), "/");
         assert_eq!(normalize_cwd_path("C:/"), "C:/");
         assert_eq!(normalize_cwd_path("/C:/"), "/C:/");
+    }
+
+    #[tokio::test]
+    async fn shell_event_session_waits_for_confirmation() {
+        let manager = SessionManager::new();
+        manager
+            .add_session(test_handle("ssh-1", SessionType::SSH, true))
+            .await;
+
+        manager
+            .register_command_submission("ssh-1", "echo hello".to_string())
+            .await;
+        assert!(manager.get_all_history().await.is_empty());
+
+        manager
+            .confirm_command_submission("ssh-1", "echo hello".to_string())
+            .await;
+        assert_eq!(
+            manager.get_all_history().await,
+            vec!["echo hello".to_string()]
+        );
+
+        manager
+            .confirm_command_submission("ssh-1", "echo hello".to_string())
+            .await;
+        assert_eq!(
+            manager.get_all_history().await,
+            vec!["echo hello".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_session_adds_submission_immediately() {
+        let manager = SessionManager::new();
+        manager
+            .add_session(test_handle("telnet-1", SessionType::Telnet, false))
+            .await;
+
+        manager
+            .register_command_submission("telnet-1", "show version".to_string())
+            .await;
+
+        assert_eq!(
+            manager.get_all_history().await,
+            vec!["show version".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn close_flushes_unconfirmed_pending_submission_once() {
+        let manager = SessionManager::new();
+        manager
+            .add_session(test_handle("local-1", SessionType::Local, true))
+            .await;
+
+        manager
+            .register_command_submission("local-1", "exit".to_string())
+            .await;
+        assert!(manager.remove_session("local-1").await);
+
+        assert_eq!(manager.get_all_history().await, vec!["exit".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn pending_submission_is_searchable_before_shell_confirmation() {
+        let manager = SessionManager::new();
+        manager
+            .add_session(test_handle("ssh-2", SessionType::SSH, true))
+            .await;
+
+        manager
+            .register_command_submission("ssh-2", "docker images".to_string())
+            .await;
+
+        let results = manager.fuzzy_search("docker im", 8).await;
+        assert!(
+            results
+                .iter()
+                .any(|result| result.command == "docker images"),
+            "pending submission should be searchable before shell confirmation"
+        );
+        assert!(
+            manager.get_all_history().await.is_empty(),
+            "pending submissions should not be committed to history until confirmation"
+        );
+    }
+
+    #[test]
+    fn shutdown_flush_persists_pending_history_without_waiting_for_debounce() {
+        let history_path = unique_history_path("shutdown-flush");
+        let manager = SessionManager::new();
+
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        runtime.block_on(async {
+            {
+                let mut store = manager.history_store.lock().await;
+                store.set_history_path(history_path.clone());
+            }
+
+            manager
+                .add_session(test_handle("local-2", SessionType::Local, true))
+                .await;
+            manager
+                .register_command_submission("local-2", "exit".to_string())
+                .await;
+        });
+        drop(runtime);
+
+        manager.flush_history_before_shutdown();
+
+        let content = fs::read_to_string(&history_path).expect("history file");
+        assert!(content.contains("\"command\":\"exit\""));
+
+        let _ = fs::remove_file(history_path);
     }
 }

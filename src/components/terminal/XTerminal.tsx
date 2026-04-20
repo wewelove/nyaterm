@@ -17,6 +17,18 @@ import { useTerminalSearch } from "@/hooks/useTerminalSearch";
 import { useTerminalSettings } from "@/hooks/useTerminalSettings";
 import { readClipboardText } from "@/lib/clipboard";
 import { hexLuminance } from "@/lib/keywordHighlightPresets";
+import {
+  listenSessionInputPreview,
+  sendSessionInput,
+  type SessionInputPreview,
+} from "@/lib/sessionInput";
+import {
+  applyTerminalInputData,
+  applyTerminalInputPreview,
+  canSuggestFromTracker,
+  createTerminalInputState,
+  getTrackedCommand,
+} from "@/lib/terminalInputTracker";
 import { XTERM_PERFORMANCE_CONFIG } from "@/lib/xtermPerformance";
 import ActionLinkMenu from "./ActionLinkMenu";
 import ActionLinkTooltip from "./ActionLinkTooltip";
@@ -64,7 +76,7 @@ export default function XTerminal({
   const showGutter = showLineNumbers || showTimestamps;
   const commandSuggestionsEnabled = appSettings.interaction.command_suggestions_enabled;
 
-  const currentLineRef = useRef("");
+  const inputStateRef = useRef(createTerminalInputState());
   const appSettingsRef = useRef(appSettings);
   const tRef = useRef(t);
   const doFindRef = useRef<(selection?: string) => void>(() => {});
@@ -153,9 +165,25 @@ export default function XTerminal({
     handleCloseSearch,
   } = useTerminalSearch(terminalRef);
 
-  // Shell integration state & reading commands
-  const { shellIntegrationRef, readCommandFromBuffer, readBetweenMarkerAndCursor } =
-    useShellIntegration(terminalRef, currentLineRef);
+  // Shell integration state
+  const { shellIntegrationRef } = useShellIntegration();
+
+  const applySuggestion = useCallback(
+    (command: string, execute: boolean) => {
+      const eraseChars = "\x7f".repeat(inputStateRef.current.value.length);
+      void sendSessionInput(
+        sessionId,
+        execute ? `${eraseChars + command}\r` : eraseChars + command,
+        {
+          preview: execute
+            ? { kind: "replace-and-execute", value: command }
+            : { kind: "replace", value: command },
+          registerSubmission: execute ? command : null,
+        },
+      ).catch(() => {});
+    },
+    [sessionId],
+  );
 
   // Command history & fuzzy search UI
   const {
@@ -171,14 +199,7 @@ export default function XTerminal({
     triggerSearch,
     dismissSuggestions,
     handleSelectSuggestion,
-  } = useCommandHistory(
-    sessionId,
-    terminalRef,
-    currentLineRef,
-    shellIntegrationRef,
-    readCommandFromBuffer,
-    commandSuggestionsEnabled,
-  );
+  } = useCommandHistory(terminalRef, inputStateRef, applySuggestion, commandSuggestionsEnabled);
 
   // Create and setup terminal
   useEffect(() => {
@@ -335,9 +356,23 @@ export default function XTerminal({
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+    inputStateRef.current = createTerminalInputState();
     const isTerminalAlive = () => !disposed && terminalRef.current === terminal;
+    const syncSuggestionsWithInputState = () => {
+      if (canSuggestFromTracker(inputStateRef.current)) {
+        triggerSearch();
+      } else {
+        dismissSuggestions();
+      }
+    };
+
+    const handleInputPreview = (preview: SessionInputPreview) => {
+      inputStateRef.current = applyTerminalInputPreview(inputStateRef.current, preview);
+      syncSuggestionsWithInputState();
+    };
+
     sendInputRef.current = (data: string) => {
-      invoke("write_to_session", { sessionId, data }).catch(() => {});
+      void sendSessionInput(sessionId, data).catch(() => {});
     };
     const pasteText = (text: string) => {
       if (text) terminal.paste(text);
@@ -422,32 +457,17 @@ export default function XTerminal({
 
       if (data.startsWith("A")) {
         si.enabled = true;
-        si.promptStartMarker?.dispose();
-        si.promptStartMarker = terminal.registerMarker(0);
         return false;
       }
 
       if (data.startsWith("B")) {
         si.enabled = true;
-        si.commandStartMarker?.dispose();
-        si.commandStartMarker = terminal.registerMarker(0);
-        si.commandStartX = terminal.buffer.active.cursorX;
         return false;
       }
 
       if (data.startsWith("C")) {
         si.enabled = true;
-        if (si.commandStartMarker) {
-          const command = readBetweenMarkerAndCursor(
-            terminal,
-            si.commandStartMarker,
-            si.commandStartX,
-          ).trim();
-          if (command) {
-            invoke("add_command_history", { sessionId, command }).catch(() => {});
-          }
-        }
-        currentLineRef.current = "";
+        inputStateRef.current = createTerminalInputState();
         dismissSuggestions();
         return false;
       }
@@ -461,13 +481,6 @@ export default function XTerminal({
     });
 
     const writeParsedDisposable = terminal.onWriteParsed(() => {
-      const si = shellIntegrationRef.current;
-      if (si.enabled) return;
-
-      if (si.fallbackNeedsDetection) {
-        si.fallbackPromptEndX = terminal.buffer.active.cursorX;
-      }
-
       const terminalSettings = appSettingsRef.current?.terminal;
       if (
         performanceModeRef.current !== "overloaded" &&
@@ -621,15 +634,6 @@ export default function XTerminal({
 
                   stampWrittenLines(beforeLine, afterLine, ts);
 
-                  if (payload.includes("\n")) {
-                    const si = shellIntegrationRef.current;
-                    currentLineRef.current = "";
-                    if (!si.enabled) {
-                      si.fallbackNeedsDetection = true;
-                    }
-                    dismissSuggestions();
-                  }
-
                   maybeRecoverPerformanceMode();
                   resolve();
 
@@ -728,6 +732,8 @@ export default function XTerminal({
         if (connectionIdRef.current) {
           terminal.write(`\x1b[33m[${tRef.current("terminal.pressEnterToReconnect")}]\x1b[0m\r\n`);
         }
+        inputStateRef.current = createTerminalInputState();
+        dismissSuggestions();
       });
       if (disposed) {
         nextClosedUnlisten();
@@ -752,6 +758,8 @@ export default function XTerminal({
       }
     };
     void setupListeners();
+
+    const removePreviewListener = listenSessionInputPreview(sessionId, handleInputPreview);
 
     const dataDisposable = terminal.onData((data) => {
       if (disconnectedRef.current) {
@@ -781,13 +789,7 @@ export default function XTerminal({
         if (data === "\t" && selectedIndexRef.current >= 0) {
           const selected = suggestionsRef.current[selectedIndexRef.current];
           if (selected) {
-            const actualCmd = readCommandFromBuffer();
-            const eraseChars = "\x7f".repeat(actualCmd.length);
-            invoke("write_to_session", {
-              sessionId,
-              data: eraseChars + selected.command,
-            }).catch(() => {});
-            currentLineRef.current = selected.command;
+            applySuggestion(selected.command, false);
             dismissSuggestions();
           }
           return;
@@ -817,65 +819,21 @@ export default function XTerminal({
         if (data === "\r" && selectedIndexRef.current >= 0) {
           const selected = suggestionsRef.current[selectedIndexRef.current];
           if (selected) {
-            const actualCmd = readCommandFromBuffer();
-            const eraseChars = "\x7f".repeat(actualCmd.length);
-            invoke("write_to_session", {
-              sessionId,
-              data: `${eraseChars + selected.command}\r`,
-            }).catch(() => {});
-            if (!shellIntegrationRef.current.enabled) {
-              invoke("add_command_history", {
-                sessionId,
-                command: selected.command,
-              }).catch(() => {});
-            }
-            currentLineRef.current = "";
-            shellIntegrationRef.current.fallbackNeedsDetection = true;
+            applySuggestion(selected.command, true);
             dismissSuggestions();
           }
           return;
         }
       }
 
-      const si = shellIntegrationRef.current;
+      const command = data === "\r" ? getTrackedCommand(inputStateRef.current) : "";
+      inputStateRef.current = applyTerminalInputData(inputStateRef.current, data);
+      syncSuggestionsWithInputState();
 
-      if (data === "\r") {
-        if (!si.enabled) {
-          const bufCmd = readCommandFromBuffer().trim();
-          const cmd = bufCmd || currentLineRef.current.trim();
-          if (cmd) {
-            invoke("add_command_history", { sessionId, command: cmd });
-          }
-        }
-        currentLineRef.current = "";
-        si.fallbackNeedsDetection = true;
-        dismissSuggestions();
-      } else if (data === "\u007f" || data === "\b") {
-        currentLineRef.current = currentLineRef.current.slice(0, -1);
-        triggerSearch();
-      } else if (data === "\t") {
-        triggerSearch();
-      } else if (!/[\x00-\x1f\x7f]/.test(data)) {
-        if (!si.enabled && si.fallbackNeedsDetection) {
-          si.fallbackPromptEndX = terminal.buffer.active.cursorX;
-          si.fallbackNeedsDetection = false;
-        }
-        currentLineRef.current += data;
-        triggerSearch();
-      } else if (data.startsWith("\x1b")) {
-        if (!si.enabled && si.fallbackNeedsDetection) {
-          si.fallbackPromptEndX = terminal.buffer.active.cursorX;
-          si.fallbackNeedsDetection = false;
-        }
-        currentLineRef.current = "";
-        dismissSuggestions();
-      } else {
-        currentLineRef.current = "";
-        si.fallbackNeedsDetection = true;
-        dismissSuggestions();
-      }
-
-      invoke("write_to_session", { sessionId, data }).catch(() => {});
+      void sendSessionInput(sessionId, data, {
+        preview: null,
+        registerSubmission: data === "\r" && command ? command : null,
+      }).catch(() => {});
     });
 
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
@@ -951,12 +909,8 @@ export default function XTerminal({
       containerEl.removeEventListener("mousedown", handleMiddleMouseDown);
       containerEl.removeEventListener("mouseup", handleMiddleClick);
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-
-      const si = shellIntegrationRef.current;
-      si.promptStartMarker?.dispose();
-      si.commandStartMarker?.dispose();
-      si.promptStartMarker = null;
-      si.commandStartMarker = null;
+      inputStateRef.current = createTerminalInputState();
+      sendInputRef.current = null;
 
       oscDisposable.dispose();
       writeParsedDisposable.dispose();
@@ -965,6 +919,7 @@ export default function XTerminal({
       scrollDisposable.dispose();
       selectionDisposable.dispose();
       removeLinkPopup();
+      removePreviewListener();
 
       observer.disconnect();
       if (outputUnlisten) outputUnlisten();

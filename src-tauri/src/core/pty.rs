@@ -7,7 +7,7 @@ use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
 use super::update_cwd_if_changed;
-use crate::core::ssh::osc::OscStripper;
+use crate::core::ssh::osc::{self, OscStripper, ShellKind};
 use crate::core::SessionOutputCoalescer;
 use crate::error::AppResult;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -71,12 +71,20 @@ pub async fn create_local_session(
         .as_ref()
         .map_or("Local Terminal".to_string(), |c| c.name.clone());
 
+    let (_, shell_name) = match &config {
+        Some(cfg) if !cfg.shell_path.trim().is_empty() => build_shell_command(&cfg.shell_path),
+        _ => platform_default_shell(),
+    };
+    let ready_marker = osc::build_ready_marker(&session_id);
+    let injection_script = osc::injection_script(ShellKind::from_name(&shell_name), &ready_marker);
+    let injection_active = injection_script.is_some();
+
     let session_info = SessionInfo {
         id: session_id.clone(),
         name: session_name,
         session_type: SessionType::Local,
         connected: true,
-        injection_active: false,
+        injection_active,
     };
 
     let cwd: SharedCwd = Arc::new(tokio::sync::Mutex::new(None));
@@ -94,7 +102,17 @@ pub async fn create_local_session(
     let rt_handle = tokio::runtime::Handle::current();
 
     std::thread::spawn(move || {
-        pty_session_thread(app, sid, mgr, cmd_rx, rt_handle, cwd, config);
+        pty_session_thread(
+            app,
+            sid,
+            mgr,
+            cmd_rx,
+            rt_handle,
+            cwd,
+            config,
+            injection_script,
+            ready_marker,
+        );
     });
 
     Ok(session_id)
@@ -108,6 +126,8 @@ fn pty_session_thread(
     rt_handle: tokio::runtime::Handle,
     cwd: SharedCwd,
     config: Option<LocalSessionConfig>,
+    injection_script: Option<String>,
+    ready_marker: String,
 ) {
     let pty_system = native_pty_system();
     let pair = match pty_system.openpty(PtySize {
@@ -182,9 +202,12 @@ fn pty_session_thread(
         .map(|s| s.inner().clone());
     let sid_for_rec_reader = session_id.clone();
     let output_reader = output.clone();
+    let manager_reader = manager.clone();
+    let suppress_injected_output = injection_script.is_some();
     std::thread::spawn(move || {
         let mut raw_buf = [0u8; 4096];
-        let mut stripper = OscStripper::new("");
+        let mut stripper = OscStripper::new(&ready_marker);
+        let mut suppress_visible = suppress_injected_output;
         loop {
             match reader.read(&mut raw_buf) {
                 Ok(0) => break,
@@ -200,6 +223,20 @@ fn pty_session_thread(
                         if let Some(next_cwd) = next_cwd {
                             let _ = app_ref.emit(&cwd_ev, &next_cwd);
                         }
+                    }
+
+                    for command in &result.accepted_commands {
+                        rt_for_reader.block_on(
+                            manager_reader
+                                .confirm_command_submission(&sid_for_rec_reader, command.clone()),
+                        );
+                    }
+
+                    if suppress_visible {
+                        if result.ready {
+                            suppress_visible = false;
+                        }
+                        continue;
                     }
 
                     if !result.visible.is_empty() {
@@ -226,6 +263,15 @@ fn pty_session_thread(
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
         .map(|s| s.inner().clone());
+    if let Some(script) = injection_script.as_deref() {
+        if let Err(error) = write_to_pty(&mut *writer, script.as_bytes()) {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %error,
+                "Failed to inject local PTY shell hooks"
+            );
+        }
+    }
     while let Some(cmd) = cmd_rx.blocking_recv() {
         match cmd {
             SessionCommand::Attach => {

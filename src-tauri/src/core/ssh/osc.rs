@@ -2,6 +2,9 @@
 //!
 //! Used by both SSH (`core::ssh::io`) and local PTY (`core::pty`) to avoid duplication.
 
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
+
 /// Remote shell flavour detected via exec channel or local shell path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellKind {
@@ -59,12 +62,26 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
             concat!(
                 " DFLY_PRUNE_HISTORY=1;",
                 " if [ -z \"${{DFLY_INJ:-}}\" ]; then export DFLY_INJ=1;",
+                " DFLY_LAST_HISTCMD=\"${{HISTCMD-}}\";",
                 " __df_host(){{ hostname 2>/dev/null || printf localhost; }};",
+                " __df_emit_command(){{",
+                " local histcmd=\"${{HISTCMD-}}\";",
+                " if [ -n \"$histcmd\" ] && [ \"${{DFLY_LAST_HISTCMD-}}\" != \"$histcmd\" ]; then",
+                " DFLY_LAST_HISTCMD=\"$histcmd\";",
+                " local cmd; cmd=\"$(fc -ln -1 2>/dev/null)\";",
+                " if [ -n \"$cmd\" ] && command -v base64 >/dev/null 2>&1; then",
+                " local b64; b64=\"$(printf '%s' \"$cmd\" | base64 | tr -d '\\r\\n')\";",
+                " printf '\\033]7777;DflyCommand:%s\\007' \"$b64\";",
+                " fi;",
+                " fi;",
+                " }};",
                 " __df_prompt(){{",
                 " if [ -n \"${{DFLY_PRUNE_HISTORY:-}}\" ]; then",
                 " history -d $((HISTCMD-1)) 2>/dev/null || true;",
                 " unset DFLY_PRUNE_HISTORY;",
+                " DFLY_LAST_HISTCMD=\"${{HISTCMD-}}\";",
                 " fi;",
+                " __df_emit_command;",
                 " printf '\\033]7;file://%s%s\\007' \"$(__df_host)\" \"$PWD\";",
                 " }};",
                 " case \"${{PROMPT_COMMAND-}}\" in (*__df_prompt*) ;; (*)",
@@ -81,9 +98,16 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
                 " if [ -z \"${{DFLY_INJ:-}}\" ]; then export DFLY_INJ=1;",
                 " __df_host(){{ hostname 2>/dev/null || printf localhost; }};",
                 " __df_emit(){{ printf '\\033]7;file://%s%s\\007' \"$(__df_host)\" \"$PWD\"; }};",
+                " __df_preexec(){{",
+                " if [ -n \"$1\" ] && command -v base64 >/dev/null 2>&1; then",
+                " local b64; b64=\"$(printf '%s' \"$1\" | base64 | tr -d '\\r\\n')\";",
+                " printf '\\033]7777;DflyCommand:%s\\007' \"$b64\";",
+                " fi;",
+                " }};",
                 " autoload -Uz add-zsh-hook 2>/dev/null || true;",
-                " typeset -ga precmd_functions;",
+                " typeset -ga precmd_functions preexec_functions;",
                 " [[ \" ${{precmd_functions[*]}} \" == *\" __df_emit \"* ]] || precmd_functions+=(__df_emit);",
+                " [[ \" ${{preexec_functions[*]}} \" == *\" __df_preexec \"* ]] || preexec_functions+=(__df_preexec);",
                 " fi;",
                 " fc -P 2>/dev/null\n",
                 " printf '{}' 2>/dev/null\n",
@@ -99,6 +123,14 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
                 " function __df_emit --on-event fish_prompt;",
                 " printf '\\033]7;file://%s%s\\007' (hostname) $PWD;",
                 " end;",
+                " function __df_preexec --on-event fish_preexec;",
+                " if test -n \"$argv[1]\"; and command -sq base64;",
+                " set -l b64 (printf '%s' \"$argv[1]\" | base64 | tr -d '\\r\\n');",
+                " if test -n \"$b64\";",
+                " printf '\\033]7777;DflyCommand:%s\\007' \"$b64\";",
+                " end;",
+                " end;",
+                " end;",
                 " end;",
                 " set -e fish_private_mode 2>/dev/null\n",
                 " printf '{}' 2>/dev/null\n",
@@ -110,7 +142,16 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
             concat!(
                 " if (-not $env:DFLY_INJ) {{ $env:DFLY_INJ='1';",
                 " $dfEsc = [char]27; $dfBel = [char]7;",
-                " function prompt {{ $p = (pwd).ProviderPath;",
+                " $global:DFLYLastHistoryId = 0;",
+                " try {{ $dfHist = Get-History -Count 1 -ErrorAction Stop; if ($dfHist) {{ $global:DFLYLastHistoryId = $dfHist.Id; }} }} catch {{}};",
+                " function prompt {{",
+                " try {{ $dfHist = Get-History -Count 1 -ErrorAction Stop; if ($dfHist -and $dfHist.Id -ne $global:DFLYLastHistoryId) {{",
+                " $global:DFLYLastHistoryId = $dfHist.Id;",
+                " $dfBytes = [System.Text.Encoding]::UTF8.GetBytes($dfHist.CommandLine);",
+                " $dfB64 = [Convert]::ToBase64String($dfBytes);",
+                " Write-Host -NoNewline \"$dfEsc]7777;DflyCommand:$dfB64$dfBel\";",
+                " }} }} catch {{}};",
+                " $p = (pwd).ProviderPath;",
                 " $h = [System.Net.Dns]::GetHostName();",
                 " Write-Host -NoNewline \"$dfEsc]7;file://$h$p$dfBel\";",
                 " return \"PS $p> \" }} }};",
@@ -141,6 +182,8 @@ pub struct OscResult {
     pub cwd_paths: Vec<String>,
     /// Whether the ready marker was detected in this chunk.
     pub ready: bool,
+    /// Shell-confirmed commands extracted from private Dragonfly OSC markers.
+    pub accepted_commands: Vec<String>,
 }
 
 /// Streaming parser that strips OSC 7 and DflyReady sequences from terminal
@@ -167,12 +210,14 @@ impl OscStripper {
                 visible: std::mem::take(&mut self.buf),
                 cwd_paths: Vec::new(),
                 ready: false,
+                accepted_commands: Vec::new(),
             };
         }
 
         let mut visible = String::new();
         let mut paths = Vec::new();
         let mut ready = false;
+        let mut commands = Vec::new();
 
         loop {
             let esc_pos = match self.buf.find("\x1b]") {
@@ -217,6 +262,11 @@ impl OscStripper {
                 }
             } else if inner.starts_with("7777;DflyReady:") {
                 ready = true;
+            } else if let Some(command) = inner
+                .strip_prefix("7777;DflyCommand:")
+                .and_then(parse_command_payload)
+            {
+                commands.push(command);
             } else {
                 // Not ours — pass through to the terminal.
                 visible.push_str(seq);
@@ -229,6 +279,7 @@ impl OscStripper {
             visible,
             cwd_paths: paths,
             ready,
+            accepted_commands: commands,
         }
     }
 
@@ -254,9 +305,21 @@ fn parse_osc7_payload(payload: &str) -> Option<String> {
     }
 }
 
+fn parse_command_payload(payload: &str) -> Option<String> {
+    let decoded = BASE64_STANDARD.decode(payload).ok()?;
+    let command = String::from_utf8(decoded).ok()?;
+    if command.is_empty() {
+        None
+    } else {
+        Some(command)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{build_ready_marker, injection_script, ShellKind};
+    use super::{build_ready_marker, injection_script, OscStripper, ShellKind};
+    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+    use base64::Engine;
 
     #[test]
     fn bash_injection_prunes_its_history_entry() {
@@ -290,6 +353,9 @@ mod tests {
                 .expect("fish private mode cleanup")
                 < ready_pos(&fish)
         );
+
+        assert!(zsh.contains("DflyCommand:%s"));
+        assert!(fish.contains("DflyCommand:%s"));
     }
 
     #[test]
@@ -301,5 +367,36 @@ mod tests {
         assert!(script.contains("[char]7"));
         assert!(!script.contains("`e"));
         assert!(script.contains("DflyReady:session-1"));
+        assert!(script.contains("DflyCommand:"));
+    }
+
+    #[test]
+    fn strips_private_command_osc_without_leaking_visible_text() {
+        let command = BASE64_STANDARD.encode("docker ps");
+        let payload = format!(
+            "before\x1b]7777;DflyCommand:{command}\x07after\x1b]7777;DflyReady:session-1\x07"
+        );
+
+        let result = OscStripper::new(&build_ready_marker("session-1")).push(&payload);
+        assert_eq!(result.visible, "beforeafter");
+        assert_eq!(result.accepted_commands, vec!["docker ps".to_string()]);
+        assert!(result.ready);
+    }
+
+    #[test]
+    fn parses_split_command_markers_across_chunks() {
+        let command = BASE64_STANDARD.encode("kubectl get pods");
+        let mut stripper = OscStripper::new(&build_ready_marker("session-1"));
+
+        let first = stripper.push(&format!("x\x1b]7777;DflyCommand:{}", &command[..8]));
+        assert_eq!(first.visible, "x");
+        assert!(first.accepted_commands.is_empty());
+
+        let second = stripper.push(&format!("{}\x07y", &command[8..]));
+        assert_eq!(second.visible, "y");
+        assert_eq!(
+            second.accepted_commands,
+            vec!["kubectl get pods".to_string()]
+        );
     }
 }

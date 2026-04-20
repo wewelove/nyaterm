@@ -216,6 +216,18 @@ pub async fn add_command_history(
 }
 
 #[tauri::command]
+pub async fn register_command_submission(
+    state: tauri::State<'_, Arc<SessionManager>>,
+    session_id: String,
+    command: String,
+) -> AppResult<()> {
+    state
+        .register_command_submission(&session_id, command)
+        .await;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_command_history(
     state: tauri::State<'_, Arc<SessionManager>>,
 ) -> AppResult<Vec<String>> {

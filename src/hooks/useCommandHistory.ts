@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ShellIntegrationState } from "@/hooks/useShellIntegration";
+import {
+  canSuggestFromTracker,
+  getTrackedCommand,
+  type TerminalInputState,
+} from "@/lib/terminalInputTracker";
 import type { FuzzyResult } from "@/types/global";
 
 interface XTermCoreWithRenderDimensions {
@@ -20,11 +24,9 @@ interface XTermCoreWithRenderDimensions {
 }
 
 export function useCommandHistory(
-  sessionId: string,
   terminalRef: React.RefObject<Terminal | null>,
-  currentLineRef: React.RefObject<string>,
-  shellIntegrationRef: React.RefObject<ShellIntegrationState>,
-  readBufferCommand: () => string,
+  inputStateRef: React.RefObject<TerminalInputState>,
+  applySuggestion: (command: string, execute: boolean) => void,
   enabled: boolean,
 ) {
   const [suggestions, setSuggestions] = useState<FuzzyResult[]>([]);
@@ -111,7 +113,7 @@ export function useCommandHistory(
       return;
     }
 
-    if (currentLineRef.current.length === 0) {
+    if (!canSuggestFromTracker(inputStateRef.current)) {
       dismissSuggestions();
       return;
     }
@@ -122,8 +124,8 @@ export function useCommandHistory(
         return;
       }
 
-      const pattern = readBufferCommand();
-      if (!pattern.trim()) {
+      const pattern = getTrackedCommand(inputStateRef.current);
+      if (!pattern.trim() || !canSuggestFromTracker(inputStateRef.current)) {
         dismissSuggestions();
         return;
       }
@@ -159,31 +161,15 @@ export function useCommandHistory(
         // Ignore errors
       }
     }, 80);
-  }, [readBufferCommand, dismissSuggestions, currentLineRef, getCursorViewportPosition]);
+  }, [dismissSuggestions, getCursorViewportPosition, inputStateRef]);
 
   const handleSelectSuggestion = useCallback(
     (command: string) => {
-      const actualCmd = readBufferCommand();
-      const eraseChars = "\x7f".repeat(actualCmd.length);
-      invoke("write_to_session", {
-        sessionId,
-        data: `${eraseChars + command}\r`,
-      }).catch(() => {});
-      invoke("add_command_history", { sessionId, command }).catch(() => {});
-      currentLineRef.current = "";
-      shellIntegrationRef.current.fallbackNeedsDetection = true;
-
+      applySuggestion(command, true);
       dismissSuggestions();
       terminalRef.current?.focus();
     },
-    [
-      sessionId,
-      readBufferCommand,
-      dismissSuggestions,
-      currentLineRef,
-      shellIntegrationRef,
-      terminalRef,
-    ],
+    [applySuggestion, dismissSuggestions, terminalRef],
   );
 
   return {

@@ -46,6 +46,7 @@ import { useIdleLock } from "./hooks/useIdleLock";
 import { getErrorMessage, shouldPromptConnectionEditOnFailure } from "./lib/errors";
 import { invoke } from "./lib/invoke";
 import { logger } from "./lib/logger";
+import { sendSessionInput } from "./lib/sessionInput";
 import {
   findTerminalWindowLeafById,
   findTerminalWindowLeafByTabId,
@@ -679,12 +680,10 @@ function App() {
       if (activePane && !activePane.connecting) {
         if (activePane.connectError) return;
         const { sessionId } = activePane;
-        import("@tauri-apps/api/core").then(({ invoke }) => {
-          invoke("write_to_session", {
-            sessionId,
-            data: execute ? `${command}\r` : command,
-          });
-        });
+        void sendSessionInput(sessionId, execute ? `${command}\r` : command, {
+          preview: execute ? { kind: "reset" } : { kind: "data", data: command },
+          registerSubmission: execute ? command : null,
+        }).catch(() => {});
         import("@tauri-apps/api/event").then(({ emit }) => {
           emit(`focus-terminal-${sessionId}`);
         });

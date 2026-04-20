@@ -69,6 +69,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/context/AppContext";
+import { sendSessionInput } from "@/lib/sessionInput";
 import { formatSize } from "@/lib/utils";
 import { openAutoUpload } from "@/lib/windowManager";
 import type { FileEntry, FileExplorerProps, SessionInfo } from "@/types/global";
@@ -594,7 +595,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
 
   const handleSendCurrentPathToTerminal = () => {
     if (!activeSessionId) return;
-    invoke("write_to_session", { sessionId: activeSessionId, data: currentPath }).catch(() => {});
+    sendSessionInput(activeSessionId, currentPath).catch(() => {});
     emit(`focus-terminal-${activeSessionId}`).catch(() => {});
   };
 
@@ -723,10 +724,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     else if (mode === "name") text = entry.name;
     else text = getEntryFullPath(entry);
 
-    invoke("write_to_session", {
-      sessionId: activeSessionId,
-      data: text,
-    }).catch(() => {});
+    sendSessionInput(activeSessionId, text).catch(() => {});
     emit(`focus-terminal-${activeSessionId}`).catch(() => {});
   };
 
@@ -1293,10 +1291,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
                     className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
                     onClick={() => {
                       if (activeSessionId && currentPath) {
-                        invoke("write_to_session", {
-                          sessionId: activeSessionId,
-                          data: `${currentPath}`,
-                        }).catch(() => {});
+                        sendSessionInput(activeSessionId, currentPath).catch(() => {});
                         emit(`focus-terminal-${activeSessionId}`).catch(() => {});
                       }
                     }}

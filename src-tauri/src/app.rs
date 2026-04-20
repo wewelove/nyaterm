@@ -105,6 +105,10 @@ pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                     return;
                 }
             }
+
+            let session_manager = window.state::<Arc<SessionManager>>();
+            session_manager.flush_history_before_shutdown();
+
             for label in &["settings", "new-session", "quick-command"] {
                 if let Some(child) = window.app_handle().get_webview_window(label) {
                     let _ = child.close();

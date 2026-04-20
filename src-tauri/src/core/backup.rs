@@ -42,8 +42,8 @@ pub fn export_config(app: &AppHandle, output_path: &str) -> AppResult<()> {
     let mut zip_buf = Cursor::new(Vec::new());
     {
         let mut zip_writer = zip::ZipWriter::new(&mut zip_buf);
-        let options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         let entries = std::fs::read_dir(&config_dir)
             .map_err(|e| AppError::Config(format!("read config dir: {e}")))?;

@@ -203,7 +203,7 @@ pub(super) async fn ssh_io_loop(
                                 // user sees the banner / MOTD, then inject.
                                 emit_output(
                                     &app, &output, &cwd_event, &cwd,
-                                    &recording_mgr, &session_id,
+                                    &recording_mgr, &session_id, &manager,
                                     &result,
                                 ).await;
 
@@ -224,6 +224,11 @@ pub(super) async fn ssh_io_loop(
                                         let _ = app.emit(&cwd_event, &next_cwd);
                                     }
                                 }
+                                for command in &result.accepted_commands {
+                                    manager
+                                        .confirm_command_submission(&session_id, command.clone())
+                                        .await;
+                                }
                                 if result.ready {
                                     phase = IoPhase::Normal;
                                 }
@@ -231,7 +236,7 @@ pub(super) async fn ssh_io_loop(
                             IoPhase::Normal => {
                                 emit_output(
                                     &app, &output, &cwd_event, &cwd,
-                                    &recording_mgr, &session_id,
+                                    &recording_mgr, &session_id, &manager,
                                     &result,
                                 ).await;
                             }
@@ -344,12 +349,19 @@ async fn emit_output(
     cwd: &SharedCwd,
     recording_mgr: &Option<Arc<RecordingManager>>,
     session_id: &str,
+    manager: &Arc<SessionManager>,
     result: &osc::OscResult,
 ) {
     for path in &result.cwd_paths {
         if let Some(next_cwd) = update_cwd_if_changed(cwd, path).await {
             let _ = app.emit(cwd_event, &next_cwd);
         }
+    }
+
+    for command in &result.accepted_commands {
+        manager
+            .confirm_command_submission(session_id, command.clone())
+            .await;
     }
 
     if result.visible.is_empty() {
