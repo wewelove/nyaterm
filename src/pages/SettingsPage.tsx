@@ -1,9 +1,12 @@
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   MdBackup,
+  MdDashboard,
+  MdDns,
+  MdKeyboardArrowRight,
   MdMouse,
   MdPalette,
   MdSearch,
@@ -66,6 +69,67 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [draftSettings, setDraftSettings] = useState<AppSettings>(committedSettings);
   const [isSaving, setIsSaving] = useState(false);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollStates = useRef<Record<string, number>>({});
+
+  useLayoutEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollStates.current[activeTab] || 0;
+    }
+  }, [activeTab]);
+
+  type SettingsCategory = {
+    id: string;
+    label: string;
+    icon: string;
+    items: string[];
+  };
+
+  const categories: SettingsCategory[] = useMemo(
+    () => [
+      {
+        id: "workspace",
+        label: t("settings.groupWorkspace"),
+        icon: "dashboard",
+        items: ["general", "appearance", "interaction"],
+      },
+      {
+        id: "terminal_session",
+        label: t("settings.groupTerminalSession"),
+        icon: "dns",
+        items: ["terminal", "search", "translation"],
+      },
+      {
+        id: "transfer_group",
+        label: t("settings.groupTransfer"),
+        icon: "swap_horiz",
+        items: ["transfer"],
+      },
+      {
+        id: "security_group",
+        label: t("settings.groupSecurity"),
+        icon: "security",
+        items: ["security"],
+      },
+      {
+        id: "syncBackup_group",
+        label: t("settings.groupSyncBackup"),
+        icon: "backup",
+        items: ["syncBackup"],
+      },
+    ],
+    [t],
+  );
+
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    const initialGroup = categories.find((c) => c.items.includes(initialTab))?.id;
+    return initialGroup ? { [initialGroup]: true } : {};
+  });
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  }, []);
 
   const committedSerialized = useMemo(
     () => JSON.stringify(committedSettings),
@@ -143,6 +207,8 @@ export default function SettingsPage() {
 
   const iconMap: Record<string, React.ElementType> = {
     backup: MdBackup,
+    dashboard: MdDashboard,
+    dns: MdDns,
     settings: MdSettings,
     palette: MdPalette,
     swap_horiz: MdSwapHoriz,
@@ -202,7 +268,7 @@ export default function SettingsPage() {
         const nextSettings = await invoke<AppSettings>("get_app_settings");
         app.replaceAppSettings(nextSettings);
         setDraftSettings(nextSettings);
-        await emit("settings-changed", nextSettings).catch(() => {});
+        await emit("settings-changed", nextSettings).catch(() => { });
 
         if (closeAfterSave) {
           await getCurrentWindow().close();
@@ -271,28 +337,94 @@ export default function SettingsPage() {
                 </h1>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 sm:px-3 sm:py-4">
-                <div className="flex flex-col gap-1.5">
-                  {tabs.map((tab) => (
-                    <Button
-                      key={tab.id}
-                      variant="ghost"
-                      onClick={() => setActiveTab(tab.id)}
-                      title={tab.label}
-                      className={`h-auto w-full justify-center gap-3 rounded-xl border px-2 py-2.5 text-sm font-medium transition-colors sm:justify-start sm:px-3 ${
-                        activeTab === tab.id
-                          ? "border-primary/20 bg-primary/12 text-foreground shadow-xs hover:bg-primary/16"
-                          : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-background hover:text-foreground"
-                      }`}
-                    >
-                      <DynamicIcon
-                        name={tab.icon}
-                        className={`shrink-0 text-[1.125rem] ${
-                          activeTab === tab.id ? "text-primary" : ""
-                        }`}
-                      />
-                      <span className="hidden truncate sm:inline">{tab.label}</span>
-                    </Button>
-                  ))}
+                <div className="flex flex-col gap-2">
+                  {categories.map((category) => {
+                    const isExpanded = expandedGroups[category.id];
+                    const hasMultiple = category.items.length > 1;
+
+                    if (!hasMultiple) {
+                      const tabId = category.items[0];
+                      const tabItem = tabs.find((t) => t.id === tabId);
+                      if (!tabItem) return null;
+                      const isActive = activeTab === tabId;
+                      return (
+                        <Button
+                          key={tabId}
+                          variant="ghost"
+                          onClick={() => setActiveTab(tabId)}
+                          title={category.label}
+                          className={`h-auto w-full justify-center gap-3 rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors sm:justify-start sm:px-3 ${isActive
+                              ? "border-primary/20 bg-primary/12 text-foreground shadow-xs hover:bg-primary/16"
+                              : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-background hover:text-foreground"
+                            }`}
+                        >
+                          <DynamicIcon
+                            name={tabItem.icon}
+                            className={`shrink-0 text-[1.125rem] ${isActive ? "text-primary" : ""}`}
+                          />
+                          <span className="hidden truncate sm:inline">{category.label}</span>
+                        </Button>
+                      );
+                    }
+
+                    const activeChildCount = category.items.filter((item) => activeTab === item).length;
+                    const isGroupActive = activeChildCount > 0;
+
+                    return (
+                      <div key={category.id} className="flex flex-col">
+                        <Button
+                          variant="ghost"
+                          onClick={() => toggleGroup(category.id)}
+                          title={category.label}
+                          className={`h-auto w-full justify-center sm:justify-between rounded-xl px-2 py-2.5 text-sm font-semibold transition-colors sm:px-3 ${isGroupActive && !isExpanded
+                              ? "border border-primary/20 bg-primary/5 text-foreground hover:bg-primary/10"
+                              : "border border-transparent text-muted-foreground hover:border-border/70 hover:bg-background hover:text-foreground"
+                            }`}
+                        >
+                          <div className="flex items-center justify-center sm:justify-start gap-3">
+                            <DynamicIcon
+                              name={category.icon}
+                              className={`shrink-0 text-[1.125rem] ${isGroupActive && !isExpanded ? "text-primary" : ""}`}
+                            />
+                            <span className="hidden truncate sm:inline">{category.label}</span>
+                          </div>
+                          <MdKeyboardArrowRight
+                            className={`hidden sm:block shrink-0 text-[1.125rem] transition-transform duration-200 ${isExpanded ? "rotate-90" : ""
+                              }`}
+                          />
+                        </Button>
+
+                        <div
+                          className={`relative flex flex-col gap-1 overflow-hidden transition-all duration-200 ${isExpanded ? "max-h-64 opacity-100 mt-1" : "max-h-0 opacity-0"
+                            } sm:ml-[1.3125rem] sm:pl-3 sm:border-l-2 sm:border-border/40`}
+                        >
+                          {category.items.map((tabId) => {
+                            const tabItem = tabs.find((t) => t.id === tabId);
+                            if (!tabItem) return null;
+                            const isActive = activeTab === tabId;
+                            return (
+                              <Button
+                                key={tabId}
+                                variant="ghost"
+                                onClick={() => setActiveTab(tabId)}
+                                title={tabItem.label}
+                                className={`h-auto w-full justify-center gap-3 rounded-lg border px-2 py-2 text-[0.85rem] font-medium transition-colors sm:justify-start sm:px-3 ${isActive
+                                    ? "border-primary/20 bg-primary/12 text-foreground shadow-xs hover:bg-primary/16"
+                                    : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-background/50 hover:text-foreground"
+                                  }`}
+                              >
+                                <DynamicIcon
+                                  name={tabItem.icon}
+                                  className={`shrink-0 text-[1rem] ${isActive ? "text-primary" : "text-muted-foreground/70"}`}
+                                />
+                                <span className="hidden truncate sm:inline">{tabItem.label}</span>
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -305,7 +437,13 @@ export default function SettingsPage() {
                 <h3 className="text-lg font-semibold sm:text-2xl">{activeTabConfig?.label}</h3>
               </div>
 
-              <div className="flex-1 overflow-y-auto bg-gradient-to-b from-background via-background to-muted/10 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+              <div
+                ref={scrollContainerRef}
+                onScroll={(e) => {
+                  scrollStates.current[activeTab] = e.currentTarget.scrollTop;
+                }}
+                className="flex-1 overflow-y-auto bg-gradient-to-b from-background via-background to-muted/10 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8"
+              >
                 <div className="mx-auto w-full max-w-5xl space-y-5 text-base sm:space-y-6">
                   {activeTab === "syncBackup" ? (
                     <SyncBackupTab onNavigateSecurity={() => setActiveTab("security")} />
