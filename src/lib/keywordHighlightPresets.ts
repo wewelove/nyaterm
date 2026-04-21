@@ -31,9 +31,15 @@ function requireTokenBoundary(pattern: string): string {
 // All patterns are compiled with the `gi` flag (global + case-insensitive).
 
 const BUILTIN_PATTERNS = {
-  error: ["error", "fail(?:ed|ure)?", "fatal", "exception", "traceback", "panic", "critical"].map(
-    requireTokenBoundary,
-  ),
+  error: [
+    "error",
+    "fail(?:ed|ure)?",
+    "fatal",
+    "exception",
+    "traceback",
+    "panic",
+    "critical",
+  ].map(requireTokenBoundary),
   warn: ["warn(?:ing)?", "deprecated", "caution"].map(requireTokenBoundary),
   success: [
     "success(?:ful(?:ly)?)?",
@@ -78,6 +84,13 @@ const BUILTIN_PATTERNS = {
     "nullptr",
     "EOF",
     "stop(?:ped)?",
+    "exit(?:ed|ing)?",
+    "quit(?:ed|ing)?",
+    "abort(?:ed|ing)?",
+    "cancel(?:ed|ing)?",
+    "interrupt(?:ed|ing)?",
+    "pause(?:ed|ing)?",
+    "resume(?:ed|ing)?",
   ].map(requireTokenBoundary),
   address: [
     "\\b(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b",
