@@ -133,6 +133,38 @@ type LoadDirectoryOptions = {
   history?: "push" | "preserve";
 };
 
+// Keep per-session explorer state alive when the panel is unmounted and shown again.
+const fileExplorerSessionCacheStore = new Map<string, FileExplorerSessionCache>();
+
+function buildSessionCacheSnapshot(
+  files: FileEntry[],
+  currentPath: string,
+  homeDir: string,
+  history: string[],
+  historyIndex: number,
+): FileExplorerSessionCache | null {
+  const normalizedCurrentPath = normalizeDirectoryPath(currentPath);
+  const normalizedHomeDir = normalizeDirectoryPath(homeDir);
+  const normalizedHistory = history
+    .map((entry) => normalizeDirectoryPath(entry))
+    .filter((entry): entry is string => !!entry);
+
+  if (!normalizedCurrentPath) {
+    return null;
+  }
+
+  const nextHistory = normalizedHistory.length > 0 ? normalizedHistory : [normalizedCurrentPath];
+  const nextHistoryIndex = Math.min(Math.max(historyIndex, 0), nextHistory.length - 1);
+
+  return {
+    files,
+    currentPath: normalizedCurrentPath,
+    homeDir: normalizedHomeDir || normalizedCurrentPath,
+    history: nextHistory,
+    historyIndex: nextHistoryIndex,
+  };
+}
+
 /** Remote file browser for active SSH session. Lists dirs/files, supports navigation. */
 export default function FileExplorer({ activeSessionId, activeSessionType }: FileExplorerProps) {
   const { t } = useTranslation();
@@ -177,13 +209,29 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     additive: boolean;
   } | null>(null);
 
-  const sessionCacheRef = useRef<Map<string, FileExplorerSessionCache>>(new Map());
+  const sessionCacheRef = useRef(fileExplorerSessionCacheStore);
   const prevSessionIdRef = useRef<string | null>(null);
   const pendingManualRefreshUploadsRef = useRef<Set<string>>(new Set());
 
   filesRef.current = files;
   currentPathRef.current = currentPath;
   homeDirRef.current = homeDir;
+
+  useEffect(() => {
+    return () => {
+      if (!activeSessionId) return;
+      const snapshot = buildSessionCacheSnapshot(
+        filesRef.current,
+        currentPathRef.current,
+        homeDirRef.current,
+        historyRef.current,
+        historyIndexRef.current,
+      );
+      if (snapshot) {
+        sessionCacheRef.current.set(activeSessionId, snapshot);
+      }
+    };
+  }, [activeSessionId]);
 
   useEffect(() => {
     const handleMouseUp = () => {
@@ -283,6 +331,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     async (path: string, options?: LoadDirectoryOptions) => {
       if (!canBrowseFiles || !activeSessionId) return false;
       const normalizedPath = normalizeDirectoryPath(path);
+      if (!normalizedPath) return false;
       const historyMode = options?.history ?? "push";
       setDirectoryLoading(true);
       setError(null);
@@ -319,13 +368,16 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         });
 
         const cached = sessionCacheRef.current.get(activeSessionId);
-        sessionCacheRef.current.set(activeSessionId, {
-          files: entries,
-          currentPath: normalizedPath,
-          homeDir: cached?.homeDir ?? homeDirRef.current,
-          history: [...historyRef.current],
-          historyIndex: historyIndexRef.current,
-        });
+        const snapshot = buildSessionCacheSnapshot(
+          entries,
+          normalizedPath,
+          cached?.homeDir ?? homeDirRef.current,
+          historyRef.current,
+          historyIndexRef.current,
+        );
+        if (snapshot) {
+          sessionCacheRef.current.set(activeSessionId, snapshot);
+        }
         return true;
       } catch (e) {
         const msg = String(e);
@@ -342,18 +394,28 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     [activeSessionId, canBrowseFiles, pushDirectoryHistory],
   );
 
+  const refreshCurrentDirectory = useCallback(() => {
+    const targetPath =
+      normalizeDirectoryPath(currentPathRef.current) || normalizeDirectoryPath(homeDirRef.current);
+    if (!targetPath) return Promise.resolve(false);
+    return loadDirectory(targetPath);
+  }, [loadDirectory]);
+
   useEffect(() => {
     const cache = sessionCacheRef.current;
     const prevId = prevSessionIdRef.current;
 
     if (prevId && prevId !== activeSessionId) {
-      cache.set(prevId, {
-        files: filesRef.current,
-        currentPath: currentPathRef.current,
-        homeDir: homeDirRef.current,
-        history: [...historyRef.current],
-        historyIndex: historyIndexRef.current,
-      });
+      const snapshot = buildSessionCacheSnapshot(
+        filesRef.current,
+        currentPathRef.current,
+        homeDirRef.current,
+        historyRef.current,
+        historyIndexRef.current,
+      );
+      if (snapshot) {
+        cache.set(prevId, snapshot);
+      }
     }
     prevSessionIdRef.current = activeSessionId;
 
@@ -370,7 +432,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     }
 
     const cached = cache.get(activeSessionId);
-    if (cached) {
+    if (cached?.currentPath) {
       setFiles(cached.files);
       setCurrentPath(cached.currentPath);
       setHomeDir(cached.homeDir);
@@ -390,14 +452,22 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     let cancelled = false;
     (async () => {
       try {
+        const cachedHome = normalizeDirectoryPath(cached?.homeDir ?? "");
+        if (cachedHome) {
+          homeDirRef.current = cachedHome;
+          setHomeDir(cachedHome);
+          await loadDirectory(cachedHome);
+          return;
+        }
+
         const home = await invoke<string>("get_home_dir", { sessionId: activeSessionId });
         if (cancelled) return;
         homeDirRef.current = home;
         setHomeDir(home);
-        loadDirectory(home);
+        await loadDirectory(home);
       } catch {
         if (cancelled) return;
-        loadDirectory("~");
+        await loadDirectory("~");
       }
     })();
     return () => {
@@ -433,14 +503,14 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
       }
 
       if (status === "completed" && getParentPath(remote_path) === currentPath) {
-        loadDirectory(currentPath);
+        void refreshCurrentDirectory();
       }
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [activeSessionId, canBrowseFiles, currentPath, loadDirectory]);
+  }, [activeSessionId, canBrowseFiles, currentPath, refreshCurrentDirectory]);
 
   const getRangeSelection = useCallback(
     (
@@ -660,7 +730,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
     if (!currentPath || currentPath === "/") return;
     const parts = currentPath.split("/");
     parts.pop();
-    loadDirectory(parts.join("/") || "/");
+    void loadDirectory(parts.join("/") || "/");
   };
 
   const handlePanelMouseDownCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
@@ -902,7 +972,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         localPath: localDir,
         remotePath,
       });
-      loadDirectory(currentPath);
+      void refreshCurrentDirectory();
     } catch (e) {
       logger.error({
         domain: "transfer.lifecycle",
@@ -1057,7 +1127,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
             variant="ghost"
             size="icon"
             className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
-            onClick={() => loadDirectory(currentPath)}
+            onClick={() => void refreshCurrentDirectory()}
           >
             <MdRefresh className="h-4 w-4" />
           </ToolbarIconButton>
@@ -1080,12 +1150,12 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
                 if (e.key === "Enter") {
                   let p = pathInputText.trim();
                   if (p) {
-                    if (p.startsWith("~/")) {
+                    if (p.startsWith("~/") && homeDir) {
                       p = homeDir + p.substring(1);
-                    } else if (p === "~") {
+                    } else if (p === "~" && homeDir) {
                       p = homeDir;
                     }
-                    loadDirectory(p);
+                    void loadDirectory(p);
                   }
                   setIsEditingPath(false);
                 } else if (e.key === "Escape") {
@@ -1159,7 +1229,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
                     onContextMenuSelect={handleContextMenuSelection}
                     onItemClick={handleItemClick}
                     onOpenDefault={handleOpenDefault}
-                    onRefresh={() => loadDirectory(currentPath)}
+                    onRefresh={() => void refreshCurrentDirectory()}
                     onUpload={handleUploadFiles}
                     onUploadFolder={handleUploadFolder}
                     onDownload={handleDownloadFromContextMenu}
@@ -1201,7 +1271,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         </ContextMenuTrigger>
         {canBrowseFiles && (
           <ContextMenuContent className="w-52">
-            <ContextMenuItem onClick={() => loadDirectory(currentPath)}>
+            <ContextMenuItem onClick={() => void refreshCurrentDirectory()}>
               <MdRefresh className="mr-2 h-4 w-4" />
               {t("fileExplorer.refresh")}
             </ContextMenuItem>
@@ -1348,7 +1418,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         <RenameDialog
           data={renameDialogData}
           onClose={() => setRenameDialogData(null)}
-          onSuccess={() => loadDirectory(currentPath)}
+          onSuccess={() => void refreshCurrentDirectory()}
         />
       )}
 
@@ -1359,7 +1429,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
           onSuccess={() => {
             setSelectedFiles(new Set());
             lastSelectedRef.current = null;
-            loadDirectory(currentPath);
+            void refreshCurrentDirectory();
           }}
         />
       )}
@@ -1368,7 +1438,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         <MoveDialog
           data={moveDialogData}
           onClose={() => setMoveDialogData(null)}
-          onSuccess={() => loadDirectory(currentPath)}
+          onSuccess={() => void refreshCurrentDirectory()}
         />
       )}
 
@@ -1377,7 +1447,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
           data={newItemDialogData}
           onClose={() => setNewItemDialogData(null)}
           onSuccess={async (result) => {
-            await loadDirectory(currentPath);
+            await refreshCurrentDirectory();
             if (result.openAfterCreate) {
               const mockEntry: FileEntry = {
                 name: result.name,
@@ -1407,7 +1477,7 @@ export default function FileExplorer({ activeSessionId, activeSessionType }: Fil
         <NewSymlinkDialog
           data={newSymlinkDialogData}
           onClose={() => setNewSymlinkDialogData(null)}
-          onSuccess={() => loadDirectory(currentPath)}
+          onSuccess={() => void refreshCurrentDirectory()}
         />
       )}
     </aside>
