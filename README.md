@@ -30,8 +30,9 @@ Dragonfly is a desktop client for SSH-centric operations and mixed terminal work
 ### Remote operations
 
 - Built-in SFTP file explorer with upload, download, rename, move, delete, symlink, and properties
-- Transfer queue with pause, resume, cancel, retry, timestamp preservation, duplicate handling, and configurable concurrency
+- Folder upload, multi-select actions, editable path bar, and manual / automatic sync with terminal cwd
 - Open remote files in a local editor and upload changes back through the watcher flow
+- Windows support for dragging local files or folders directly into the file explorer to upload
 - Quick Commands with categories, colors, icons, execution modes, pinning, and variable prompts
 
 ### Security and networking
@@ -40,6 +41,7 @@ Dragonfly is a desktop client for SSH-centric operations and mixed terminal work
 - OTP management with TOTP/HOTP, QR import, and SSH auto-fill support
 - Screen lock, master password support, and known-hosts management
 - Proxy configs, SSH jump hosts, and local / remote / dynamic tunnels
+- Diagnostics settings, local log management, and diagnostics bundle export for troubleshooting
 
 ### Sync, backup, and portability
 
@@ -48,8 +50,6 @@ Dragonfly is a desktop client for SSH-centric operations and mixed terminal work
 - Startup sync checks, debounced auto-push after supported local changes, and scheduled backup retention policies
 - Manual test / push / pull / backup actions, remote backup restore, and snapshot-level conflict resolution
 - Session import from Xshell, MobaXterm, and WindTerm, plus full-app encrypted `.dgfy` import / export
-- Diagnostics bundle export for troubleshooting and support
-- Dedicated **Sync & Backup** settings tab plus an in-workspace activity history panel
 
 ## Supported session types
 
@@ -67,6 +67,7 @@ The detailed user docs live in `docs-site/`.
 - Product overview: [docs-site/docs/intro.md](docs-site/docs/intro.md)
 - Quick start: [docs-site/docs/getting-started/quick-start.md](docs-site/docs/getting-started/quick-start.md)
 - Guides: [docs-site/docs/guide/](docs-site/docs/guide)
+- File transfer guide: [docs-site/docs/guide/file-transfer.md](docs-site/docs/guide/file-transfer.md)
 - Sync and backup guide: [docs-site/docs/guide/sync-and-backup.md](docs-site/docs/guide/sync-and-backup.md)
 - Development docs: [docs-site/docs/development/](docs-site/docs/development)
 
