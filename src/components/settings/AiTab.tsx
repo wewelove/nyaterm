@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MdAdd, MdDelete, MdExpandLess, MdExpandMore, MdRefresh } from "react-icons/md";
 import { toast } from "sonner";
@@ -221,10 +221,45 @@ export function AiModelsTab() {
     return visibleModels.filter((model) => model.name.toLowerCase().includes(q));
   }, [visibleModels, query]);
 
-  const groupedModels = useMemo(
+  const rawGroupedModels = useMemo(
     () => groupModels(filteredModels, ai.provider_credentials),
     [filteredModels, ai.provider_credentials],
   );
+
+  const sortOrderRef = useRef<Map<string, string[]>>(new Map());
+
+  const groupedModels = useMemo(() => {
+    const prevOrder = sortOrderRef.current;
+    const nextOrder = new Map<string, string[]>();
+
+    const sorted = rawGroupedModels.map((group) => {
+      const prevIds = prevOrder.get(group.groupKey);
+      const currentIds = group.models.map((m) => m.id);
+      const currentIdSet = new Set(currentIds);
+      const sameSet =
+        prevIds !== undefined &&
+        prevIds.length === currentIds.length &&
+        prevIds.every((id) => currentIdSet.has(id));
+
+      if (sameSet && prevIds) {
+        const modelMap = new Map(group.models.map((m) => [m.id, m]));
+        const orderedModels = prevIds
+          .map((id) => modelMap.get(id))
+          .filter((m): m is AIModelConfigItem => m !== undefined);
+        nextOrder.set(group.groupKey, prevIds);
+        return { ...group, models: orderedModels };
+      }
+
+      const freshSorted = [...group.models].sort(
+        (a, b) => Number(b.enabled) - Number(a.enabled),
+      );
+      nextOrder.set(group.groupKey, freshSorted.map((m) => m.id));
+      return { ...group, models: freshSorted };
+    });
+
+    sortOrderRef.current = nextOrder;
+    return sorted;
+  }, [rawGroupedModels]);
 
   const toggleGroupCollapsed = (groupKey: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
