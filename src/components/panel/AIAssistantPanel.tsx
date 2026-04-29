@@ -96,6 +96,7 @@ import type {
   SavedConnection,
   SessionPane,
 } from "@/types/global";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface AIAssistantPanelProps {
   activePane: SessionPane | null;
@@ -1510,33 +1511,45 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
         meta={selectedModel?.name ?? t("ai.notConfigured")}
         actions={
           <>
-            <Button
-              ref={historyButtonRef}
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => setShowHistory((value) => !value)}
-              title={t("ai.history")}
-              aria-expanded={showHistory}
-            >
-              <MdHistory />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => openSettings("ai")}
-              title={t("ai.settings")}
-            >
-              <MdOutlineSettings />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={newChat}
-              disabled={loading}
-              title={t("ai.newChat")}
-            >
-              <LuMessageSquarePlus />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={historyButtonRef}
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => setShowHistory((value) => !value)}
+                  aria-expanded={showHistory}
+                >
+                  <MdHistory />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t("ai.history")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => openSettings("ai")}
+                >
+                  <MdOutlineSettings />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t("ai.settings")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={newChat}
+                  disabled={loading}
+                >
+                  <LuMessageSquarePlus />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t("ai.newChat")}</TooltipContent>
+            </Tooltip>
           </>
         }
       />
