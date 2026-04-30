@@ -9,7 +9,7 @@
         "transparent": false,
         "visible": false,
         "decorations": true,
-        "titleBarStyle": "overlay",
+        "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "create": false
       }
