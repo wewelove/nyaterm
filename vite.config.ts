@@ -2,6 +2,8 @@ import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import browserslist from "browserslist";
+import { browserslistToTargets } from "lightningcss";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -9,6 +11,12 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
+  css: {
+    transformer: "lightningcss",
+    lightningcss: {
+      targets: browserslistToTargets(browserslist("safari >= 14, chrome >= 105")),
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -33,6 +41,7 @@ export default defineConfig(async () => ({
   },
 
   build: {
+    cssMinify: "lightningcss",
     rollupOptions: {
       output: {
         manualChunks: {
