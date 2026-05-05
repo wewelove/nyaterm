@@ -8,7 +8,7 @@ sidebar_position: 100
 
 ### SSH works, so why do Local Terminal, Telnet, and Serial behave differently?
 
-Because Dragonfly supports multiple session types, and their capabilities are not identical:
+Because NyaTerm supports multiple session types, and their capabilities are not identical:
 
 - **SSH** — the most complete workflow, including SFTP, OTP, resource monitoring, proxy, jump host, and tunnels
 - **Local Terminal** — local shell workflow only
@@ -44,7 +44,7 @@ Check that:
 - The operating system recognizes the serial port
 - Another tool is not already holding the port open
 
-When you reopen the port dropdown on the Serial tab, Dragonfly reloads the available ports.
+When you reopen the port dropdown on the Serial tab, NyaTerm reloads the available ports.
 
 ## Terminal experience
 
@@ -72,10 +72,10 @@ These are also optional enhancements. Enable them separately in **Settings → T
 The auto-upload prompt only appears in this workflow:
 
 1. You choose **Open** on a remote file from the SSH file explorer
-2. Dragonfly downloads it into a local temporary directory and starts watching it
+2. NyaTerm downloads it into a local temporary directory and starts watching it
 3. You save that watched file in your local editor
 
-If you copied the file elsewhere and edited that copy manually, Dragonfly no longer knows it maps back to the remote file.
+If you copied the file elsewhere and edited that copy manually, NyaTerm no longer knows it maps back to the remote file.
 
 ### Why didn’t the file explorer follow my `cd` command automatically?
 
@@ -85,7 +85,7 @@ Auto-follow depends on terminal path tracking support for the session. If the cu
 
 That depends on your transfer settings:
 
-- If **ask every time** is enabled, Dragonfly prompts for a destination on each download
+- If **ask every time** is enabled, NyaTerm prompts for a destination on each download
 - Otherwise it uses the default download directory
 
 You can also change the default download path and the default editor in settings.
@@ -105,7 +105,7 @@ In the current behavior:
 
 There is currently no built-in recovery flow for the master password. If your local data is protected by it and you can no longer provide the correct password, those protected sensitive settings cannot continue to be used in the original way.
 
-Before making manual changes, back up `~/.dragonfly/` first, then decide how to rebuild local configuration.
+Before making manual changes, back up `~/.nyaterm/` first, then decide how to rebuild local configuration.
 
 ### Where should OTP entries be managed?
 
@@ -113,7 +113,7 @@ Manage them centrally in the **OTP** tab of the **Security/Auth** panel, then bi
 
 ## Import and migration
 
-### Which clients can Dragonfly import sessions from?
+### Which clients can NyaTerm import sessions from?
 
 Current supported imports are:
 
@@ -123,6 +123,6 @@ Current supported imports are:
 
 After import, it is a good idea to review the username, port, authentication method, and whether proxy / jump host / OTP still needs to be configured.
 
-### Where are Dragonfly’s config files stored?
+### Where are NyaTerm’s config files stored?
 
-Application configuration is stored in `~/.dragonfly/dragonfly.redb`, including settings, connections, keys, OTP data, tunnels, proxies, and history. Legacy JSON / text files are imported on first launch and left in place as manual fallback backups.
+Application configuration is stored in `~/.nyaterm/nyaterm.redb`, including settings, connections, keys, OTP data, tunnels, proxies, and history. When upgrading from Dragonfly, NyaTerm copies `~/.dragonfly/dragonfly.redb` on first launch; if the old environment only has `.dragonfly` JSON / text files, they are copied and imported into redb. The old `~/.dragonfly/` directory is kept as a rollback backup.

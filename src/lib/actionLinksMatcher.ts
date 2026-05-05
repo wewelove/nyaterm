@@ -96,21 +96,24 @@ export function createRegexMatcher(options: RegexMatcherOptions): ActionMatcher 
       }
 
       const localRegex = ensureGlobalRegex(regex);
-      let match: RegExpExecArray | null;
+      let match = localRegex.exec(input.text);
 
-      while ((match = localRegex.exec(input.text))) {
+      while (match) {
         const matchText = match[0];
         if (!matchText) {
           // Prevent zero-width match from causing infinite loop
           localRegex.lastIndex += 1;
+          match = localRegex.exec(input.text);
           continue;
         }
 
         if (options.validate && !options.validate(matchText, match)) {
+          match = localRegex.exec(input.text);
           continue;
         }
 
         results.push(buildMatchResult(matchText, match, options));
+        match = localRegex.exec(input.text);
       }
 
       return results;

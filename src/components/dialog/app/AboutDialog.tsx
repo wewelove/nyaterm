@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import pkg from "../../../../package.json";
-import DragonflyLogo from "../../DragonflyLogo";
+import NyaTermLogo from "../../NyaTermLogo";
 
 interface AboutDialogProps {
   open: boolean;
@@ -20,7 +20,7 @@ interface AboutDialogProps {
 
 export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   const { t } = useTranslation();
-  const [appName, setAppName] = useState("Dragonfly");
+  const [appName, setAppName] = useState("NyaTerm");
   const [appVersion, setAppVersion] = useState("0.1.0");
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="w-[320px] sm:max-w-[320px] flex flex-col items-center p-6 gap-4">
         <DialogHeader className="items-center">
-          <DragonflyLogo className="w-24 h-24 object-contain" />
+          <NyaTermLogo className="w-24 h-24 object-contain" />
           <DialogTitle className="text-lg">{appName}</DialogTitle>
           <DialogDescription className="text-xs">v{appVersion}</DialogDescription>
         </DialogHeader>

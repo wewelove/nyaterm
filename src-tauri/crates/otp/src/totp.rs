@@ -36,7 +36,7 @@ impl Totp {
     /// # Example
     ///
     /// ```rust
-    /// use otp::{Totp, Algorithm, Secret};
+    /// use nyaterm_otp::{Totp, Algorithm, Secret};
     ///
     /// let totp = Totp::new(
     ///     Algorithm::SHA1,
@@ -74,7 +74,7 @@ impl Totp {
     ///
     /// # Example
     /// ```rust
-    /// let totp = otp::Totp::default();
+    /// let totp = nyaterm_otp::Totp::default();
     /// let otp = totp.generate();
     /// println!("OTP: {}", otp);
     /// ```
@@ -103,7 +103,7 @@ impl Totp {
     ///
     /// # Example
     /// ```rust
-    /// let totp = otp::Totp::default();
+    /// let totp = nyaterm_otp::Totp::default();
     /// let otp = totp.generate_at(1_600_000_000); // fixed timestamp
     /// ```
     ///
@@ -129,7 +129,7 @@ impl Totp {
     ///
     /// # Example
     /// ```rust
-    /// let totp = otp::Totp::default();
+    /// let totp = nyaterm_otp::Totp::default();
     /// let timestamp = 1_600_000_000;
     /// let otp = totp.generate_at(timestamp);
     /// assert!(totp.verify(otp, timestamp + 20, 1)); // within window
@@ -174,7 +174,7 @@ impl Totp {
     ///
     /// # Example
     /// ```rust
-    /// use otp::{Totp, Algorithm, Secret};
+    /// use nyaterm_otp::{Totp, Algorithm, Secret};
     ///
     /// let totp = Totp::new(
     ///     Algorithm::SHA256,
@@ -273,7 +273,7 @@ impl Totp {
     /// # Examples
     ///
     /// ```rust
-    /// use otp::Totp;
+    /// use nyaterm_otp::Totp;
     ///
     /// let uri = "otpauth://totp/example:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=example&algorithm=SHA1&digits=6&period=30";
     /// let totp = Totp::from_uri(uri).unwrap();

@@ -4,11 +4,11 @@ sidebar_position: 6
 
 # OTP & Authentication
 
-Dragonfly ties OTP management into the SSH authentication flow. You can manage OTP entries as reusable credentials, then bind them directly to SSH connections to reduce repeated input.
+NyaTerm ties OTP management into the SSH authentication flow. You can manage OTP entries as reusable credentials, then bind them directly to SSH connections to reduce repeated input.
 
 ## Supported OTP types
 
-Dragonfly currently supports:
+NyaTerm currently supports:
 
 - **TOTP**
 - **HOTP**
@@ -43,7 +43,7 @@ Typical flow:
 
 1. Click the QR import action in the OTP panel
 2. Choose a local image file
-3. Dragonfly parses and fills fields such as issuer, username, and secret
+3. NyaTerm parses and fills fields such as issuer, username, and secret
 4. Confirm and save the OTP entry
 
 This is usually more convenient than manually retyping the secret.
@@ -61,7 +61,7 @@ This is especially useful for environments that require password or private key 
 
 ## OTP interaction during authentication
 
-When the SSH server enters a keyboard-interactive or OTP flow, Dragonfly shows an OTP dialog.
+When the SSH server enters a keyboard-interactive or OTP flow, NyaTerm shows an OTP dialog.
 
 The dialog includes:
 

@@ -109,7 +109,7 @@ function TabBar({
       const nextIndex = insertionIndex > fromIndex ? insertionIndex - 1 : insertionIndex;
       onReorderTabs(draggedTabId, nextIndex);
       requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent("dragonfly:refresh-terminals"));
+        window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
       });
       resetDragState();
     },
@@ -237,7 +237,7 @@ function TabBar({
                 onDragEnd={() => {
                   resetDragState();
                   requestAnimationFrame(() => {
-                    window.dispatchEvent(new CustomEvent("dragonfly:refresh-terminals"));
+                    window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
                   });
                 }}
                 onDragOver={(event) => {

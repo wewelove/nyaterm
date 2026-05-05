@@ -145,7 +145,7 @@ impl TrayStrings {
                 minimize_to_tray: "关闭时最小化到托盘",
                 lock_screen: "锁定界面",
                 check_updates: "检查更新",
-                quit: "退出 Dragonfly",
+                quit: "退出 NyaTerm",
                 status_idle: "空闲",
                 status_running: "执行中",
                 status_success: "成功",
@@ -175,7 +175,7 @@ impl TrayStrings {
                 minimize_to_tray: "Minimize To Tray On Close",
                 lock_screen: "Lock Screen",
                 check_updates: "Check for Updates",
-                quit: "Quit Dragonfly",
+                quit: "Quit NyaTerm",
                 status_idle: "Idle",
                 status_running: "Running",
                 status_success: "Success",
@@ -238,7 +238,7 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
     TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .icon(app.default_window_icon().unwrap().clone())
-        .tooltip("Dragonfly")
+        .tooltip("NyaTerm")
         .show_menu_on_left_click(false)
         .on_menu_event(handle_menu_event)
         .on_tray_icon_event(|tray, event| match event {

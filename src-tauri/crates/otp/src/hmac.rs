@@ -33,7 +33,7 @@ const HMAC_OUTER_PAD: u8 = 0x5c;
 /// # Example
 ///
 /// ```rust
-/// use otp::{hmac, Algorithm};
+/// use nyaterm_otp::{hmac, Algorithm};
 ///
 /// let key = b"secret key";
 /// let message = b"The quick brown fox";

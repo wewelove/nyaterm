@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Purpose: Print a structured pseudo-session that looks good when Dragonfly recording is enabled.
+# Purpose: Print a structured pseudo-session that looks good when NyaTerm recording is enabled.
 # Run: bash scripts/demo-recording-session.sh
 # Docs: docs-site/docs/guide/terminal.md, docs-site/docs/getting-started/quick-start.md
-# Settings: Start recording in Dragonfly before running for the best capture.
+# Settings: Start recording in NyaTerm before running for the best capture.
 
 DELAY_SECONDS=${DELAY_SECONDS:-0.35}
-PROMPT=${PROMPT:-'operator@dragonfly-demo:~/workspace$'}
+PROMPT=${PROMPT:-'operator@nyaterm-demo:~/workspace$'}
 
 emit() {
   printf '%s\n' "$1"

@@ -56,9 +56,9 @@ import {
 } from "@/lib/terminalFontSize";
 import { getActivePane, getTabDisplayName } from "@/lib/workspaceTabs";
 import type { SavedConnection, Tab } from "@/types/global";
-import DragonflyLogo from "../DragonflyLogo";
 import ImportDialog from "../dialog/connections/ImportDialog";
 import { SYSTEM_ICONS } from "../icons";
+import NyaTermLogo from "../NyaTermLogo";
 import {
   Menubar,
   MenubarCheckboxItem,
@@ -173,7 +173,7 @@ export default function Header({
   const activeConnection = activePane?.connectionId
     ? savedConnections?.find((c) => c.id === activePane.connectionId)
     : undefined;
-  const activeDisplayName = activeTab ? getTabDisplayName(activeTab) : "Dragonfly";
+  const activeDisplayName = activeTab ? getTabDisplayName(activeTab) : "NyaTerm";
 
   useEffect(() => {
     let mounted = true;
@@ -472,7 +472,7 @@ export default function Header({
     >
       <div className={`flex items-center gap-2 shrink-0${isMacOS ? " pl-[70px]" : ""}`}>
         {!isMacOS && (
-          <DragonflyLogo className="h-5 w-5 shrink-0" onDoubleClick={handleToggleMaximizeWindow} />
+          <NyaTermLogo className="h-5 w-5 shrink-0" onDoubleClick={handleToggleMaximizeWindow} />
         )}
 
         {!isMacOS && (
@@ -543,7 +543,7 @@ export default function Header({
               </>
             )
           ) : (
-            <span className="text-xs font-medium truncate">Dragonfly</span>
+            <span className="text-xs font-medium truncate">NyaTerm</span>
           )}
         </div>
       </div>

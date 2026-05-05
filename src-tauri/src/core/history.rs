@@ -419,7 +419,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        std::env::temp_dir().join(format!("dragonfly-history-{name}-{nanos}.json"))
+        std::env::temp_dir().join(format!("nyaterm-history-{name}-{nanos}.json"))
     }
 
     #[test]

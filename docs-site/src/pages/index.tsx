@@ -32,23 +32,23 @@ type DownloadPlatform = {
 const downloadPlatforms: DownloadPlatform[] = [
   {
     key: 'windows-x86_64',
-    href: 'https://dragonfly.coderkang.top/download/windows-x86_64',
+    href: 'https://nyaterm.app/download/windows-x86_64',
   },
   {
     key: 'linux-x86_64',
-    href: 'https://dragonfly.coderkang.top/download/linux-x86_64',
+    href: 'https://nyaterm.app/download/linux-x86_64',
   },
   {
     key: 'darwin-x86_64',
-    href: 'https://dragonfly.coderkang.top/download/darwin-x86_64',
+    href: 'https://nyaterm.app/download/darwin-x86_64',
   },
   {
     key: 'darwin-aarch64',
-    href: 'https://dragonfly.coderkang.top/download/darwin-aarch64',
+    href: 'https://nyaterm.app/download/darwin-aarch64',
   },
 ];
 
-const featureAutoplayStoppedKey = 'dragonfly-home-feature-tabs-autoplay-stopped';
+const featureAutoplayStoppedKey = 'nyaterm-home-feature-tabs-autoplay-stopped';
 const featureAutoplayIntervalMs = 4200;
 
 function detectDownloadPlatform(): DownloadPlatform {
@@ -160,14 +160,14 @@ function FeaturePreview({
         <img
           className={styles.featurePreviewImage}
           src={lightImageUrl}
-          alt={translate({message: 'Dragonfly 日间主题功能截图'})}
+          alt={translate({message: 'NyaTerm 日间主题功能截图'})}
         />
       </div>
       <div className={clsx(styles.featurePreviewImageSlot, styles.featurePreviewDark)}>
         <img
           className={styles.featurePreviewImage}
           src={darkImageUrl}
-          alt={translate({message: 'Dragonfly 夜间主题功能截图'})}
+          alt={translate({message: 'NyaTerm 夜间主题功能截图'})}
         />
       </div>
     </div>
@@ -191,14 +191,14 @@ function HeroPreview({
           <img
             className={styles.heroScreenshotImage}
             src={lightImageUrl}
-            alt={translate({message: 'Dragonfly 日间主题产品截图'})}
+            alt={translate({message: 'NyaTerm 日间主题产品截图'})}
           />
         </div>
         <div className={clsx(styles.heroScreenshotSlot, styles.heroScreenshotDark)}>
           <img
             className={styles.heroScreenshotImage}
             src={darkImageUrl}
-            alt={translate({message: 'Dragonfly 夜间主题产品截图'})}
+            alt={translate({message: 'NyaTerm 夜间主题产品截图'})}
           />
         </div>
       </div>
@@ -224,7 +224,7 @@ function HomepageHeader() {
         <div className={styles.heroInner}>
           <div className={styles.heroCopy}>
             <div className={styles.heroBrandRow}>
-              <img src={logoUrl} alt="Dragonfly Logo" className={styles.heroLogo} />
+              <img src={logoUrl} alt="NyaTerm Logo" className={styles.heroLogo} />
               <div className={styles.heroBrandText}>
                 <Heading as="h1" className={styles.heroTitle}>
                   {siteConfig.title}
@@ -237,7 +237,7 @@ function HomepageHeader() {
             </p>
             <p className={styles.heroDescription}>
               <Translate>
-                Dragonfly 将终端会话、远程文件、认证信息、端口转发和配置备份放在同一个桌面应用中，适合日常开发、服务器维护和设备调试。
+                NyaTerm 将终端会话、远程文件、认证信息、端口转发和配置备份放在同一个桌面应用中，适合日常开发、服务器维护和设备调试。
               </Translate>
             </p>
 
@@ -475,7 +475,7 @@ function JourneySection() {
       <div className="container">
         <div className={styles.sectionHeading}>
           <Heading as="h2" className={styles.sectionTitle}>
-            <Translate>继续了解 Dragonfly</Translate>
+            <Translate>继续了解 NyaTerm</Translate>
           </Heading>
         </div>
 
@@ -574,7 +574,7 @@ export default function Home(): React.ReactElement {
       value: 'sync',
       label: translate({message: '同步与备份'}),
       title: translate({message: '同步和恢复可移植配置'}),
-      description: translate({message: 'Dragonfly 可将连接、凭据配置和常用设置打包为加密快照，用于备份、迁移或在多台设备之间同步。'}),
+      description: translate({message: 'NyaTerm 可将连接、凭据配置和常用设置打包为加密快照，用于备份、迁移或在多台设备之间同步。'}),
       bullets: [
         translate({message: '支持 WebDAV 和 S3 兼容存储'}),
         translate({message: '使用主密码保护同步和备份数据'}),

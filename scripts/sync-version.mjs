@@ -18,16 +18,16 @@ cargo = cargo.replace(
 writeFileSync('src-tauri/Cargo.toml', cargo);
 
 // Change the version in Cargo.lock
-function updateDragonflyVersion(version) {
+function updateNyaTermVersion(version) {
   const filePath = 'src-tauri/Cargo.lock';
   const content = readFileSync(filePath, 'utf-8');
 
   const pattern =
-    /(\[\[package\]\]\r?\nname = "dragonfly"\r?\nversion = ")([^"]*)(")/;
+    /(\[\[package\]\]\r?\nname = "nyaterm"\r?\nversion = ")([^"]*)(")/;
 
   if (!pattern.test(content)) {
     throw new Error(
-      'Could not find the version field for [[package]] name = "dragonfly" in src-tauri/Cargo.lock'
+      'Could not find the version field for [[package]] name = "nyaterm" in src-tauri/Cargo.lock'
     );
   }
 
@@ -35,7 +35,7 @@ function updateDragonflyVersion(version) {
 
   writeFileSync(filePath, updated, 'utf-8');
 }
-updateDragonflyVersion(version);
+updateNyaTermVersion(version);
 
 console.log(`✅ Version synced to ${version}`);
 

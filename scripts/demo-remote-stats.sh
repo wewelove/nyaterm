@@ -10,7 +10,7 @@ DURATION_SECONDS=${1:-20}
 WORKERS=${WORKERS:-2}
 PAYLOAD_MB=${PAYLOAD_MB:-8}
 
-TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dragonfly-stats-demo.XXXXXX")
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/nyaterm-stats-demo.XXXXXX")
 PAYLOAD_FILE="$TMP_DIR/payload.bin"
 END_TIME=$((SECONDS + DURATION_SECONDS))
 PIDS=()

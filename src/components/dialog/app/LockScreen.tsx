@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MdLock, MdLockOpen } from "react-icons/md";
 import { invoke } from "@/lib/invoke";
-import DragonflyLogo from "../../DragonflyLogo";
+import NyaTermLogo from "../../NyaTermLogo";
 
 interface LockScreenProps {
   hasPassword: boolean;
@@ -71,7 +71,7 @@ export default function LockScreen({ hasPassword, onUnlock }: LockScreenProps) {
       <div className="flex flex-col items-center gap-5 select-none animate-in fade-in duration-300">
         {/* Logo with lock badge */}
         <div className="relative">
-          <DragonflyLogo style={{ width: 80, height: 80 }} className="rounded-2xl" />
+          <NyaTermLogo style={{ width: 80, height: 80 }} className="rounded-2xl" />
           {/* Small lock badge */}
           <div
             className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full flex items-center justify-center border-2 border-black/80"

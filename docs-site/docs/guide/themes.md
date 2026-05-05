@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # 主题与外观
 
-Dragonfly 支持对工作区外观做细粒度调整，包括 UI 主题、终端主题、字体和光标样式。
+NyaTerm 支持对工作区外观做细粒度调整，包括 UI 主题、终端主题、字体和光标样式。
 
 ## UI 主题与终端主题
 
@@ -23,7 +23,7 @@ Dragonfly 支持对工作区外观做细粒度调整，包括 UI 主题、终端
 - **终端字体大小**
 - **界面字体大小**
 
-Dragonfly 内置了这些常用字体：
+NyaTerm 内置了这些常用字体：
 
 - `JetBrains Mono`
 - `Noto Sans SC Variable`
@@ -43,7 +43,7 @@ Dragonfly 内置了这些常用字体：
 
 ## 语言切换
 
-Dragonfly 当前提供：
+NyaTerm 当前提供：
 
 - 简体中文
 - English

@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # SFTP File Transfer
 
-Dragonfly's remote file workflow is built on top of SSH sessions. That means the **file explorer, SFTP transfers, and local-edit-then-upload-back workflow** are only available in SSH sessions. Local Terminal, Telnet, and Serial do not expose this set of features.
+NyaTerm's remote file workflow is built on top of SSH sessions. That means the **file explorer, SFTP transfers, and local-edit-then-upload-back workflow** are only available in SSH sessions. Local Terminal, Telnet, and Serial do not expose this set of features.
 
 ## File explorer
 
@@ -48,19 +48,19 @@ Use the toolbar, context menu, or drag and drop to upload local content into the
 
 ### External drag-and-drop upload
 
-The file explorer supports dragging **files or folders from your system file manager directly into the Dragonfly file browser** for upload.
+The file explorer supports dragging **files or folders from your system file manager directly into the NyaTerm file browser** for upload.
 
 Typical flow:
 
 1. Open an SSH session and switch to the file explorer
 2. Drag a local file or folder into the file list area
 3. Release when the drag overlay appears
-4. Dragonfly adds the dropped items to the upload flow automatically
+4. NyaTerm adds the dropped items to the upload flow automatically
 
 Notes:
 
 - Upload is only triggered when you drop onto the file browser list area
-- Some drag sources do not expose a real local file path. In that case, Dragonfly cannot resolve the dropped item directly and will prompt you to use **Upload File** or **Upload Folder** instead
+- Some drag sources do not expose a real local file path. In that case, NyaTerm cannot resolve the dropped item directly and will prompt you to use **Upload File** or **Upload Folder** instead
 
 ### Download
 
@@ -73,7 +73,7 @@ Both file downloads and directory downloads are supported.
 
 ## Transfer panel and transfer settings
 
-Dragonfly puts uploads and downloads into a shared transfer queue so you can inspect:
+NyaTerm puts uploads and downloads into a shared transfer queue so you can inspect:
 
 - Current progress
 - Success, paused, canceled, and failed states
@@ -119,14 +119,14 @@ This is useful when you are moving around in a deploy or log directory and want 
 
 ## Edit locally and upload back automatically
 
-This is one of Dragonfly's most practical workflows for real operations work.
+This is one of NyaTerm's most practical workflows for real operations work.
 
 ### How it works
 
 1. In the SSH file explorer, choose **Open** on a remote file
-2. Dragonfly downloads it into a local temp directory
+2. NyaTerm downloads it into a local temp directory
 3. A file watcher is started
-4. After you save in your local editor, Dragonfly opens an upload prompt
+4. After you save in your local editor, NyaTerm opens an upload prompt
 
 ### Upload prompt window
 

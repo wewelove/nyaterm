@@ -34,7 +34,7 @@ pub fn setup(
         .path()
         .home_dir()
         .map_err(|e: tauri::Error| e.to_string())?;
-    let config_dir = home_dir.join(".dragonfly");
+    let config_dir = home_dir.join(".nyaterm");
     crate::storage::init(&config_dir)?;
 
     let settings_load = crate::config::load_app_settings(app.handle());

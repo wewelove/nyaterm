@@ -90,7 +90,7 @@ pub fn import_otp_from_qr(path: String) -> AppResult<OtpEntry> {
         .map_err(|e| AppError::Config(format!("Failed to decode QR code: {e}")))?;
 
     if uri.starts_with("otpauth://totp/") {
-        let totp = dragonfly_otp::Totp::from_uri(&uri)
+        let totp = nyaterm_otp::Totp::from_uri(&uri)
             .map_err(|e| AppError::Config(format!("Invalid TOTP URI: {e}")))?;
         Ok(OtpEntry {
             id: String::new(),
@@ -105,7 +105,7 @@ pub fn import_otp_from_qr(path: String) -> AppResult<OtpEntry> {
             has_secret: false,
         })
     } else if uri.starts_with("otpauth://hotp/") {
-        let hotp = dragonfly_otp::Hotp::from_uri(&uri)
+        let hotp = nyaterm_otp::Hotp::from_uri(&uri)
             .map_err(|e| AppError::Config(format!("Invalid HOTP URI: {e}")))?;
         Ok(OtpEntry {
             id: String::new(),
@@ -135,17 +135,17 @@ pub(crate) fn generate_otp_for_entry(app: &tauri::AppHandle, id: &str) -> AppRes
         .ok_or_else(|| crate::error::AppError::Config("OTP entry has no secret".to_string()))?;
 
     let alg = match entry.algorithm.as_str() {
-        "SHA256" => dragonfly_otp::Algorithm::SHA256,
-        "SHA512" => dragonfly_otp::Algorithm::SHA512,
-        _ => dragonfly_otp::Algorithm::SHA1,
+        "SHA256" => nyaterm_otp::Algorithm::SHA256,
+        "SHA512" => nyaterm_otp::Algorithm::SHA512,
+        _ => nyaterm_otp::Algorithm::SHA1,
     };
 
-    let secret = dragonfly_otp::Secret::from_base32(secret_str)
+    let secret = nyaterm_otp::Secret::from_base32(secret_str)
         .map_err(|e| crate::error::AppError::Config(format!("Invalid base32 secret: {e:?}")))?;
 
     match entry.otp_type.as_str() {
         "hotp" => {
-            let mut hotp = dragonfly_otp::Hotp::new(
+            let mut hotp = nyaterm_otp::Hotp::new(
                 alg,
                 entry.issuer.clone(),
                 entry.username.clone(),
@@ -170,7 +170,7 @@ pub(crate) fn generate_otp_for_entry(app: &tauri::AppHandle, id: &str) -> AppRes
         }
         _ => {
             let period = if entry.period > 0 { entry.period } else { 30 };
-            let totp = dragonfly_otp::Totp::new(
+            let totp = nyaterm_otp::Totp::new(
                 alg,
                 entry.issuer.clone(),
                 entry.username.clone(),

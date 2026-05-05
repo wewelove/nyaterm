@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Themes & Appearance
 
-Dragonfly lets you tune the workspace appearance in fairly fine detail, including UI theme, terminal theme, fonts, and cursor behavior.
+NyaTerm lets you tune the workspace appearance in fairly fine detail, including UI theme, terminal theme, fonts, and cursor behavior.
 
 ## UI theme and terminal theme
 
@@ -23,7 +23,7 @@ In **Settings → Appearance**, you can adjust:
 - **Terminal font size**
 - **UI font size**
 
-Dragonfly includes these built-in fonts:
+NyaTerm includes these built-in fonts:
 
 - `JetBrains Mono`
 - `Noto Sans SC Variable`
@@ -43,7 +43,7 @@ If you switch between dark and light themes often, it is worth checking the term
 
 ## Language switching
 
-Dragonfly currently provides:
+NyaTerm currently provides:
 
 - Simplified Chinese
 - English
@@ -65,7 +65,7 @@ These layout states are saved with app settings, which makes it practical to kee
 
 ## Zoom and quick adjustments
 
-Dragonfly provides these common shortcuts:
+NyaTerm provides these common shortcuts:
 
 - **Zoom In** — `Ctrl / Cmd + =`
 - **Zoom Out** — `Ctrl / Cmd + -`

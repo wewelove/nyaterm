@@ -29,9 +29,9 @@ interface ImportSource {
 
 const IMPORT_SOURCES: ImportSource[] = [
   {
-    id: "dragonfly",
-    name: "Dragonfly",
-    icon: "/dragonfly.svg",
+    id: "nyaterm",
+    name: "NyaTerm",
+    icon: "/nyaterm.svg",
     extensions: ["dgfy"],
     hint: ".dgfy",
     type: "backup",

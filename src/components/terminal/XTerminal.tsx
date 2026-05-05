@@ -740,9 +740,7 @@ export default function XTerminal({
         performanceModeRef.current !== "overloaded" &&
         (terminalSettings?.show_line_numbers || terminalSettings?.show_timestamps)
       ) {
-        window.dispatchEvent(
-          new CustomEvent("dragonfly:refresh-gutter", { detail: { sessionId } }),
-        );
+        window.dispatchEvent(new CustomEvent("nyaterm:refresh-gutter", { detail: { sessionId } }));
       }
     });
 
@@ -756,7 +754,7 @@ export default function XTerminal({
       if (performanceModeRef.current === "overloaded") return;
       const terminalSettings = terminalAppSettingsRef.current?.terminal;
       if (!terminalSettings?.show_line_numbers && !terminalSettings?.show_timestamps) return;
-      window.dispatchEvent(new CustomEvent("dragonfly:refresh-gutter", { detail: { sessionId } }));
+      window.dispatchEvent(new CustomEvent("nyaterm:refresh-gutter", { detail: { sessionId } }));
     };
 
     const stampWrittenLines = (from: number, to: number, ts: number) => {
@@ -974,7 +972,7 @@ export default function XTerminal({
 
         if (!visibleRef.current) {
           window.dispatchEvent(
-            new CustomEvent("dragonfly:session-output", { detail: { sessionId } }),
+            new CustomEvent("nyaterm:session-output", { detail: { sessionId } }),
           );
           return;
         }
@@ -1296,7 +1294,7 @@ export default function XTerminal({
         terminalRef.current?.refresh(0, Math.max(0, terminalRef.current.rows - 1));
         if (showGutter && performanceMode !== "overloaded") {
           window.dispatchEvent(
-            new CustomEvent("dragonfly:refresh-gutter", { detail: { sessionId } }),
+            new CustomEvent("nyaterm:refresh-gutter", { detail: { sessionId } }),
           );
         }
       });
@@ -1327,9 +1325,9 @@ export default function XTerminal({
       });
     };
 
-    window.addEventListener("dragonfly:refresh-terminals", handleRefresh);
+    window.addEventListener("nyaterm:refresh-terminals", handleRefresh);
     return () => {
-      window.removeEventListener("dragonfly:refresh-terminals", handleRefresh);
+      window.removeEventListener("nyaterm:refresh-terminals", handleRefresh);
     };
   }, [active, visible]);
 
@@ -1339,9 +1337,9 @@ export default function XTerminal({
       terminalRef.current.clear();
     };
 
-    window.addEventListener("dragonfly:clear-terminal", handleClear);
+    window.addEventListener("nyaterm:clear-terminal", handleClear);
     return () => {
-      window.removeEventListener("dragonfly:clear-terminal", handleClear);
+      window.removeEventListener("nyaterm:clear-terminal", handleClear);
     };
   }, [active]);
 

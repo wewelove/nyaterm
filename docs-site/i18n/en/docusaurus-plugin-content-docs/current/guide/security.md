@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # Security
 
-Dragonfly's security features mainly focus on three areas:
+NyaTerm's security features mainly focus on three areas:
 
 1. Safely storing local credentials and authentication materials
 2. Managing host verification and second-factor flows during SSH login
@@ -12,7 +12,7 @@ Dragonfly's security features mainly focus on three areas:
 
 ## How sensitive local data is stored
 
-Dragonfly stores connection-related configuration locally, but sensitive values are encrypted before being written to disk. Typical sensitive data includes:
+NyaTerm stores connection-related configuration locally, but sensitive values are encrypted before being written to disk. Typical sensitive data includes:
 
 - Saved passwords
 - SSH private keys and key passphrases
@@ -66,7 +66,7 @@ For details, see [OTP & Authentication](./otp-and-auth).
 
 ## Master password
 
-The master password is Dragonfly's most important local desktop protection feature.
+The master password is NyaTerm's most important local desktop protection feature.
 
 You can configure it in **Settings → Security**. After it is set:
 
@@ -85,7 +85,7 @@ In the current implementation:
 
 - Sync and backup actions cannot be enabled without a master password
 - Cloud-provider credentials are treated as protected local secrets
-- Dragonfly uploads **encrypted portable snapshots**, not plain-text config files
+- NyaTerm uploads **encrypted portable snapshots**, not plain-text config files
 - Remote restore overwrites the portable local data included in the snapshot, but it does not blindly roam every piece of device-local UI state to another machine
 
 That makes this feature best understood as:
@@ -115,11 +115,11 @@ In **Settings → Security**, once screen lock is enabled, you can also configur
 - **With a master password** — entering the correct master password is required
 - **Without a master password** — unlocking can happen directly
 
-If you plan to use Dragonfly on a shared machine or during demos, enabling both **master password** and **screen lock** is the safer setup.
+If you plan to use NyaTerm on a shared machine or during demos, enabling both **master password** and **screen lock** is the safer setup.
 
 ## SSH host key policies
 
-When SSH first connects to an unknown host, Dragonfly supports three policies:
+When SSH first connects to an unknown host, NyaTerm supports three policies:
 
 | Policy | Behavior |
 |------|------|
@@ -127,7 +127,7 @@ When SSH first connects to an unknown host, Dragonfly supports three policies:
 | Accept | Automatically accept new host keys |
 | Strict | Reject all unknown host keys |
 
-Known host records are stored in local storage at `~/.dragonfly/dragonfly.redb`; legacy `known_hosts` is imported on first launch.
+Known host records are stored in local storage at `~/.nyaterm/nyaterm.redb`; legacy `known_hosts` is imported on first launch.
 
 If host identity validation matters in your environment, prefer **Prompt** or **Strict** over unconditional acceptance.
 

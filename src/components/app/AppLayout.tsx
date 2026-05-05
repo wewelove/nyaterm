@@ -2,7 +2,6 @@ import type { TFunction } from "i18next";
 import type { ComponentProps, ReactNode } from "react";
 import { MdClose, MdTerminal } from "react-icons/md";
 import AboutDialog from "@/components/dialog/app/AboutDialog";
-import { isMacOS } from "@/lib/platform";
 import LockScreen from "@/components/dialog/app/LockScreen";
 import QuitConfirmDialog from "@/components/dialog/app/QuitConfirmDialog";
 import UpdateDialog from "@/components/dialog/app/UpdateDialog";
@@ -18,6 +17,7 @@ import QuickCommands from "@/components/panel/QuickCommands";
 import SerialSendPanel from "@/components/panel/SendCommandPanel";
 import TabWindowsWorkspace from "@/components/terminal/TabWindowsWorkspace";
 import { Toaster } from "@/components/ui/sonner";
+import { isMacOS } from "@/lib/platform";
 import type { UpdateInfo } from "@/lib/updater";
 import type { UiConfig } from "@/types/global";
 

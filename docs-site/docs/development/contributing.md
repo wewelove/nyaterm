@@ -4,12 +4,12 @@ sidebar_position: 5
 
 # 贡献指南
 
-感谢你有兴趣为 Dragonfly 做出贡献！
+感谢你有兴趣为 NyaTerm 做出贡献！
 
 ## 开始之前
 
 1. 确保你已经阅读了 [开发环境搭建](./setup) 文档
-2. 查看 [Issues](https://git.coderkang.top/Tauri/dragonfly/issues) 列表，了解当前的任务和 Bug
+2. 查看 [Issues](https://git.coderkang.top/Tauri/nyaterm/issues) 列表，了解当前的任务和 Bug
 
 ## 贡献流程
 
@@ -76,4 +76,4 @@ docs: update installation guide
 
 ## 许可证
 
-贡献的代码将遵循项目的 [MIT 许可证](https://git.coderkang.top/Tauri/dragonfly/blob/main/LICENSE)。
+贡献的代码将遵循项目的 [MIT 许可证](https://git.coderkang.top/Tauri/nyaterm/blob/main/LICENSE)。

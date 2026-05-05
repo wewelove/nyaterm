@@ -60,7 +60,7 @@ Command scripts support `{{variableName}}` placeholders for dynamic parameters, 
 docker exec -it {{container_name}} bash
 ```
 
-When you run the command, Dragonfly opens a variable input dialog so the template can be completed before sending it.
+When you run the command, NyaTerm opens a variable input dialog so the template can be completed before sending it.
 
 ## Categories, search, and pinned items
 

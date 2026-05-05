@@ -20,7 +20,7 @@ use crate::core::ssh::sftp;
 use crate::core::{SessionInfo, SessionManager, SessionType};
 use crate::error::{AppError, AppResult};
 
-pub const LOG_FILE_PREFIX: &str = "dragonfly-diagnostics";
+pub const LOG_FILE_PREFIX: &str = "nyaterm-diagnostics";
 pub const LOG_FILE_SUFFIX: &str = "jsonl";
 
 const DEFAULT_RETENTION_DAYS: u32 = 7;
@@ -128,7 +128,7 @@ pub fn init_tracing(log_dir: PathBuf, settings: &DiagnosticsSettings) {
         level: StructuredLogLevel::Info,
         domain: "app.lifecycle".to_string(),
         event: "app.start".to_string(),
-        message: "Dragonfly starting".to_string(),
+        message: "NyaTerm starting".to_string(),
         ids: None,
         data: Some(json!({
             "log_level": settings.level.as_str(),
@@ -791,7 +791,7 @@ fn default_filter(level: DiagnosticsLogLevel) -> String {
         DiagnosticsLogLevel::Info => "info",
         DiagnosticsLogLevel::Debug => "debug",
     };
-    format!("dragonfly={app_level},dragonfly_lib={app_level},warn")
+    format!("nyaterm={app_level},nyaterm_lib={app_level},warn")
 }
 
 fn normalize_retention_days(retention_days: u32) -> u32 {
@@ -852,7 +852,7 @@ mod tests {
 
         let entry = build_log_entry_json(
             "error",
-            "dragonfly_lib::ui",
+            "nyaterm_lib::ui",
             fields,
             "2026-01-01T00:00:00Z".to_string(),
         );

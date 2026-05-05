@@ -11,7 +11,7 @@
 //! ## Example (TOTP)
 //!
 //! ```rust
-//! use otp::{Totp, Algorithm, Secret};
+//! use nyaterm_otp::{Totp, Algorithm, Secret};
 //!
 //! let totp = Totp::new(
 //!     Algorithm::SHA1,

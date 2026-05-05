@@ -421,7 +421,7 @@ export function SyncBackupTab({ onNavigateSecurity }: SyncBackupTabProps) {
               label={t("settings.providerRoot")}
               desc={t("settings.providerRootDesc")}
               value={settings.webdav.root}
-              placeholder="/apps/dragonfly"
+              placeholder="/apps/nyaterm"
               disabled={formDisabled}
               onChange={(event) =>
                 updateCloudSync({
@@ -490,7 +490,7 @@ export function SyncBackupTab({ onNavigateSecurity }: SyncBackupTabProps) {
               label={t("settings.providerRoot")}
               desc={t("settings.providerRootDesc")}
               value={settings.s3.root}
-              placeholder="/apps/dragonfly"
+              placeholder="/apps/nyaterm"
               disabled={formDisabled}
               onChange={(event) =>
                 updateCloudSync({

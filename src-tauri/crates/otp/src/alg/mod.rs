@@ -8,7 +8,7 @@
 //!
 //! # Examples
 //! ```rust
-//! use otp::Algorithm;
+//! use nyaterm_otp::Algorithm;
 //!
 //! let data = b"The quick brown fox jumps over the lazy dog";
 //! let alg = Algorithm::SHA256;
@@ -56,7 +56,7 @@ impl Algorithm {
     ///
     /// # Example
     /// ```rust
-    /// use otp::Algorithm;
+    /// use nyaterm_otp::Algorithm;
     ///
     /// let sha1_hash = Algorithm::SHA1.hash_hex(b"");
     /// assert_eq!(sha1_hash.len(), 40); // 160-bit = 20 bytes = 40 hex chars
@@ -85,7 +85,7 @@ impl Algorithm {
     ///
     /// # Example
     /// ```rust
-    /// use otp::Algorithm;
+    /// use nyaterm_otp::Algorithm;
     ///
     /// let sha1_hash = Algorithm::SHA1.hash_bytes(b"");
     /// assert_eq!(sha1_hash.len(), 20); // 160-bit = 20 bytes

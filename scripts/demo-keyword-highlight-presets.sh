@@ -32,9 +32,9 @@ EOF
 section "Service startup log"
 cat <<'EOF'
 [web] 2026/04/13 09:18:10 info starting api-server on 0.0.0.0:8080 build=1.18.2
-[web] 2026/04/13 09:18:11 debug loaded config from "/etc/dragonfly/app.json"
+[web] 2026/04/13 09:18:11 debug loaded config from "/etc/nyaterm/app.json"
 [web] 2026/04/13 09:18:12 warn deprecated option --legacy-auth=true will be removed in beta
-[web] 2026/04/13 09:18:13 notice public endpoint https://dragonfly.example.test/docs?tab=terminal
+[web] 2026/04/13 09:18:13 notice public endpoint https://nyaterm.example.test/docs?tab=terminal
 [web] 2026/04/13 09:18:14 success health check passed in 5ms
 EOF
 
@@ -48,7 +48,7 @@ EOF
 
 section "Security and auth"
 cat <<'EOF'
-auth[otp] issuer="Dragonfly" user='ops@example.test' code=042631 period=30s
+auth[otp] issuer="NyaTerm" user='ops@example.test' code=042631 period=30s
 ssh[client] host=203.0.113.42 fingerprint="SHA256:AbCdEf123456" status=ok
 config[policy] strict=true allow_none=false allow_debug=true
 EOF
@@ -70,5 +70,5 @@ EOF
 
 section "Mixed summary line"
 cat <<'EOF'
-2026-04-13T09:20:00Z INFO release=v0.7.0 host=192.168.1.10 url=https://dragonfly.example.test elapsed=45s size=128MB state=success
+2026-04-13T09:20:00Z INFO release=v0.7.0 host=192.168.1.10 url=https://nyaterm.example.test elapsed=45s size=128MB state=success
 EOF

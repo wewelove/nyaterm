@@ -6,7 +6,7 @@ sidebar_position: 1
 
 ## System Requirements
 
-Dragonfly supports the following operating systems:
+NyaTerm supports the following operating systems:
 
 - **Windows** 10/11 (64-bit)
 - **macOS** 12+ (Intel & Apple Silicon)
@@ -16,7 +16,7 @@ Dragonfly supports the following operating systems:
 
 ### From releases
 
-Visit the [Releases](https://git.coderkang.top/Tauri/dragonfly/releases) page and download the installer for your OS:
+Visit the [Releases](https://git.coderkang.top/Tauri/nyaterm/releases) page and download the installer for your OS:
 
 | Platform | Format |
 |----------|--------|
@@ -26,7 +26,7 @@ Visit the [Releases](https://git.coderkang.top/Tauri/dragonfly/releases) page an
 
 ### Build from source
 
-If you prefer to build Dragonfly yourself, see [Development Setup](../development/setup).
+If you prefer to build NyaTerm yourself, see [Development Setup](../development/setup).
 
 ## What you see on first launch
 

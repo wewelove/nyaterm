@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Layout & Workspace
 
-Dragonfly is built around a composable workspace rather than a single terminal tab. You can open multiple sessions, split panes inside a tab, and keep common tools docked around the sides of the app.
+NyaTerm is built around a composable workspace rather than a single terminal tab. You can open multiple sessions, split panes inside a tab, and keep common tools docked around the sides of the app.
 
 ## Workspace areas
 
@@ -32,7 +32,7 @@ Common tab actions include:
 - Reconnecting a session
 - Viewing session details
 
-This makes Dragonfly a good fit for separating:
+This makes NyaTerm a good fit for separating:
 
 - Different environments
 - Different projects
@@ -98,7 +98,7 @@ The bottom area is used for features that do not need to permanently occupy a si
 - **Recording** — start or stop session recording
 - **Lock** — quickly lock the app
 
-This is one of the differences between Dragonfly and a basic multi-tab terminal: it organizes the actions around sessions, not just the terminal surface itself.
+This is one of the differences between NyaTerm and a basic multi-tab terminal: it organizes the actions around sessions, not just the terminal surface itself.
 
 ## Child windows
 

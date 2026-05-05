@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Backend Development
 
-Backend code lives in `src-tauri/src/` and is written in Rust. It is the runtime core of Dragonfly: session management, SSH/SFTP, recording, translation, tunnels, authentication, and config persistence all land here.
+Backend code lives in `src-tauri/src/` and is written in Rust. It is the runtime core of NyaTerm: session management, SSH/SFTP, recording, translation, tunnels, authentication, and config persistence all land here.
 
 ## Command entry points and module organization
 
@@ -165,7 +165,7 @@ In the current implementation, portable snapshots cover connections, credential 
 
 ## Configuration and encryption
 
-Configuration and records are stored in `~/.dragonfly/dragonfly.redb` and are mainly managed by `src-tauri/src/storage.rs` and `src-tauri/src/config/`. On first launch, legacy `.dragonfly` JSON / text files are imported into redb, but old files are not dual-written afterward.
+Configuration and records are stored in `~/.nyaterm/nyaterm.redb` and are mainly managed by `src-tauri/src/storage.rs` and `src-tauri/src/config/`. When upgrading from Dragonfly, NyaTerm copies `~/.dragonfly/dragonfly.redb`; if the old environment only has `.dragonfly` JSON / text files, they are copied and imported into redb. The old directory is not deleted.
 
 Primary redb documents include:
 

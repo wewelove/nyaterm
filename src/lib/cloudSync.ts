@@ -16,7 +16,7 @@ export const MASKED_CLOUD_SECRET_VALUE = "__SET__";
 export const DEFAULT_CLOUD_SYNC_SETTINGS: CloudSyncSettings = {
   enabled: false,
   provider: "webdav",
-  remote_root: "dragonfly",
+  remote_root: "nyaterm",
   device_name: "This Device",
   auto_check_on_startup: true,
   auto_push_on_change: true,

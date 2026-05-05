@@ -41,7 +41,7 @@ impl Hotp {
     /// # Example
     ///
     /// ```rust
-    /// use otp::{Hotp, Algorithm, Secret};
+    /// use nyaterm_otp::{Hotp, Algorithm, Secret};
     ///
     /// let hotp = Hotp::new(
     ///     Algorithm::SHA1,
@@ -83,7 +83,7 @@ impl Hotp {
     ///
     /// # Example
     /// ```rust
-    /// let mut hotp = otp::Hotp::default();
+    /// let mut hotp = nyaterm_otp::Hotp::default();
     /// let otp = hotp.generate();
     /// println!("OTP: {}", otp);
     /// ```
@@ -111,7 +111,7 @@ impl Hotp {
     ///
     /// # Example
     /// ```rust
-    /// let hotp = otp::Hotp::default();
+    /// let hotp = nyaterm_otp::Hotp::default();
     /// let otp = hotp.generate_at(1234);
     /// ```
     ///
@@ -148,7 +148,7 @@ impl Hotp {
     ///
     /// # Example
     /// ```rust
-    /// let hotp = otp::Hotp::default();
+    /// let hotp = nyaterm_otp::Hotp::default();
     /// let otp = hotp.generate_at(5);
     /// assert!(hotp.verify(otp, 5, 1)); // exact match
     /// assert!(hotp.verify(otp, 6, 1)); // match in past window
@@ -206,7 +206,7 @@ impl Hotp {
     ///
     /// # Example
     /// ```rust
-    /// use otp::{Totp, Algorithm, Secret};
+    /// use nyaterm_otp::{Totp, Algorithm, Secret};
     ///
     /// let totp = Totp::new(
     ///     Algorithm::SHA256,
@@ -305,7 +305,7 @@ impl Hotp {
     /// # Examples
     ///
     /// ```rust
-    /// use otp::Hotp;
+    /// use nyaterm_otp::Hotp;
     ///
     /// let uri = "otpauth://hotp/example:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=example&algorithm=SHA1&digits=6&counter=1";
     /// let hotp = Hotp::from_uri(uri).unwrap();

@@ -82,14 +82,14 @@ Example single-test command:
 
 ### SSH / auth / transfer details
 - SSH logic is split across `src-tauri/src/core/ssh/`:
-  - `client.rs` handles russh client setup, keepalive config, proxy-aware connection setup, and TOFU-style `known_hosts` verification stored under `~/.dragonfly/known_hosts`
+  - `client.rs` handles russh client setup, keepalive config, proxy-aware connection setup, and TOFU-style `known_hosts` verification stored under `~/.nyaterm/known_hosts`
   - `auth.rs` handles saved auth loading plus keyboard-interactive / OTP flows through `PendingAuthManager` and the `otp-request` event
   - `io.rs` streams terminal output and emits CWD updates
   - `sftp.rs` implements remote file operations and emits transfer progress events consumed by `TransferContext`
 - SFTP commands exposed to the frontend are in `src-tauri/src/cmd/sftp.rs`; the file explorer and transfer UI sit on top of these commands and events.
 
 ### Persistence model
-- App data is stored under `~/.dragonfly/` through `src-tauri/src/config/`.
+- App data is stored under `~/.nyaterm/` through `src-tauri/src/config/`.
 - Important persisted files include:
   - `settings.json`
   - `sessions.json`

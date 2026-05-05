@@ -1,6 +1,6 @@
 //! Config persistence for sessions, UI, and quick commands.
 //!
-//! Stores JSON documents in `~/.dragonfly/dragonfly.redb`.
+//! Stores JSON documents in `~/.nyaterm/nyaterm.redb`.
 //! Credentials are AES-256-GCM encrypted in-place.
 
 mod cloud_sync;

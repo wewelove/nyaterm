@@ -1,7 +1,7 @@
-//! redb-backed persistence for Dragonfly's user data.
+//! redb-backed persistence for NyaTerm's user data.
 //!
 //! The public API stores the same JSON/text payloads that used to live as
-//! files under `~/.dragonfly`, so higher layers can keep their serde models.
+//! files under `~/.nyaterm`, so higher layers can keep their serde models.
 
 use crate::error::{AppError, AppResult};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
@@ -10,7 +10,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-const DATABASE_FILE: &str = "dragonfly.redb";
+const DATABASE_FILE: &str = "nyaterm.redb";
+const LEGACY_CONFIG_DIR: &str = ".dragonfly";
+const LEGACY_DATABASE_FILE: &str = "dragonfly.redb";
 const SCHEMA_VERSION: &str = "1";
 const META_SCHEMA_VERSION: &str = "schema_version";
 const META_LEGACY_MIGRATED: &str = "legacy_migrated";
@@ -61,6 +63,7 @@ const LEGACY_TEXT_FILES: &[(&str, &str)] = &[
 
 pub fn init(config_dir: &Path) -> AppResult<()> {
     fs::create_dir_all(config_dir)?;
+    bootstrap_from_legacy_dragonfly_config(config_dir)?;
     let db_path = config_dir.join(DATABASE_FILE);
     let db = Arc::new(open_database(&db_path)?);
     migrate_legacy_files(&db, config_dir)?;
@@ -157,7 +160,56 @@ fn database() -> AppResult<Arc<Database>> {
 fn default_config_dir() -> AppResult<PathBuf> {
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Config("cannot determine home directory".to_string()))?;
-    Ok(home.join(".dragonfly"))
+    Ok(home.join(".nyaterm"))
+}
+
+fn bootstrap_from_legacy_dragonfly_config(config_dir: &Path) -> AppResult<()> {
+    let Some(home_dir) = config_dir.parent() else {
+        return Ok(());
+    };
+
+    let legacy_dir = home_dir.join(LEGACY_CONFIG_DIR);
+    bootstrap_from_legacy_config_dir(config_dir, &legacy_dir)
+}
+
+fn bootstrap_from_legacy_config_dir(config_dir: &Path, legacy_dir: &Path) -> AppResult<()> {
+    let db_path = config_dir.join(DATABASE_FILE);
+    if db_path.exists() || !legacy_dir.is_dir() {
+        return Ok(());
+    }
+
+    let legacy_db_path = legacy_dir.join(LEGACY_DATABASE_FILE);
+    if legacy_db_path.is_file() {
+        fs::copy(&legacy_db_path, &db_path)?;
+        tracing::info!(
+            "Migrated NyaTerm storage database from legacy Dragonfly path '{}'",
+            legacy_db_path.display()
+        );
+        return Ok(());
+    }
+
+    let mut copied_legacy_files = 0usize;
+    for &(file_name, _) in LEGACY_JSON_FILES.iter().chain(LEGACY_TEXT_FILES.iter()) {
+        let source = legacy_dir.join(file_name);
+        if !source.is_file() {
+            continue;
+        }
+        let destination = config_dir.join(file_name);
+        if destination.exists() {
+            continue;
+        }
+        fs::copy(&source, &destination)?;
+        copied_legacy_files += 1;
+    }
+
+    if copied_legacy_files > 0 {
+        tracing::info!(
+            "Copied {} legacy Dragonfly storage file(s) into NyaTerm storage for redb migration",
+            copied_legacy_files
+        );
+    }
+
+    Ok(())
 }
 
 fn open_database(path: &Path) -> AppResult<Database> {
@@ -322,7 +374,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        std::env::temp_dir().join(format!("dragonfly-redb-{name}-{nanos}"))
+        std::env::temp_dir().join(format!("nyaterm-redb-{name}-{nanos}"))
     }
 
     #[test]
@@ -377,6 +429,66 @@ mod tests {
         assert!(!dir.join("known_hosts").exists());
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn bootstrap_copies_legacy_dragonfly_redb_when_new_database_is_missing() {
+        let root = unique_config_dir("legacy-redb-root");
+        let current_dir = root.join(".nyaterm");
+        let legacy_dir = root.join(LEGACY_CONFIG_DIR);
+        fs::create_dir_all(&current_dir).expect("create current dir");
+        fs::create_dir_all(&legacy_dir).expect("create legacy dir");
+
+        let legacy_db = open_database(&legacy_dir.join(LEGACY_DATABASE_FILE)).expect("open legacy");
+        write_json_doc(&legacy_db, JSON_SETTINGS, "{\"legacy\":true}").expect("write legacy");
+
+        bootstrap_from_legacy_config_dir(&current_dir, &legacy_dir).expect("bootstrap");
+        let current_db = open_database(&database_path(&current_dir)).expect("open current");
+
+        assert_eq!(
+            read_json_doc(&current_db, JSON_SETTINGS)
+                .expect("read settings")
+                .as_deref(),
+            Some("{\"legacy\":true}")
+        );
+        assert!(legacy_dir.join(LEGACY_DATABASE_FILE).exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bootstrap_copies_legacy_dragonfly_files_for_redb_migration() {
+        let root = unique_config_dir("legacy-files-root");
+        let current_dir = root.join(".nyaterm");
+        let legacy_dir = root.join(LEGACY_CONFIG_DIR);
+        fs::create_dir_all(&current_dir).expect("create current dir");
+        fs::create_dir_all(&legacy_dir).expect("create legacy dir");
+        fs::write(legacy_dir.join("settings.json"), "{\"legacy\":true}").expect("write settings");
+        fs::write(legacy_dir.join("known_hosts"), "legacy-host key value\n")
+            .expect("write known_hosts");
+
+        bootstrap_from_legacy_config_dir(&current_dir, &legacy_dir).expect("bootstrap");
+        let db = open_database(&database_path(&current_dir)).expect("open db");
+        migrate_legacy_files(&db, &current_dir).expect("migrate copied legacy files");
+
+        assert_eq!(
+            read_json_doc(&db, JSON_SETTINGS)
+                .expect("read settings")
+                .as_deref(),
+            Some("{\"legacy\":true}")
+        );
+        assert_eq!(
+            read_text_doc(&db, TEXT_KNOWN_HOSTS)
+                .expect("read known hosts")
+                .as_deref(),
+            Some("legacy-host key value\n")
+        );
+        assert!(legacy_dir.join("settings.json").exists());
+        assert!(legacy_dir.join("known_hosts").exists());
+        assert!(!current_dir.join("settings.json").exists());
+        assert!(!current_dir.join("known_hosts").exists());
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

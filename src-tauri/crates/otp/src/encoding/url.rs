@@ -4,7 +4,7 @@ const SAFE_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 
 /// # Example:
 /// ```rust
-/// use otp::encoding::url;
+/// use nyaterm_otp::encoding::url;
 ///
 /// let s = b"hello@example.com";
 /// let encoded = url::encode(s);

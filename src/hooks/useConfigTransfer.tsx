@@ -36,7 +36,7 @@ export function useConfigTransfer() {
     if (!ensureMasterPassword()) return;
 
     const path = await saveFileDialog({
-      filters: [{ name: "Dragonfly Backup", extensions: ["dgfy"] }],
+      filters: [{ name: "NyaTerm Backup", extensions: ["dgfy"] }],
     });
 
     if (!path) return;
@@ -60,7 +60,7 @@ export function useConfigTransfer() {
 
     const path = await openFileDialog({
       multiple: false,
-      filters: [{ name: "Dragonfly Backup", extensions: ["dgfy"] }],
+      filters: [{ name: "NyaTerm Backup", extensions: ["dgfy"] }],
     });
 
     if (!path) return;
@@ -96,8 +96,8 @@ export function useConfigTransfer() {
 
   const handleExportDiagnostics = async () => {
     const path = await saveFileDialog({
-      filters: [{ name: "Dragonfly Diagnostics", extensions: ["zip"] }],
-      defaultPath: "dragonfly-diagnostics.zip",
+      filters: [{ name: "NyaTerm Diagnostics", extensions: ["zip"] }],
+      defaultPath: "nyaterm-diagnostics.zip",
     });
 
     if (!path) return;

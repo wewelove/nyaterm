@@ -169,7 +169,7 @@ export default function TerminalGutter({
         }
       };
 
-      window.addEventListener("dragonfly:refresh-gutter", handleExternalRefresh);
+      window.addEventListener("nyaterm:refresh-gutter", handleExternalRefresh);
     };
 
     attach();
@@ -177,9 +177,11 @@ export default function TerminalGutter({
     return () => {
       disposed = true;
       cancelAnimationFrame(rafRef.current);
-      disposables.forEach((d) => d.dispose());
+      disposables.forEach((d) => {
+        d.dispose();
+      });
       if (handleExternalRefresh) {
-        window.removeEventListener("dragonfly:refresh-gutter", handleExternalRefresh);
+        window.removeEventListener("nyaterm:refresh-gutter", handleExternalRefresh);
       }
     };
   }, [suspended, terminalRef, scheduleUpdate, sessionId]);

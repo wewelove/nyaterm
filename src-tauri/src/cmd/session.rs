@@ -191,7 +191,7 @@ pub async fn close_session(
     // Concurrently tidy up any downloaded/watcher temporary files stored in the OS temp directory
     tauri::async_runtime::spawn(async move {
         if let Ok(temp_dir) = app.path().temp_dir() {
-            let session_temp_dir = temp_dir.join("dragonfly").join(&session_id_clone);
+            let session_temp_dir = temp_dir.join("nyaterm").join(&session_id_clone);
             if session_temp_dir.exists() {
                 if let Err(e) = tokio::fs::remove_dir_all(&session_temp_dir).await {
                     observability::log_event(StructuredLog {

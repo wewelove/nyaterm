@@ -4,9 +4,9 @@
 //! confirmation, and persists history for fuzzy search.
 
 use super::history::{sanitize_history_command, CommandHistoryStore};
+use crate::core::capture::CapturedOutput;
 use crate::error::{AppError, AppResult};
 use crate::utils::fuzzy::{fuzzy_search_items, FuzzyResult};
-use crate::core::capture::CapturedOutput;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -535,7 +535,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        std::env::temp_dir().join(format!("dragonfly-session-history-{name}-{nanos}.json"))
+        std::env::temp_dir().join(format!("nyaterm-session-history-{name}-{nanos}.json"))
     }
 
     #[test]

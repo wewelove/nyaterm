@@ -4,12 +4,12 @@ sidebar_position: 8
 
 # Keyboard Shortcuts
 
-The easiest way to understand Dragonfly shortcuts is to split them into two groups:
+The easiest way to understand NyaTerm shortcuts is to split them into two groups:
 
 1. **App-level shortcuts** — toggle panels, create sessions, copy terminal content, and so on
 2. **Shell-level keys** — keys that are sent to the remote or local shell, such as `Ctrl+C`
 
-If you want to copy text from the terminal, use Dragonfly's app-level shortcuts rather than assuming shell shortcuts become copy actions.
+If you want to copy text from the terminal, use NyaTerm's app-level shortcuts rather than assuming shell shortcuts become copy actions.
 
 ## Conventions
 

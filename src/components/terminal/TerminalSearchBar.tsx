@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { MdClose, MdKeyboardArrowDown, MdKeyboardArrowUp } from "react-icons/md";
 
@@ -19,6 +20,13 @@ export default function TerminalSearchBar({
   onClose,
 }: TerminalSearchBarProps) {
   const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (show) {
+      inputRef.current?.focus();
+    }
+  }, [show]);
 
   if (!show) return null;
 
@@ -33,7 +41,7 @@ export default function TerminalSearchBar({
       onClick={(e) => e.stopPropagation()}
     >
       <input
-        autoFocus
+        ref={inputRef}
         type="text"
         className="bg-transparent outline-none text-xs px-1 py-0.5"
         style={{ color: "var(--df-text)", width: "180px" }}

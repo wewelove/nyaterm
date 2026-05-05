@@ -33,7 +33,7 @@ const K: [u64; 80] = [
 
 /// # Example:
 /// ```rust
-/// use otp::Algorithm;
+/// use nyaterm_otp::Algorithm;
 ///
 /// let alg = Algorithm::SHA512;
 ///

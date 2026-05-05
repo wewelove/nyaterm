@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Terminal Features
 
-Dragonfly's terminal experience is designed around high-frequency local and remote work inside one workspace. It is built on xterm.js, but the practical experience goes beyond a terminal canvas: search, command history, suggestions, optional enhancements, recording, and SSH-aware helpers are all part of it.
+NyaTerm's terminal experience is designed around high-frequency local and remote work inside one workspace. It is built on xterm.js, but the practical experience goes beyond a terminal canvas: search, command history, suggestions, optional enhancements, recording, and SSH-aware helpers are all part of it.
 
 ## Core operations
 
@@ -35,7 +35,7 @@ In **Settings → Interaction**, you can also adjust:
 
 ## Command history and suggestions
 
-Dragonfly provides two related helpers for session workflows.
+NyaTerm provides two related helpers for session workflows.
 
 ### Command history
 
@@ -45,7 +45,7 @@ Dragonfly provides two related helpers for session workflows.
 
 ### Input suggestions
 
-While typing, Dragonfly can suggest commands based on history. This is useful for repeated operational commands, build commands, and troubleshooting scripts.
+While typing, NyaTerm can suggest commands based on history. This is useful for repeated operational commands, build commands, and troubleshooting scripts.
 
 ## Optional terminal enhancements
 
@@ -62,7 +62,7 @@ When enabled, a gutter appears on the left side of terminal output. It is especi
 
 ### Action links
 
-Action links are off by default. When enabled, Dragonfly can detect and open patterns such as:
+Action links are off by default. When enabled, NyaTerm can detect and open patterns such as:
 
 - IPv4 addresses like `192.168.1.10`
 - `host:port` pairs like `db.internal:5432`
@@ -76,7 +76,7 @@ Notes:
 
 ### Keyword highlighting
 
-Keyword highlighting is also off by default. After enabling it, Dragonfly applies built-in rules and then overlays your custom rules.
+Keyword highlighting is also off by default. After enabling it, NyaTerm applies built-in rules and then overlays your custom rules.
 
 The built-in rules cover more than error keywords. They also include:
 
@@ -94,7 +94,7 @@ You can define your own rules with:
 
 ### Large-output protection
 
-When a session produces too much output too quickly, Dragonfly can enter a temporary protection mode so the terminal remains responsive.
+When a session produces too much output too quickly, NyaTerm can enter a temporary protection mode so the terminal remains responsive.
 
 During that period, the app temporarily suppresses some expensive decorations and reports how many queued characters were skipped. Once pressure drops, normal rendering resumes. This is mainly intended for log storms or constantly streaming output.
 
@@ -139,7 +139,7 @@ Provider visibility depends on settings:
 
 ## Recording and workflow combinations
 
-Dragonfly supports session recording, which is useful for:
+NyaTerm supports session recording, which is useful for:
 
 - Preserving troubleshooting steps
 - Sharing a reproducible path with teammates

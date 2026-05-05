@@ -19,8 +19,8 @@ export function useUnreadTabs(tabs: Tab[], activeTabId: string | null) {
       }
     };
 
-    window.addEventListener("dragonfly:session-output", handler);
-    return () => window.removeEventListener("dragonfly:session-output", handler);
+    window.addEventListener("nyaterm:session-output", handler);
+    return () => window.removeEventListener("nyaterm:session-output", handler);
   }, [activeTabId, tabs]);
 
   useEffect(() => {

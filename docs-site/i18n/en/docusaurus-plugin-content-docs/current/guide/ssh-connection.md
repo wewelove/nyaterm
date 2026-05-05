@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # SSH Connection Management
 
-SSH is still Dragonfly's most complete session type. Beyond a basic login, an SSH connection can also be tied to:
+SSH is still NyaTerm's most complete session type. Beyond a basic login, an SSH connection can also be tied to:
 
 - SFTP file explorer
 - Remote resource monitoring
@@ -13,7 +13,7 @@ SSH is still Dragonfly's most complete session type. Beyond a basic login, an SS
 - OTP binding and auto-fill
 - Port tunnels
 
-If you are new to Dragonfly, it usually makes sense to configure SSH first, then expand into file workflows, terminal enhancements, and network features.
+If you are new to NyaTerm, it usually makes sense to configure SSH first, then expand into file workflows, terminal enhancements, and network features.
 
 ## Create an SSH connection
 
@@ -33,7 +33,7 @@ In the **New Session** window, switch to the **SSH** tab and fill in these field
 
 ### Authentication methods
 
-Dragonfly supports two common SSH authentication methods:
+NyaTerm supports two common SSH authentication methods:
 
 - **Password**
 - **Private key**
@@ -116,7 +116,7 @@ If you manage many hosts, using groups, icons, and descriptions helps separate e
 
 ## Import sessions from other clients
 
-Dragonfly can import session definitions from other terminal clients. Current supported imports are:
+NyaTerm can import session definitions from other terminal clients. Current supported imports are:
 
 - **Xshell** (`.xts`)
 - **MobaXterm** (`.mxtsessions`)
@@ -131,7 +131,7 @@ After importing, it is a good idea to verify:
 
 ## Host key policy
 
-Dragonfly maintains known-host records and offers three SSH host key policies:
+NyaTerm maintains known-host records and offers three SSH host key policies:
 
 | Policy | Behavior |
 |------|------|
@@ -139,7 +139,7 @@ Dragonfly maintains known-host records and offers three SSH host key policies:
 | Accept | Automatically accept and record new host keys |
 | Strict | Reject all unknown host keys |
 
-Known host records are stored in local storage at `~/.dragonfly/dragonfly.redb`; legacy `known_hosts` is imported on first launch.
+Known host records are stored in local storage at `~/.nyaterm/nyaterm.redb`; legacy `known_hosts` is imported on first launch.
 
 If you operate in a stricter environment, verify the host key source before accepting it.
 
@@ -152,7 +152,7 @@ SSH is the right first choice when:
 - You need remote resource monitoring
 - You want a saved connection you can reuse long term
 
-If you only want a local shell inside Dragonfly, use **Local Terminal** from [Session Types](./session-types) instead.
+If you only want a local shell inside NyaTerm, use **Local Terminal** from [Session Types](./session-types) instead.
 
 :::tip Screenshot suggestion
 - Suggested image path: `/img/docs/session-types/ssh-advanced-form.png`

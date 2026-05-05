@@ -5,9 +5,9 @@ slug: /
 
 # Introduction
 
-**Dragonfly** is a desktop client built around remote terminal workflows. It pairs a Tauri + React interface with a Rust backend that handles SSH, SFTP, session lifecycle, tunnels, authentication, and config persistence, so you can work with remote servers, local shells, serial devices, and network helpers inside one workspace.
+**NyaTerm** is a desktop client built around remote terminal workflows. It pairs a Tauri + React interface with a Rust backend that handles SSH, SFTP, session lifecycle, tunnels, authentication, and config persistence, so you can work with remote servers, local shells, serial devices, and network helpers inside one workspace.
 
-## Where Dragonfly fits best
+## Where NyaTerm fits best
 
 - Managing multiple SSH hosts at the same time
 - Switching between local terminals, Telnet sessions, and serial devices during troubleshooting
@@ -19,7 +19,7 @@ slug: /
 
 ### Multiple session types
 
-Dragonfly supports more than SSH:
+NyaTerm supports more than SSH:
 
 - **SSH** — remote login, file transfer, resource monitoring, tunnels, OTP, and related workflows
 - **Local Terminal** — open a local shell inside the same workspace
@@ -60,14 +60,14 @@ Dragonfly supports more than SSH:
 
 ### Cloud sync and encrypted backup
 
-- Sync Dragonfly's portable configuration data through **WebDAV** or **S3-compatible** storage
+- Sync NyaTerm's portable configuration data through **WebDAV** or **S3-compatible** storage
 - Configure a master password in **Settings → Security** before using **Settings → Sync & Backup**
 - Support startup checks, debounced auto-push after supported local changes, scheduled encrypted backups, and remote backup restore
 - Resolve snapshot-level conflicts from the settings page or the in-workspace history panel when both local and remote state changed
 
 ## Suggested reading order
 
-If you are new to Dragonfly, this order works well:
+If you are new to NyaTerm, this order works well:
 
 1. [Quick Start](./getting-started/quick-start)
 2. [Session Types](./guide/session-types)

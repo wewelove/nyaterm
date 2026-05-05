@@ -1,11 +1,11 @@
 <div align="center">
-    <img src="./public/dragonfly.svg" alt="Dragonfly Logo" width="100" height="100">
-    <h3>Dragonfly is a modern remote terminal workspace built with Tauri and Rust</h3>
+    <img src="./public/nyaterm.svg" alt="NyaTerm Logo" width="100" height="100">
+    <h3>NyaTerm is a modern remote terminal workspace built with Tauri and Rust</h3>
 </div>
 
 ## Overview
 
-Dragonfly is a desktop client for SSH-centric operations and mixed terminal workflows. It combines a React + Tauri interface with a Rust backend so you can manage remote hosts, local shells, file transfers, authentication, network tooling, AI-assisted terminal actions, session import / export, diagnostics, and protected configuration sync / backup workflows from one workspace.
+NyaTerm is a desktop client for SSH-centric operations and mixed terminal workflows. It combines a React + Tauri interface with a Rust backend so you can manage remote hosts, local shells, file transfers, authentication, network tooling, AI-assisted terminal actions, session import / export, diagnostics, and protected configuration sync / backup workflows from one workspace.
 
 ## Highlights
 
@@ -53,7 +53,7 @@ Dragonfly is a desktop client for SSH-centric operations and mixed terminal work
 
 ### Sync, backup, and portability
 
-- Encrypted cloud sync and backup for portable Dragonfly data through WebDAV and S3-compatible storage
+- Encrypted cloud sync and backup for portable NyaTerm data through WebDAV and S3-compatible storage
 - Master password required before enabling sync, running manual actions, importing / exporting encrypted config backups, or creating scheduled encrypted backups
 - Startup sync checks, debounced auto-push after supported local changes, and scheduled backup retention policies
 - Manual test / push / pull / backup actions, remote backup restore, and snapshot-level conflict resolution
@@ -117,8 +117,8 @@ If you want to add screenshots later, these are the recommended stable asset pat
 ### Installation
 
 ```bash
-git clone https://git.coderkang.top/Tauri/dragonfly.git
-cd dragonfly
+git clone https://git.coderkang.top/Tauri/nyaterm.git
+cd nyaterm
 pnpm install
 ```
 

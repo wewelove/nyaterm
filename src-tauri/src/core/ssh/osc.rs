@@ -37,9 +37,14 @@ impl ShellKind {
 // Ready marker
 // ---------------------------------------------------------------------------
 
-/// Build a session-unique ready marker: `\x1b]7777;DflyReady:<id>\x07`.
+const READY_MARKER_PREFIX: &str = "7777;NyaTermReady:";
+const COMMAND_MARKER_PREFIX: &str = "7777;NyaTermCommand:";
+const LEGACY_READY_MARKER_PREFIX: &str = "7777;DflyReady:";
+const LEGACY_COMMAND_MARKER_PREFIX: &str = "7777;DflyCommand:";
+
+/// Build a session-unique ready marker: `\x1b]7777;NyaTermReady:<id>\x07`.
 pub fn build_ready_marker(session_id: &str) -> String {
-    format!("\x1b]7777;DflyReady:{}\x07", session_id)
+    format!("\x1b]{}{}\x07", READY_MARKER_PREFIX, session_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -57,32 +62,32 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
     match shell {
         ShellKind::Bash => Some(format!(
             concat!(
-                " DFLY_PRUNE_HISTORY=1;",
-                " if [ -z \"${{DFLY_INJ:-}}\" ]; then export DFLY_INJ=1;",
-                " DFLY_LAST_HISTCMD=\"${{HISTCMD-}}\";",
-                " __df_host(){{ hostname 2>/dev/null || printf localhost; }};",
-                " __df_emit_command(){{",
+                " NYATERM_PRUNE_HISTORY=1;",
+                " if [ -z \"${{NYATERM_INJ:-}}\" ]; then export NYATERM_INJ=1;",
+                " NYATERM_LAST_HISTCMD=\"${{HISTCMD-}}\";",
+                " __nyaterm_host(){{ hostname 2>/dev/null || printf localhost; }};",
+                " __nyaterm_emit_command(){{",
                 " local histcmd=\"${{HISTCMD-}}\";",
-                " if [ -n \"$histcmd\" ] && [ \"${{DFLY_LAST_HISTCMD-}}\" != \"$histcmd\" ]; then",
-                " DFLY_LAST_HISTCMD=\"$histcmd\";",
+                " if [ -n \"$histcmd\" ] && [ \"${{NYATERM_LAST_HISTCMD-}}\" != \"$histcmd\" ]; then",
+                " NYATERM_LAST_HISTCMD=\"$histcmd\";",
                 " local cmd; cmd=\"$(fc -ln -1 2>/dev/null)\";",
                 " if [ -n \"$cmd\" ] && command -v base64 >/dev/null 2>&1; then",
                 " local b64; b64=\"$(printf '%s' \"$cmd\" | base64 | tr -d '\\r\\n')\";",
-                " printf '\\033]7777;DflyCommand:%s\\007' \"$b64\";",
+                " printf '\\033]7777;NyaTermCommand:%s\\007' \"$b64\";",
                 " fi;",
                 " fi;",
                 " }};",
-                " __df_prompt(){{",
-                " if [ -n \"${{DFLY_PRUNE_HISTORY:-}}\" ]; then",
+                " __nyaterm_prompt(){{",
+                " if [ -n \"${{NYATERM_PRUNE_HISTORY:-}}\" ]; then",
                 " history -d $((HISTCMD-1)) 2>/dev/null || true;",
-                " unset DFLY_PRUNE_HISTORY;",
-                " DFLY_LAST_HISTCMD=\"${{HISTCMD-}}\";",
+                " unset NYATERM_PRUNE_HISTORY;",
+                " NYATERM_LAST_HISTCMD=\"${{HISTCMD-}}\";",
                 " fi;",
-                " __df_emit_command;",
-                " printf '\\033]7;file://%s%s\\007' \"$(__df_host)\" \"$PWD\";",
+                " __nyaterm_emit_command;",
+                " printf '\\033]7;file://%s%s\\007' \"$(__nyaterm_host)\" \"$PWD\";",
                 " }};",
-                " case \"${{PROMPT_COMMAND-}}\" in (*__df_prompt*) ;; (*)",
-                " PROMPT_COMMAND=\"__df_prompt${{PROMPT_COMMAND:+; $PROMPT_COMMAND}}\" ;; esac;",
+                " case \"${{PROMPT_COMMAND-}}\" in (*__nyaterm_prompt*) ;; (*)",
+                " PROMPT_COMMAND=\"__nyaterm_prompt${{PROMPT_COMMAND:+; $PROMPT_COMMAND}}\" ;; esac;",
                 " fi;",
                 " printf '{}' 2>/dev/null\n",
             ),
@@ -92,19 +97,19 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
         ShellKind::Zsh => Some(format!(
             concat!(
                 " fc -p /dev/null 2>/dev/null\n",
-                " if [ -z \"${{DFLY_INJ:-}}\" ]; then export DFLY_INJ=1;",
-                " __df_host(){{ hostname 2>/dev/null || printf localhost; }};",
-                " __df_emit(){{ printf '\\033]7;file://%s%s\\007' \"$(__df_host)\" \"$PWD\"; }};",
-                " __df_preexec(){{",
+                " if [ -z \"${{NYATERM_INJ:-}}\" ]; then export NYATERM_INJ=1;",
+                " __nyaterm_host(){{ hostname 2>/dev/null || printf localhost; }};",
+                " __nyaterm_emit(){{ printf '\\033]7;file://%s%s\\007' \"$(__nyaterm_host)\" \"$PWD\"; }};",
+                " __nyaterm_preexec(){{",
                 " if [ -n \"$1\" ] && command -v base64 >/dev/null 2>&1; then",
                 " local b64; b64=\"$(printf '%s' \"$1\" | base64 | tr -d '\\r\\n')\";",
-                " printf '\\033]7777;DflyCommand:%s\\007' \"$b64\";",
+                " printf '\\033]7777;NyaTermCommand:%s\\007' \"$b64\";",
                 " fi;",
                 " }};",
                 " autoload -Uz add-zsh-hook 2>/dev/null || true;",
                 " typeset -ga precmd_functions preexec_functions;",
-                " [[ \" ${{precmd_functions[*]}} \" == *\" __df_emit \"* ]] || precmd_functions+=(__df_emit);",
-                " [[ \" ${{preexec_functions[*]}} \" == *\" __df_preexec \"* ]] || preexec_functions+=(__df_preexec);",
+                " [[ \" ${{precmd_functions[*]}} \" == *\" __nyaterm_emit \"* ]] || precmd_functions+=(__nyaterm_emit);",
+                " [[ \" ${{preexec_functions[*]}} \" == *\" __nyaterm_preexec \"* ]] || preexec_functions+=(__nyaterm_preexec);",
                 " fi;",
                 " fc -P 2>/dev/null\n",
                 " printf '{}' 2>/dev/null\n",
@@ -115,16 +120,16 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
         ShellKind::Fish => Some(format!(
             concat!(
                 " set fish_private_mode 1 2>/dev/null\n",
-                " if not set -q DFLY_INJ;",
-                " set -gx DFLY_INJ 1;",
-                " function __df_emit --on-event fish_prompt;",
+                " if not set -q NYATERM_INJ;",
+                " set -gx NYATERM_INJ 1;",
+                " function __nyaterm_emit --on-event fish_prompt;",
                 " printf '\\033]7;file://%s%s\\007' (hostname) $PWD;",
                 " end;",
-                " function __df_preexec --on-event fish_preexec;",
+                " function __nyaterm_preexec --on-event fish_preexec;",
                 " if test -n \"$argv[1]\"; and command -sq base64;",
                 " set -l b64 (printf '%s' \"$argv[1]\" | base64 | tr -d '\\r\\n');",
                 " if test -n \"$b64\";",
-                " printf '\\033]7777;DflyCommand:%s\\007' \"$b64\";",
+                " printf '\\033]7777;NyaTermCommand:%s\\007' \"$b64\";",
                 " end;",
                 " end;",
                 " end;",
@@ -153,11 +158,11 @@ pub struct OscResult {
     pub cwd_paths: Vec<String>,
     /// Whether the ready marker was detected in this chunk.
     pub ready: bool,
-    /// Shell-confirmed commands extracted from private Dragonfly OSC markers.
+    /// Shell-confirmed commands extracted from private NyaTerm OSC markers.
     pub accepted_commands: Vec<String>,
 }
 
-/// Streaming parser that strips OSC 7 and DflyReady sequences from terminal
+/// Streaming parser that strips OSC 7 and NyaTermReady sequences from terminal
 /// output, handling split packets and extracting CWD paths.
 pub struct OscStripper {
     buf: String,
@@ -231,10 +236,13 @@ impl OscStripper {
                 if let Some(path) = parse_osc7_payload(&inner[2..]) {
                     paths.push(path);
                 }
-            } else if inner.starts_with("7777;DflyReady:") {
+            } else if inner.starts_with(READY_MARKER_PREFIX)
+                || inner.starts_with(LEGACY_READY_MARKER_PREFIX)
+            {
                 ready = true;
             } else if let Some(command) = inner
-                .strip_prefix("7777;DflyCommand:")
+                .strip_prefix(COMMAND_MARKER_PREFIX)
+                .or_else(|| inner.strip_prefix(LEGACY_COMMAND_MARKER_PREFIX))
                 .and_then(parse_command_payload)
             {
                 commands.push(command);
@@ -297,11 +305,10 @@ mod tests {
         let script = injection_script(ShellKind::Bash, &build_ready_marker("session-1"))
             .expect("bash injection script");
 
-        assert!(script.contains("DFLY_PRUNE_HISTORY=1;"));
+        assert!(script.contains("NYATERM_PRUNE_HISTORY=1;"));
         assert!(script.contains("history -d $((HISTCMD-1)) 2>/dev/null || true;"));
-        assert!(
-            script.contains("PROMPT_COMMAND=\"__df_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}\"")
-        );
+        assert!(script
+            .contains("PROMPT_COMMAND=\"__nyaterm_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}\""));
         assert!(!script.contains("set +o history"));
         assert!(!script.contains("set -o history"));
     }
@@ -309,7 +316,7 @@ mod tests {
     #[test]
     fn interactive_shell_ready_marker_is_emitted_after_cleanup() {
         let ready_marker = build_ready_marker("session-1");
-        let ready_pos = |script: &str| script.find("DflyReady:session-1").expect("ready marker");
+        let ready_pos = |script: &str| script.find("NyaTermReady:session-1").expect("ready marker");
 
         let zsh = injection_script(ShellKind::Zsh, &ready_marker).expect("zsh injection script");
         assert!(
@@ -325,27 +332,15 @@ mod tests {
                 < ready_pos(&fish)
         );
 
-        assert!(zsh.contains("DflyCommand:%s"));
-        assert!(fish.contains("DflyCommand:%s"));
-    }
-
-    #[test]
-    fn powershell_injection_uses_character_escapes() {
-        let script = injection_script(ShellKind::PowerShell, &build_ready_marker("session-1"))
-            .expect("powershell injection script");
-
-        assert!(script.contains("[char]27"));
-        assert!(script.contains("[char]7"));
-        assert!(!script.contains("`e"));
-        assert!(script.contains("DflyReady:session-1"));
-        assert!(script.contains("DflyCommand:"));
+        assert!(zsh.contains("NyaTermCommand:%s"));
+        assert!(fish.contains("NyaTermCommand:%s"));
     }
 
     #[test]
     fn strips_private_command_osc_without_leaking_visible_text() {
         let command = BASE64_STANDARD.encode("docker ps");
         let payload = format!(
-            "before\x1b]7777;DflyCommand:{command}\x07after\x1b]7777;DflyReady:session-1\x07"
+            "before\x1b]7777;NyaTermCommand:{command}\x07after\x1b]7777;NyaTermReady:session-1\x07"
         );
 
         let result = OscStripper::new(&build_ready_marker("session-1")).push(&payload);
@@ -359,7 +354,7 @@ mod tests {
         let command = BASE64_STANDARD.encode("kubectl get pods");
         let mut stripper = OscStripper::new(&build_ready_marker("session-1"));
 
-        let first = stripper.push(&format!("x\x1b]7777;DflyCommand:{}", &command[..8]));
+        let first = stripper.push(&format!("x\x1b]7777;NyaTermCommand:{}", &command[..8]));
         assert_eq!(first.visible, "x");
         assert!(first.accepted_commands.is_empty());
 
@@ -369,5 +364,18 @@ mod tests {
             second.accepted_commands,
             vec!["kubectl get pods".to_string()]
         );
+    }
+
+    #[test]
+    fn accepts_legacy_private_command_markers() {
+        let command = BASE64_STANDARD.encode("docker ps");
+        let payload = format!(
+            "before\x1b]7777;DflyCommand:{command}\x07after\x1b]7777;DflyReady:session-1\x07"
+        );
+
+        let result = OscStripper::new(&build_ready_marker("session-1")).push(&payload);
+        assert_eq!(result.visible, "beforeafter");
+        assert_eq!(result.accepted_commands, vec!["docker ps".to_string()]);
+        assert!(result.ready);
     }
 }

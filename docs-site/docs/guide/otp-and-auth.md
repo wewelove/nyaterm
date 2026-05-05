@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # OTP 与认证
 
-Dragonfly 把 OTP 管理和 SSH 认证流程结合在了一起：你既可以把 OTP 当作一个独立的验证码仓库来管理，也可以把它直接绑定到 SSH 连接中，减少重复输入。
+NyaTerm 把 OTP 管理和 SSH 认证流程结合在了一起：你既可以把 OTP 当作一个独立的验证码仓库来管理，也可以把它直接绑定到 SSH 连接中，减少重复输入。
 
 ## 支持的 OTP 类型
 
@@ -43,7 +43,7 @@ Dragonfly 把 OTP 管理和 SSH 认证流程结合在了一起：你既可以把
 
 1. 在 OTP 面板中点击二维码导入
 2. 选择本地图片文件
-3. Dragonfly 解析后自动填充 issuer、username、secret 等信息
+3. NyaTerm 解析后自动填充 issuer、username、secret 等信息
 4. 确认后保存为一个 OTP 条目
 
 这比手动抄写 secret 更适合日常管理，也更适合批量整理认证资料。
@@ -61,7 +61,7 @@ Dragonfly 把 OTP 管理和 SSH 认证流程结合在了一起：你既可以把
 
 ## 认证弹窗中的 OTP 交互
 
-当 SSH 服务器进入 keyboard-interactive / OTP 流程时，Dragonfly 会弹出 OTP 对话框。
+当 SSH 服务器进入 keyboard-interactive / OTP 流程时，NyaTerm 会弹出 OTP 对话框。
 
 对话框中会显示：
 

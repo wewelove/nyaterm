@@ -140,7 +140,9 @@ export class KeywordHighlighter implements IDisposable {
 
   public dispose(): void {
     this.clearAllDecorations();
-    this.disposables.forEach((d) => d.dispose());
+    this.disposables.forEach((d) => {
+      d.dispose();
+    });
     this.disposables = [];
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
   }
@@ -358,9 +360,11 @@ export class KeywordHighlighter implements IDisposable {
 
     for (const { regex, color } of this.compiledRules) {
       regex.lastIndex = 0;
-      let match: RegExpExecArray | null;
 
-      while ((match = regex.exec(lineText)) !== null) {
+      while (true) {
+        const match = regex.exec(lineText);
+        if (match === null) break;
+
         // Avoid infinite loops on empty matches
         if (match[0].length === 0) {
           regex.lastIndex++;
@@ -458,9 +462,11 @@ export class KeywordHighlighter implements IDisposable {
 
     for (const { regex, color } of this.compiledRules) {
       regex.lastIndex = 0;
-      let match: RegExpExecArray | null;
 
-      while ((match = regex.exec(logicalText)) !== null) {
+      while (true) {
+        const match = regex.exec(logicalText);
+        if (match === null) break;
+
         if (match[0].length === 0) {
           regex.lastIndex++;
           continue;

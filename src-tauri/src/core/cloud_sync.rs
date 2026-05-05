@@ -1163,7 +1163,7 @@ fn map_webdav_auth_error(raw: &str) -> Option<String> {
 
     if is_webdav && is_unauthorized {
         return Some(
-            "WebDAV authentication failed (401 Unauthorized). Dragonfly currently supports WebDAV Basic/Bearer authentication only and does not support Apache Digest auth. If you are using bytemark/webdav, change AUTH_TYPE to Basic and prefer HTTPS; otherwise verify the username and password."
+            "WebDAV authentication failed (401 Unauthorized). NyaTerm currently supports WebDAV Basic/Bearer authentication only and does not support Apache Digest auth. If you are using bytemark/webdav, change AUTH_TYPE to Basic and prefer HTTPS; otherwise verify the username and password."
                 .to_string(),
         );
     }
@@ -1316,7 +1316,7 @@ impl TempRedbFile {
     fn new(prefix: &str) -> Self {
         Self {
             path: std::env::temp_dir()
-                .join(format!("dragonfly-{prefix}-{}.redb", uuid::Uuid::new_v4())),
+                .join(format!("nyaterm-{prefix}-{}.redb", uuid::Uuid::new_v4())),
         }
     }
 
@@ -1342,12 +1342,12 @@ mod tests {
     #[test]
     fn remote_path_joins_without_duplicate_slashes() {
         assert_eq!(
-            remote_path("dragonfly", "sync/latest.redb"),
-            "dragonfly/sync/latest.redb"
+            remote_path("nyaterm", "sync/latest.redb"),
+            "nyaterm/sync/latest.redb"
         );
         assert_eq!(
-            remote_path("/dragonfly/", "/sync/latest.redb"),
-            "dragonfly/sync/latest.redb"
+            remote_path("/nyaterm/", "/sync/latest.redb"),
+            "nyaterm/sync/latest.redb"
         );
         assert_eq!(remote_path("", "sync/latest.redb"), "sync/latest.redb");
     }
@@ -1383,7 +1383,7 @@ mod tests {
         settings.provider = "webdav".to_string();
         settings.webdav = WebdavSyncSettings {
             endpoint: "https://dav.example.com".to_string(),
-            root: "/dragonfly".to_string(),
+            root: "/nyaterm".to_string(),
             username: "user".to_string(),
             password: Some("cipher".to_string()),
         };
@@ -1391,7 +1391,7 @@ mod tests {
             endpoint: "https://s3.example.com".to_string(),
             bucket: "bucket".to_string(),
             region: "auto".to_string(),
-            root: "/dragonfly".to_string(),
+            root: "/nyaterm".to_string(),
             access_key_id: Some("cipher".to_string()),
             secret_access_key: Some("cipher".to_string()),
             session_token: None,

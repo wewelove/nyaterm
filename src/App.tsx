@@ -917,7 +917,7 @@ function App() {
           current ? splitTerminalWindowForTab(current, tab.id, direction) : current,
         );
         setActiveTabId(tab.id);
-        window.dispatchEvent(new CustomEvent("dragonfly:refresh-terminals"));
+        window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
         return;
       }
 
@@ -938,7 +938,7 @@ function App() {
         if (newTabId) {
           updateTabSession(newTabId, sessionId);
         }
-        window.dispatchEvent(new CustomEvent("dragonfly:refresh-terminals"));
+        window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
       } catch (error) {
         const errorMessage = getErrorMessage(error);
         logger.error({
@@ -979,7 +979,7 @@ function App() {
       const layout = buildSmartSplitLayout(tabIds, mode);
       if (layout) {
         setTerminalWindows(layout);
-        window.dispatchEvent(new CustomEvent("dragonfly:refresh-terminals"));
+        window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
       }
     },
     [tabs],
@@ -1190,7 +1190,7 @@ function App() {
     onOpenSettings: handleOpenSettings,
     onLockScreen: handleLockScreen,
     onManageSyncGroups: () => setShowSyncGroupDialog(true),
-    onClearTerminal: () => window.dispatchEvent(new CustomEvent("dragonfly:clear-terminal")),
+    onClearTerminal: () => window.dispatchEvent(new CustomEvent("nyaterm:clear-terminal")),
   });
 
   // Recording toggle
@@ -1386,9 +1386,9 @@ function App() {
           onManageSyncGroups: () => setShowSyncGroupDialog(true),
           onBroadcastToAll: () => setBroadcastToAll((prev) => !prev),
           broadcastToAll,
-          onClearTerminal: () => window.dispatchEvent(new CustomEvent("dragonfly:clear-terminal")),
+          onClearTerminal: () => window.dispatchEvent(new CustomEvent("nyaterm:clear-terminal")),
           onResetTerminalSize: () =>
-            window.dispatchEvent(new CustomEvent("dragonfly:refresh-terminals")),
+            window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals")),
         }}
         mobile={{
           leftOpen: mobileLeftOpen,

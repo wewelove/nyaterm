@@ -26,7 +26,7 @@ export interface ActivityBarItem {
   tooltip: string;
 }
 
-const DRAG_MIME = "application/x-dragonfly-activity";
+const DRAG_MIME = "application/x-nyaterm-activity";
 
 const ZONE_LABELS: { zone: ActivityBarZone; key: string; icon: ReactNode }[] = [
   { zone: "left_top", key: "activityBar.leftTop", icon: <HiMiniArrowTurnLeftUp /> },

@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # 后端开发指南
 
-后端代码位于 `src-tauri/src/`，使用 Rust 编写，是 Dragonfly 的运行时核心：会话管理、SSH/SFTP、录制、翻译、AI、隧道、认证、同步备份、导入导出与配置持久化都在这里落地。
+后端代码位于 `src-tauri/src/`，使用 Rust 编写，是 NyaTerm 的运行时核心：会话管理、SSH/SFTP、录制、翻译、AI、隧道、认证、同步备份、导入导出与配置持久化都在这里落地。
 
 ## 命令入口与模块组织
 
@@ -190,7 +190,7 @@ src-tauri/src/cmd/
 除了运行时会话能力，后端还负责几类数据管理命令：
 
 - `cmd::importer` — 导入 Xshell / MobaXterm / WindTerm 会话
-- `cmd::backup` — 导出 / 导入 Dragonfly 的加密 `.dgfy` 配置备份
+- `cmd::backup` — 导出 / 导入 NyaTerm 的加密 `.dgfy` 配置备份
 - `cmd::log` — 收集前端日志并导出诊断包
 - `cmd::app` — 应用级退出等控制命令
 
@@ -198,7 +198,7 @@ src-tauri/src/cmd/
 
 ## 配置与加密
 
-配置和记录保存在 `~/.dragonfly/dragonfly.redb`，主要由 `src-tauri/src/storage.rs` 和 `src-tauri/src/config/` 管理。首次启动时会把旧版 `.dragonfly` JSON / 文本文件迁入 redb；迁移完成后不会继续把旧文件当作主存储。
+配置和记录保存在 `~/.nyaterm/nyaterm.redb`，主要由 `src-tauri/src/storage.rs` 和 `src-tauri/src/config/` 管理。从 Dragonfly 升级时会复制 `~/.dragonfly/dragonfly.redb`；如果旧环境只有 `.dragonfly` JSON / 文本文件，也会复制后迁入 redb。旧目录不会被删除。
 
 主要 redb 文档包括：
 

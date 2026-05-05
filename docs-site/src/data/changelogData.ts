@@ -294,7 +294,7 @@ const changelogReleasesEn: ChangelogRelease[] = [
         title: 'Added',
         items: [
           '**clipboard:** Implement readClipboardText function and update terminal components to use it for clipboard access.',
-          '**demos:** Add various demo scripts for showcasing Dragonfly\'s terminal features, including action links, file watching, keyword highlighting, and structured output.',
+          '**demos:** Add various demo scripts for showcasing NyaTerm\'s terminal features, including action links, file watching, keyword highlighting, and structured output.',
           '**activesessions:** Enhance ActiveSessions component with search functionality, session reconnect/disconnect actions, and improved UI for session display.',
           '**file-explorer:** Refactor DeleteDialog to handle multiple file deletions and improve UI; update FileExplorer to support batch delete actions.',
           '**resource-monitor:** Implement refresh button and improve stats fetching with async/await; add loading state management.',
@@ -310,7 +310,7 @@ const changelogReleasesEn: ChangelogRelease[] = [
       {
         title: 'Documentation',
         items: [
-          'Update README and user guides to enhance clarity on Dragonfly\'s features, session types, and terminal capabilities; add new sections for workspace layout, security, and network configurations.',
+          'Update README and user guides to enhance clarity on NyaTerm\'s features, session types, and terminal capabilities; add new sections for workspace layout, security, and network configurations.',
           '**sidebars:** Update guide sections to include new topics on session types, layout, and authentication while reorganizing existing items for better clarity.',
         ],
       },
@@ -381,7 +381,7 @@ const changelogReleasesEn: ChangelogRelease[] = [
     sections: [
       {
         title: 'Changed',
-        items: ['Update version synchronization in sync-version script.', 'Update dragonfly dependency version to 0.6.0.'],
+        items: ['Update version synchronization in sync-version script.', 'Update nyaterm dependency version to 0.6.0.'],
       },
     ],
   },
@@ -649,7 +649,7 @@ const changelogReleasesEn: ChangelogRelease[] = [
           '**assets:** Update app icons, logo assets, and remove unused SVGs.',
           '**cleanup:** Update tauri config and remove unused assets.',
           '**i18n:** Integrate i18next across the application.',
-          '**ui:** Update page title from `Dragonfly Terminal` to `Dragonfly`.',
+          '**ui:** Update page title from `NyaTerm Terminal` to `NyaTerm`.',
           'Update scrollbar styling.',
           'Update global UI, layout visibility, and theme configuration.',
           'Adopt shadcn/ui components.',
@@ -982,7 +982,7 @@ const changelogReleasesZhCN: ChangelogRelease[] = [
         title: '新增',
         items: [
           '**clipboard:** 实现 readClipboardText 函数，并更新终端组件以使用它访问剪贴板。',
-          '**demos:** 新增多种演示脚本，用于展示 Dragonfly 的终端特性，包括动作链接、文件监听、关键词高亮和结构化输出。',
+          '**demos:** 新增多种演示脚本，用于展示 NyaTerm 的终端特性，包括动作链接、文件监听、关键词高亮和结构化输出。',
           '**activesessions:** 增强 ActiveSessions 组件，加入搜索功能、会话重连/断开操作，并改进会话展示界面。',
           '**file-explorer:** 重构 DeleteDialog 以处理多文件删除，并改进界面；同时更新 FileExplorer 以支持批量删除操作。',
           '**resource-monitor:** 实现刷新按钮，并使用 async/await 改进统计信息获取流程；同时增加加载状态管理。',
@@ -998,7 +998,7 @@ const changelogReleasesZhCN: ChangelogRelease[] = [
       {
         title: '文档',
         items: [
-          '更新 README 和用户指南，增强对 Dragonfly 功能、会话类型和终端能力的说明，并新增工作区布局、安全和网络配置等章节。',
+          '更新 README 和用户指南，增强对 NyaTerm 功能、会话类型和终端能力的说明，并新增工作区布局、安全和网络配置等章节。',
           '**sidebars:** 更新指南章节，加入会话类型、布局和认证等主题，并重新组织现有条目以提升清晰度。',
         ],
       },
@@ -1065,7 +1065,7 @@ const changelogReleasesZhCN: ChangelogRelease[] = [
     sections: [
       {
         title: '变更',
-        items: ['更新 sync-version 脚本中的版本同步逻辑。', '将 dragonfly 依赖版本更新为 0.6.0。'],
+        items: ['更新 sync-version 脚本中的版本同步逻辑。', '将 nyaterm 依赖版本更新为 0.6.0。'],
       },
     ],
   },
@@ -1326,7 +1326,7 @@ const changelogReleasesZhCN: ChangelogRelease[] = [
           '**assets:** 更新应用图标和 logo 资源，并移除未使用的 SVG。',
           '**cleanup:** 更新 tauri 配置并移除未使用资源。',
           '**i18n:** 在整个应用中集成 i18next。',
-          '**ui:** 将页面标题从 `Dragonfly Terminal` 更新为 `Dragonfly`。',
+          '**ui:** 将页面标题从 `NyaTerm Terminal` 更新为 `NyaTerm`。',
           '更新滚动条样式。',
           '更新全局 UI、布局可见性和主题配置。',
           '采用 shadcn/ui 组件。',

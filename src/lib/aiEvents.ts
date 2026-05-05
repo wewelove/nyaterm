@@ -1,7 +1,7 @@
 import type { AIAction } from "@/types/global";
 
-export const AI_OPEN_EVENT = "dragonfly:ai-open";
-export const AI_ERROR_DETECTED_EVENT = "dragonfly:ai-error-detected";
+export const AI_OPEN_EVENT = "nyaterm:ai-open";
+export const AI_ERROR_DETECTED_EVENT = "nyaterm:ai-error-detected";
 
 export interface AIOpenIntent {
   id: string;

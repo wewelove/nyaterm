@@ -1665,7 +1665,7 @@ function FileExplorer({ activeSessionId, activeSessionType }: FileExplorerProps)
     try {
       const tDir = await tempDir();
       const downloadTimestamp = Date.now().toString();
-      localPath = await join(tDir, "dragonfly", activeSessionId, downloadTimestamp, entry.name);
+      localPath = await join(tDir, "nyaterm", activeSessionId, downloadTimestamp, entry.name);
       await invoke("download_remote_file", {
         sessionId: activeSessionId,
         remotePath: getEntryFullPath(entry),

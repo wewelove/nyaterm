@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Tunnels, Proxy, and Jump Hosts
 
-Dragonfly separates network-related features into three layers:
+NyaTerm separates network-related features into three layers:
 
 1. **Proxy** — how the app reaches the network
 2. **Jump host** — which SSH host acts as the intermediate hop
@@ -14,7 +14,7 @@ These features often appear together in real environments, but they solve differ
 
 ## Proxy
 
-A proxy helps Dragonfly establish outbound connectivity to the remote side.
+A proxy helps NyaTerm establish outbound connectivity to the remote side.
 
 Currently supported:
 
@@ -51,7 +51,7 @@ In the SSH connection advanced section, you can pick an existing saved SSH conne
 
 ## Tunnels
 
-Dragonfly provides a dedicated tunnel management area in the Network panel, so port mappings can be saved and reused instead of retyped as one-off commands.
+NyaTerm provides a dedicated tunnel management area in the Network panel, so port mappings can be saved and reused instead of retyped as one-off commands.
 
 ### Tunnel types
 

@@ -4,18 +4,18 @@ sidebar_position: 2
 
 # Quick Start
 
-This chapter helps you experience Dragonfly's core workflow as quickly as possible: create a connection, open sessions, split the workspace, browse files, and turn on terminal enhancements when you need them.
+This chapter helps you experience NyaTerm's core workflow as quickly as possible: create a connection, open sessions, split the workspace, browse files, and turn on terminal enhancements when you need them.
 
 ## Step 1: Pick a session type
 
-When you click **New Connection**, Dragonfly offers four session types:
+When you click **New Connection**, NyaTerm offers four session types:
 
 - **SSH** — the most complete remote-operations workflow
-- **Local Terminal** — open a local shell inside Dragonfly
+- **Local Terminal** — open a local shell inside NyaTerm
 - **Telnet** — useful for legacy systems or lab environments
 - **Serial** — useful for serial debugging devices
 
-If this is your first time using Dragonfly, start with one **SSH** session and then add one **Local Terminal** to compare the mixed-workspace experience.
+If this is your first time using NyaTerm, start with one **SSH** session and then add one **Local Terminal** to compare the mixed-workspace experience.
 
 ## Step 2: Create your first SSH connection
 
@@ -102,7 +102,7 @@ If you want cross-device configuration sync or recoverable encrypted backups for
 4. Fill in the connection details and run **Test Connection** first
 5. Then decide whether to enable automatic sync and scheduled backup
 
-If you are just evaluating Dragonfly for the first time, this step is optional. For the full workflow, see [Sync & Backup](../guide/sync-and-backup).
+If you are just evaluating NyaTerm for the first time, this step is optional. For the full workflow, see [Sync & Backup](../guide/sync-and-backup).
 
 ## Step 6: Keep exploring by use case
 

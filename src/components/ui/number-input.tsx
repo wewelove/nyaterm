@@ -25,8 +25,8 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = parseInt(e.target.value);
-      if (!isNaN(val)) onChange(val);
+      const val = Number.parseInt(e.target.value, 10);
+      if (!Number.isNaN(val)) onChange(val);
       else onChange(0);
     };
 

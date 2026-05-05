@@ -68,7 +68,7 @@ type HeaderActionButtonProps = ComponentProps<typeof Button> & {
   tooltip: string;
 };
 
-const SAVED_CONNECTIONS_DRAG_MIME = "application/x-dragonfly-saved-connections";
+const SAVED_CONNECTIONS_DRAG_MIME = "application/x-nyaterm-saved-connections";
 
 function HeaderActionButton({ tooltip, children, ...props }: HeaderActionButtonProps) {
   return (

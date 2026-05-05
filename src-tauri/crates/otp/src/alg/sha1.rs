@@ -2,7 +2,7 @@
 
 /// # Example:
 /// ```rust
-/// use otp::Algorithm;
+/// use nyaterm_otp::Algorithm;
 ///
 /// let alg = Algorithm::SHA1;
 /// let hash = alg.hash_hex(b"The quick brown fox jumps over the lazy dog");

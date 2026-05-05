@@ -4,7 +4,7 @@ const BASE32_ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 /// # Example
 /// ```rust
-/// use otp::encoding::base32;
+/// use nyaterm_otp::encoding::base32;
 ///
 /// let bytes = b"any + old & data";
 /// let encoded = base32::encode(bytes);
@@ -38,7 +38,7 @@ pub fn encode(data: &[u8]) -> String {
 
 /// # Example:
 /// ```rust
-/// use otp::encoding::base32;
+/// use nyaterm_otp::encoding::base32;
 ///
 /// let hello_world = "JBSWY3DPFQQHO33SNRSCC";
 /// let decoded = base32::decode(hello_world).expect("Decoding failed");

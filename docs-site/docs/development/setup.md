@@ -46,8 +46,8 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 ## 获取源码
 
 ```bash
-git clone https://git.coderkang.top/Tauri/dragonfly.git
-cd dragonfly
+git clone https://git.coderkang.top/Tauri/nyaterm.git
+cd nyaterm
 ```
 
 ## 安装依赖

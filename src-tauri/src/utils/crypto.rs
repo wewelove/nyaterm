@@ -3,7 +3,7 @@
 //! ## Key hierarchy
 //!
 //! ```text
-//! wrapping_key  = SHA-256("dragonfly-key-wrap-v1:" || master_password_or_home_path)
+//! wrapping_key  = SHA-256("nyaterm-key-wrap-v1:" || master_password_or_home_path)
 //! master.key    = redb text doc containing base64( wrap_nonce[12] || AES-256-GCM(wrapping_key, master_key[32]) )
 //! sessions doc  = { "password": base64( nonce[12] || AES-256-GCM(master_key, plaintext) ), … }
 //! ```
@@ -23,6 +23,9 @@ use base64::Engine;
 use sha2::{Digest, Sha256};
 use std::sync::RwLock;
 
+const WRAPPING_KEY_PREFIX: &[u8] = b"nyaterm-key-wrap-v1:";
+const LEGACY_WRAPPING_KEY_PREFIX: &[u8] = b"dragonfly-key-wrap-v1:";
+
 static MASTER_PASSWORD: RwLock<Option<String>> = RwLock::new(None);
 
 /// Set the master password used for wrapping key derivation.
@@ -41,9 +44,12 @@ pub fn get_master_password() -> Option<String> {
 ///
 /// When `password` is `Some`, uses the password as key material.
 /// Otherwise falls back to the home directory path.
-fn derive_wrapping_key(password: Option<&str>) -> AppResult<Key<Aes256Gcm>> {
+fn derive_wrapping_key_with_prefix(
+    prefix: &[u8],
+    password: Option<&str>,
+) -> AppResult<Key<Aes256Gcm>> {
     let mut h = Sha256::new();
-    h.update(b"dragonfly-key-wrap-v1:");
+    h.update(prefix);
     match password {
         Some(pw) => h.update(pw.as_bytes()),
         None => {
@@ -54,6 +60,14 @@ fn derive_wrapping_key(password: Option<&str>) -> AppResult<Key<Aes256Gcm>> {
     }
     let digest = h.finalize();
     Ok(*Key::<Aes256Gcm>::from_slice(&digest))
+}
+
+fn derive_wrapping_key(password: Option<&str>) -> AppResult<Key<Aes256Gcm>> {
+    derive_wrapping_key_with_prefix(WRAPPING_KEY_PREFIX, password)
+}
+
+fn derive_legacy_wrapping_key(password: Option<&str>) -> AppResult<Key<Aes256Gcm>> {
+    derive_wrapping_key_with_prefix(LEGACY_WRAPPING_KEY_PREFIX, password)
 }
 
 /// Derives the wrapping key from the current master password (or home path).
@@ -98,6 +112,25 @@ fn unwrap_master_key_bytes(raw: &[u8], wrapping_key: &Key<Aes256Gcm>) -> AppResu
     Ok(*Key::<Aes256Gcm>::from_slice(&master_key_bytes))
 }
 
+fn unwrap_master_key_with_compatible_wrapping(
+    raw: &[u8],
+    password: Option<&str>,
+) -> AppResult<(Key<Aes256Gcm>, bool)> {
+    let wrapping_key = derive_wrapping_key(password)?;
+    match unwrap_master_key_bytes(raw, &wrapping_key) {
+        Ok(master_key) => Ok((master_key, false)),
+        Err(new_error) => {
+            let legacy_wrapping_key = derive_legacy_wrapping_key(password)?;
+            match unwrap_master_key_bytes(raw, &legacy_wrapping_key) {
+                Ok(master_key) => Ok((master_key, true)),
+                Err(legacy_error) => Err(AppError::Crypto(format!(
+                    "unwrap master.key: NyaTerm key prefix failed ({new_error}); legacy Dragonfly key prefix failed ({legacy_error})"
+                ))),
+            }
+        }
+    }
+}
+
 /// Loads the master key from redb `master.key`, creating it on first use.
 fn get_master_key() -> AppResult<Key<Aes256Gcm>> {
     if let Some(encoded) = crate::storage::load_text_doc(crate::storage::TEXT_MASTER_KEY)? {
@@ -105,8 +138,14 @@ fn get_master_key() -> AppResult<Key<Aes256Gcm>> {
             .decode(encoded.trim())
             .map_err(|e| AppError::Crypto(format!("decode master.key: {e}")))?;
 
-        let wrapping_key = get_wrapping_key()?;
-        unwrap_master_key_bytes(&raw, &wrapping_key)
+        let password = get_master_password();
+        let (master_key, used_legacy_prefix) =
+            unwrap_master_key_with_compatible_wrapping(&raw, password.as_deref())?;
+        if used_legacy_prefix {
+            let wrapping_key = derive_wrapping_key(password.as_deref())?;
+            write_wrapped_master_key(&master_key, &wrapping_key)?;
+        }
+        Ok(master_key)
     } else {
         let master_key = Aes256Gcm::generate_key(OsRng);
         let wrapping_key = get_wrapping_key()?;
@@ -126,8 +165,7 @@ pub fn rewrap_master_key(old_password: Option<&str>, new_password: Option<&str>)
                 .decode(encoded.trim())
                 .map_err(|e| AppError::Crypto(format!("decode master.key: {e}")))?;
 
-            let old_wrapping = derive_wrapping_key(old_password)?;
-            unwrap_master_key_bytes(&raw, &old_wrapping)?
+            unwrap_master_key_with_compatible_wrapping(&raw, old_password)?.0
         } else {
             Aes256Gcm::generate_key(OsRng)
         };
@@ -161,8 +199,6 @@ pub fn encrypt_settings_secret(plaintext: &str) -> AppResult<String> {
 
 /// Decrypts a value produced by [`encrypt_settings_secret`].
 pub fn decrypt_settings_secret(token: &str) -> AppResult<String> {
-    let key = derive_wrapping_key(None)?;
-    let cipher = Aes256Gcm::new(&key);
     let raw = B64
         .decode(token)
         .map_err(|e| AppError::Crypto(format!("invalid base64: {e}")))?;
@@ -171,12 +207,27 @@ pub fn decrypt_settings_secret(token: &str) -> AppResult<String> {
         return Err(AppError::Crypto("ciphertext too short".into()));
     }
 
+    let key = derive_wrapping_key(None)?;
+    match decrypt_settings_secret_bytes(&raw, &key) {
+        Ok(value) => Ok(value),
+        Err(new_error) => {
+            let legacy_key = derive_legacy_wrapping_key(None)?;
+            decrypt_settings_secret_bytes(&raw, &legacy_key).map_err(|legacy_error| {
+                AppError::Crypto(format!(
+                    "settings secret decryption failed: NyaTerm key prefix failed ({new_error}); legacy Dragonfly key prefix failed ({legacy_error})"
+                ))
+            })
+        }
+    }
+}
+
+fn decrypt_settings_secret_bytes(raw: &[u8], key: &Key<Aes256Gcm>) -> AppResult<String> {
+    let cipher = Aes256Gcm::new(key);
     let (nonce_bytes, ciphertext) = raw.split_at(12);
     let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
         .map_err(|e| AppError::Crypto(format!("decryption failed: {e}")))?;
-
     String::from_utf8(plaintext).map_err(|e| AppError::Crypto(format!("invalid UTF-8: {e}")))
 }
 
@@ -226,5 +277,58 @@ pub fn decrypt_optional(token: &Option<String>) -> AppResult<Option<String>> {
     match token {
         Some(t) if !t.is_empty() => Ok(Some(decrypt(t)?)),
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wrap_key_for_test(master_key: &Key<Aes256Gcm>, wrapping_key: &Key<Aes256Gcm>) -> Vec<u8> {
+        let cipher = Aes256Gcm::new(wrapping_key);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let wrapped = cipher
+            .encrypt(&nonce, master_key.as_slice())
+            .expect("wrap test key");
+        let mut combined = nonce.to_vec();
+        combined.extend_from_slice(&wrapped);
+        combined
+    }
+
+    fn encrypt_settings_secret_with_key_for_test(plaintext: &str, key: &Key<Aes256Gcm>) -> String {
+        let cipher = Aes256Gcm::new(key);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ciphertext = cipher
+            .encrypt(&nonce, plaintext.as_bytes())
+            .expect("encrypt settings secret");
+        let mut combined = nonce.to_vec();
+        combined.extend_from_slice(&ciphertext);
+        B64.encode(combined)
+    }
+
+    #[test]
+    fn legacy_dragonfly_master_key_prefix_can_be_unwrapped() {
+        let master_key = Aes256Gcm::generate_key(OsRng);
+        let legacy_wrapping_key =
+            derive_legacy_wrapping_key(Some("secret")).expect("legacy wrapping key");
+        let raw = wrap_key_for_test(&master_key, &legacy_wrapping_key);
+
+        let (unwrapped, used_legacy_prefix) =
+            unwrap_master_key_with_compatible_wrapping(&raw, Some("secret"))
+                .expect("unwrap with compatibility");
+
+        assert!(used_legacy_prefix);
+        assert_eq!(unwrapped.as_slice(), master_key.as_slice());
+    }
+
+    #[test]
+    fn legacy_dragonfly_settings_secret_prefix_can_be_decrypted() {
+        let legacy_key = derive_legacy_wrapping_key(None).expect("legacy settings key");
+        let token = encrypt_settings_secret_with_key_for_test("stored-password", &legacy_key);
+
+        assert_eq!(
+            decrypt_settings_secret(&token).expect("decrypt legacy settings secret"),
+            "stored-password"
+        );
     }
 }

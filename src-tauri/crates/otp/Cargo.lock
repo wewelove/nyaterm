@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "dragonfly-otp"
+name = "nyaterm-otp"
 version = "0.1.0"

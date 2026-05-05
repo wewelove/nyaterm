@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Architecture
 
-Dragonfly is a **Tauri 2** desktop application. The frontend lives in `src/`, the backend lives in `src-tauri/src/`, and they communicate through Tauri commands and events.
+NyaTerm is a **Tauri 2** desktop application. The frontend lives in `src/`, the backend lives in `src-tauri/src/`, and they communicate through Tauri commands and events.
 
 ## Overall architecture
 
@@ -73,7 +73,7 @@ Relevant files:
 
 ## Workspace model
 
-Dragonfly's terminal workspace has two layers that are easy to confuse but serve different purposes.
+NyaTerm's terminal workspace has two layers that are easy to confuse but serve different purposes.
 
 ### Logical tabs and pane trees
 
@@ -166,12 +166,12 @@ Core backend capabilities are mainly organized under these modules:
 
 ## Configuration and persistence
 
-Application data is stored in `~/.dragonfly/dragonfly.redb`. Primary redb documents include:
+Application data is stored in `~/.nyaterm/nyaterm.redb`. Primary redb documents include:
 
 - JSON documents: `settings`, `sessions`, `keys`, `passwords`, `otp`, `quick-command`, `tunnels`, `proxies`, `history`, `cloud-sync-state`
 - Text documents: `known_hosts`, `master.key`
 
-Legacy `.dragonfly` JSON / text files are imported into redb on first launch and kept in place as manual fallback backups.
+When upgrading from Dragonfly, NyaTerm copies `~/.dragonfly/dragonfly.redb`; if the old environment only has `.dragonfly` JSON / text files, they are copied and imported into redb. The old directory is not deleted.
 
 Sensitive values are encrypted before being written, so the app manages reusable credential records rather than plain-text secrets.
 

@@ -271,7 +271,7 @@ export function SearchTab() {
 
   function testEngine(engine: SearchEngine) {
     if (!engine.url_template.includes("%s")) return;
-    openUrl(engine.url_template.replace("%s", encodeURIComponent("dragonfly")));
+    openUrl(engine.url_template.replace("%s", encodeURIComponent("nyaterm")));
   }
 
   return (

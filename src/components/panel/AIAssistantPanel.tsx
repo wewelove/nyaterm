@@ -1,5 +1,14 @@
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { type CSSProperties, memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { LuMessageSquarePlus, LuQuote } from "react-icons/lu";
 import {
@@ -27,12 +36,6 @@ import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import PanelHeader from "@/components/layout/PanelHeader";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -52,6 +55,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -62,6 +71,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/context/ThemeContext";
 import type { AIErrorDetectedDetail, AIOpenIntent } from "@/lib/aiEvents";
@@ -96,7 +106,6 @@ import type {
   SavedConnection,
   SessionPane,
 } from "@/types/global";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface AIAssistantPanelProps {
   activePane: SessionPane | null;
@@ -257,7 +266,9 @@ function groupSessionsByDate(sessions: AISession[]) {
   return groups;
 }
 
-function buildPrismThemeFromColors(colors: import("@/lib/themes").ThemeColors): Record<string, CSSProperties> {
+function buildPrismThemeFromColors(
+  colors: import("@/lib/themes").ThemeColors,
+): Record<string, CSSProperties> {
   const t = colors.terminal;
   return {
     'code[class*="language-"]': {
@@ -386,7 +397,9 @@ function AssistantReasoning({ message, loading }: { message: AIMessage; loading:
   const reasoningContent = message.reasoningContent?.trim() || contentThink.reasoning || undefined;
   const [open, setOpen] = useState(false);
 
-  const hasResponseContent = contentThink.visible.length > 0 || (message.reasoningContent && contentThink.visible.length > 0);
+  const hasResponseContent =
+    contentThink.visible.length > 0 ||
+    (message.reasoningContent && contentThink.visible.length > 0);
   const stillThinking = loading && !hasResponseContent;
 
   if (!reasoningContent) {
@@ -460,7 +473,9 @@ function tryParseStructuredOutput(content: string): ParsedStructuredOutput | nul
         commandCards: Array.isArray(obj.commandCards) ? obj.commandCards : [],
       };
     }
-  } catch { /* incomplete JSON */ }
+  } catch {
+    /* incomplete JSON */
+  }
   return null;
 }
 
@@ -503,7 +518,11 @@ function AssistantResponse({
             <AnimatedStatusText label={t("ai.formattingResponse")} />
             <span className="flex items-center gap-1 text-primary">
               {rawOpen ? t("ai.collapseReasoning") : t("ai.expandReasoning")}
-              {rawOpen ? <MdExpandLess className="text-sm" /> : <MdExpandMore className="text-sm" />}
+              {rawOpen ? (
+                <MdExpandLess className="text-sm" />
+              ) : (
+                <MdExpandMore className="text-sm" />
+              )}
             </span>
           </button>
         </CollapsibleTrigger>
@@ -628,7 +647,13 @@ function AICommandCardView({
   );
 }
 
-function AgentStepView({ step, prismStyle }: { step: AgentStepPayload; prismStyle: Record<string, CSSProperties> }) {
+function AgentStepView({
+  step,
+  prismStyle,
+}: {
+  step: AgentStepPayload;
+  prismStyle: Record<string, CSSProperties>;
+}) {
   const { t } = useTranslation();
   const [thoughtOpen, setThoughtOpen] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
@@ -661,7 +686,9 @@ function AgentStepView({ step, prismStyle }: { step: AgentStepPayload; prismStyl
               className={`text-sm transition-transform ${thoughtOpen ? "rotate-180" : ""}`}
             />
             <span className="font-semibold text-foreground">#{step.stepIndex + 1}</span>
-            <span>{step.thought ? t("ai.expandThought") : (isFinal ? t("ai.agentStepCompleted") : "")}</span>
+            <span>
+              {step.thought ? t("ai.expandThought") : isFinal ? t("ai.agentStepCompleted") : ""}
+            </span>
             {step.observation?.durationMs != null ? (
               <span className="ml-auto tabular-nums text-muted-foreground/70">
                 {step.observation.durationMs}ms
@@ -671,21 +698,23 @@ function AgentStepView({ step, prismStyle }: { step: AgentStepPayload; prismStyl
         </CollapsibleTrigger>
         {step.thought ? (
           <CollapsibleContent>
-            <div className="mt-1 ml-5 text-xs leading-5 text-muted-foreground">
-              {step.thought}
-            </div>
+            <div className="mt-1 ml-5 text-xs leading-5 text-muted-foreground">{step.thought}</div>
           </CollapsibleContent>
         ) : null}
       </Collapsible>
 
       {/* Command box with status-colored left border */}
       {isCommand && step.action.command ? (
-        <div className={`mt-2 overflow-hidden rounded-md border-l-[3px] ${borderColor} border border-border/60 bg-muted/20`}>
+        <div
+          className={`mt-2 overflow-hidden rounded-md border-l-[3px] ${borderColor} border border-border/60 bg-muted/20`}
+        >
           {/* Shell header */}
           <div className="flex items-center gap-1.5 border-b border-border/40 px-2.5 py-1 text-[0.625rem] text-muted-foreground">
             <span className="font-medium uppercase tracking-wider">shell</span>
             {step.action.riskLevel ? (
-              <span className={`ml-auto rounded-full border px-1.5 py-0.5 font-medium ${riskClassName[step.action.riskLevel]}`}>
+              <span
+                className={`ml-auto rounded-full border px-1.5 py-0.5 font-medium ${riskClassName[step.action.riskLevel]}`}
+              >
                 {step.action.riskLevel}
               </span>
             ) : null}
@@ -1237,9 +1266,7 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
               const newMsgId = payload.message?.id;
               if (payload.message) {
                 setMessages((prev) =>
-                  prev.map((message) =>
-                    message.id === assistantId ? payload.message! : message,
-                  ),
+                  prev.map((message) => (message.id === assistantId ? payload.message! : message)),
                 );
               }
               if (newMsgId && newMsgId !== assistantId) {
@@ -1506,10 +1533,7 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
     [t],
   );
 
-  const groupedSessions = useMemo(
-    () => groupSessionsByDate(filteredSessions),
-    [filteredSessions],
-  );
+  const groupedSessions = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
 
   const newChat = useCallback(() => {
     if (loading) return;
@@ -1623,11 +1647,7 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => openSettings("ai")}
-                >
+                <Button size="icon-sm" variant="ghost" onClick={() => openSettings("ai")}>
                   <MdOutlineSettings />
                 </Button>
               </TooltipTrigger>
@@ -1635,12 +1655,7 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={newChat}
-                  disabled={loading}
-                >
+                <Button size="icon-sm" variant="ghost" onClick={newChat} disabled={loading}>
                   <LuMessageSquarePlus />
                 </Button>
               </TooltipTrigger>
@@ -1766,7 +1781,8 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
             ) : (
               <div className="space-y-3">
                 {messages.map((message) => {
-                  const messageSteps = message.role === "assistant" ? (agentStepsMap[message.id] ?? []) : [];
+                  const messageSteps =
+                    message.role === "assistant" ? (agentStepsMap[message.id] ?? []) : [];
 
                   return (
                     <div key={message.id} className="space-y-3">
@@ -1776,7 +1792,11 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
                             Agent
                           </div>
                           {messageSteps.map((step) => (
-                            <AgentStepView key={step.stepIndex} step={step} prismStyle={prismStyle} />
+                            <AgentStepView
+                              key={step.stepIndex}
+                              step={step}
+                              prismStyle={prismStyle}
+                            />
                           ))}
                         </div>
                       ) : null}
@@ -1804,7 +1824,11 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
                               setMessages((prev) =>
                                 prev.map((m) =>
                                   m.id === message.id
-                                    ? { ...m, content: parsed.text, commandCards: parsed.commandCards }
+                                    ? {
+                                        ...m,
+                                        content: parsed.text,
+                                        commandCards: parsed.commandCards,
+                                      }
                                     : m,
                                 ),
                               );
@@ -1975,7 +1999,6 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
             />
             <div className="flex w-full items-center justify-between gap-2">
               <div className="flex flex-1 min-w-0 items-center gap-2">
-                
                 <div className="w-1/3 min-w-0">
                   <Select
                     value={mode}

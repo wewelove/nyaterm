@@ -1,7 +1,7 @@
 import { invoke } from "./invoke";
 
-const SESSION_INPUT_PREVIEW_EVENT = "dragonfly:session-input-preview";
-const SESSION_COMMAND_HISTORY_EVENT = "dragonfly:session-command-history";
+const SESSION_INPUT_PREVIEW_EVENT = "nyaterm:session-input-preview";
+const SESSION_COMMAND_HISTORY_EVENT = "nyaterm:session-command-history";
 
 const sessionCommandHistory = new Map<string, string[]>();
 

@@ -250,10 +250,11 @@ export function AiModelsTab() {
         return { ...group, models: orderedModels };
       }
 
-      const freshSorted = [...group.models].sort(
-        (a, b) => Number(b.enabled) - Number(a.enabled),
+      const freshSorted = [...group.models].sort((a, b) => Number(b.enabled) - Number(a.enabled));
+      nextOrder.set(
+        group.groupKey,
+        freshSorted.map((m) => m.id),
       );
-      nextOrder.set(group.groupKey, freshSorted.map((m) => m.id));
       return { ...group, models: freshSorted };
     });
 

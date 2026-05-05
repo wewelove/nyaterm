@@ -6,7 +6,7 @@ sidebar_position: 1
 
 ## 系统要求
 
-Dragonfly 支持以下操作系统：
+NyaTerm 支持以下操作系统：
 
 - **Windows** 10/11 (64-bit)
 - **macOS** 12+ (Intel & Apple Silicon)
@@ -16,7 +16,7 @@ Dragonfly 支持以下操作系统：
 
 ### 从发布页面下载
 
-前往 [Releases](https://git.coderkang.top/Tauri/dragonfly/releases) 页面，下载适合你操作系统的安装包：
+前往 [Releases](https://git.coderkang.top/Tauri/nyaterm/releases) 页面，下载适合你操作系统的安装包：
 
 | 平台 | 安装包格式 |
 |------|-----------|
@@ -30,7 +30,7 @@ Dragonfly 支持以下操作系统：
 
 ## 首次启动后会看到什么
 
-安装完成后启动 Dragonfly，主窗口通常会由这些区域组成：
+安装完成后启动 NyaTerm，主窗口通常会由这些区域组成：
 
 - **顶部菜单与窗口栏** — File / View / Help、窗口控制与应用级入口
 - **中央工作区** — 终端标签页，以及标签内横向 / 纵向分屏
@@ -66,9 +66,9 @@ Dragonfly 支持以下操作系统：
 - **Xshell**（`.xts`）
 - **MobaXterm**（`.mxtsessions`）
 - **WindTerm**（`.sessions`）
-- **Dragonfly** 的 `.dgfy` 加密配置备份
+- **NyaTerm** 的 `.dgfy` 加密配置备份
 
-如果你的目标是完整恢复 Dragonfly 配置，优先使用 `.dgfy`；它会恢复的不只是连接，还包括更多本地配置数据。
+如果你的目标是完整恢复 NyaTerm 配置，优先使用 `.dgfy`；它会恢复的不只是连接，还包括更多本地配置数据。
 
 需要注意：
 

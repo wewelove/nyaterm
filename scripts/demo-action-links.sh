@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Purpose: Print text patterns that Dragonfly action links can recognize.
+# Purpose: Print text patterns that NyaTerm action links can recognize.
 # Run: bash scripts/demo-action-links.sh
 # Docs: docs-site/docs/guide/terminal.md
 # Settings: Enable action links before running; open a link with Ctrl/Cmd + click.

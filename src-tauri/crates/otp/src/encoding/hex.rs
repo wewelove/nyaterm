@@ -2,7 +2,7 @@
 
 /// # Example:
 /// ```rust
-/// use otp::encoding::hex;
+/// use nyaterm_otp::encoding::hex;
 ///
 /// let bytes: [u8; 4] = [9, 10, 11, 12];
 /// let encoded = hex::encode(&bytes);
@@ -19,7 +19,7 @@ pub fn encode(data: &[u8]) -> String {
 
 /// # Example:
 /// ```rust
-/// use otp::encoding::hex;
+/// use nyaterm_otp::encoding::hex;
 ///
 /// let input = "090A0B0C";
 /// let decoded = hex::decode(input).expect("Decoding failed");

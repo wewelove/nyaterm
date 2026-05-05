@@ -1504,67 +1504,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dragonfly"
-version = "0.9.0"
-dependencies = [
- "aes-gcm 0.10.3",
- "arboard",
- "async-http-proxy",
- "async-trait",
- "base64 0.22.1",
- "dirs",
- "dragonfly-otp",
- "encoding_rs",
- "font-kit",
- "futures-util",
- "genai",
- "hex",
- "hmac 0.12.1",
- "image",
- "lazy_static",
- "md-5",
- "notify",
- "nucleo-matcher",
- "opendal",
- "portable-pty",
- "rand 0.8.5",
- "redb",
- "regex",
- "reqwest 0.13.2",
- "rqrr",
- "russh",
- "russh-sftp",
- "serde",
- "serde_json",
- "serialport",
- "sha2 0.10.9",
- "ssh-key",
- "strip-ansi-escapes",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-updater",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tokio-socks",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "urlencoding",
- "uuid",
- "webview2-com",
- "windows 0.61.3",
- "zip 8.2.0",
-]
-
-[[package]]
-name = "dragonfly-otp"
-version = "0.1.0"
-
-[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3985,6 +3924,67 @@ checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "nyaterm"
+version = "0.9.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "arboard",
+ "async-http-proxy",
+ "async-trait",
+ "base64 0.22.1",
+ "dirs",
+ "encoding_rs",
+ "font-kit",
+ "futures-util",
+ "genai",
+ "hex",
+ "hmac 0.12.1",
+ "image",
+ "lazy_static",
+ "md-5",
+ "notify",
+ "nucleo-matcher",
+ "nyaterm-otp",
+ "opendal",
+ "portable-pty",
+ "rand 0.8.5",
+ "redb",
+ "regex",
+ "reqwest 0.13.2",
+ "rqrr",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha2 0.10.9",
+ "ssh-key",
+ "strip-ansi-escapes",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tokio-socks",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "urlencoding",
+ "uuid",
+ "webview2-com",
+ "windows 0.61.3",
+ "zip 8.2.0",
+]
+
+[[package]]
+name = "nyaterm-otp"
+version = "0.1.0"
 
 [[package]]
 name = "objc2"

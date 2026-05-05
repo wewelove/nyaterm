@@ -45,8 +45,8 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 ## Get the Source
 
 ```bash
-git clone https://git.coderkang.top/Tauri/dragonfly.git
-cd dragonfly
+git clone https://git.coderkang.top/Tauri/nyaterm.git
+cd nyaterm
 ```
 
 ## Install Dependencies

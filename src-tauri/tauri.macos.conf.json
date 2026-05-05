@@ -3,7 +3,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Dragonfly",
+        "title": "NyaTerm",
         "width": 1280,
         "height": 800,
         "transparent": false,

@@ -4,14 +4,14 @@ sidebar_position: 8
 
 # Sync & Backup
 
-Dragonfly's **Sync & Backup** capability is not about remote file transfer. It is about **syncing portable application configuration across devices and keeping recoverable backups of that data**.
+NyaTerm's **Sync & Backup** capability is not about remote file transfer. It is about **syncing portable application configuration across devices and keeping recoverable backups of that data**.
 
 It helps to think of it as two related but different workflows:
 
 - **Sync** — push the current device's portable configuration snapshot to the cloud, or pull the latest snapshot back from the cloud
 - **Backup** — save the current state as a recoverable encrypted backup snapshot, either manually or on a schedule
 
-Dragonfly currently supports two remote storage provider types:
+NyaTerm currently supports two remote storage provider types:
 
 - **WebDAV**
 - **S3-compatible** storage
@@ -26,7 +26,7 @@ In the current implementation this is a prerequisite, not an optional recommenda
 - Manual actions such as test, push, pull, and backup cannot be run
 - Scheduled encrypted backups cannot be used
 
-That requirement exists because Dragonfly uploads **encrypted portable snapshots**, not plain-text config files.
+That requirement exists because NyaTerm uploads **encrypted portable snapshots**, not plain-text config files.
 
 ## Where to access it
 
@@ -69,7 +69,7 @@ No matter which provider you use, start by checking these fields:
 These have specific meanings:
 
 - **Device Name** is written into snapshot metadata so you can tell which device uploaded it
-- **Remote Namespace** is the top-level path prefix Dragonfly uses for sync and backup snapshots inside the selected provider
+- **Remote Namespace** is the top-level path prefix NyaTerm uses for sync and backup snapshots inside the selected provider
 
 ### WebDAV
 
@@ -101,7 +101,7 @@ When the provider is **S3-compatible**, you will typically configure:
 This is a good fit when:
 
 - you already use object storage for operational assets
-- you want Dragonfly config and backups to live in the same storage ecosystem
+- you want NyaTerm config and backups to live in the same storage ecosystem
 
 ### Validation rules
 
@@ -119,7 +119,7 @@ The **Automatic Sync Strategy** section controls two behaviors.
 
 ### Check on startup
 
-When enabled, Dragonfly checks the remote provider during startup to see whether a newer sync snapshot already exists.
+When enabled, NyaTerm checks the remote provider during startup to see whether a newer sync snapshot already exists.
 
 Typical outcomes include:
 
@@ -132,7 +132,7 @@ This is not real-time remote watching. It is a **startup check of the current st
 
 ### Auto-push after local changes
 
-When enabled, Dragonfly automatically pushes a snapshot after supported local configuration changes are saved, using a debounce window.
+When enabled, NyaTerm automatically pushes a snapshot after supported local configuration changes are saved, using a debounce window.
 
 You can control:
 
@@ -202,7 +202,7 @@ The **Remote Backups & Conflict** section lists the backup entries currently ava
 
 ### Restore a remote backup
 
-When you restore a remote backup, Dragonfly applies that backup snapshot to the current device.
+When you restore a remote backup, NyaTerm applies that backup snapshot to the current device.
 
 Useful scenarios include:
 
@@ -226,7 +226,7 @@ A typical example looks like this:
 - Device B already pushed a newer sync snapshot to the cloud
 - Device A then tries to push or performs a startup check and discovers both sides changed
 
-When this happens, Dragonfly can show conflict details such as:
+When this happens, NyaTerm can show conflict details such as:
 
 - local snapshot hash
 - remote revision
@@ -263,7 +263,7 @@ The important boundary is:
 
 ## What gets synced or backed up?
 
-The current implementation is built on **portable snapshots**. These cover Dragonfly's portable configuration data, such as:
+The current implementation is built on **portable snapshots**. These cover NyaTerm's portable configuration data, such as:
 
 - saved connections and groups
 - key, password, and OTP configuration

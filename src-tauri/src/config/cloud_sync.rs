@@ -221,7 +221,7 @@ fn default_provider() -> String {
 }
 
 fn default_remote_root() -> String {
-    "dragonfly".to_string()
+    "nyaterm".to_string()
 }
 
 fn default_device_name() -> String {

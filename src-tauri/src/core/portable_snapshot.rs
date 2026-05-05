@@ -451,7 +451,7 @@ impl TempRedbFile {
     fn new(prefix: &str) -> Self {
         Self {
             path: std::env::temp_dir()
-                .join(format!("dragonfly-{prefix}-{}.redb", uuid::Uuid::new_v4())),
+                .join(format!("nyaterm-{prefix}-{}.redb", uuid::Uuid::new_v4())),
         }
     }
 

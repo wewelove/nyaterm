@@ -212,7 +212,7 @@ This changelog is inferred from release bump commits in git history (for example
 ### Added
 
 - **clipboard:** Implement readClipboardText function and update terminal components to use it for clipboard access.
-- **demos:** Add various demo scripts for showcasing Dragonfly's terminal features, including action links, file watching, keyword highlighting, and structured output.
+- **demos:** Add various demo scripts for showcasing NyaTerm's terminal features, including action links, file watching, keyword highlighting, and structured output.
 - **activesessions:** Enhance ActiveSessions component with search functionality, session reconnect/disconnect actions, and improved UI for session display.
 - **file-explorer:** Refactor DeleteDialog to handle multiple file deletions and improve UI; update FileExplorer to support batch delete actions.
 - **resource-monitor:** Implement refresh button and improve stats fetching with async/await; add loading state management.
@@ -226,7 +226,7 @@ This changelog is inferred from release bump commits in git history (for example
 
 ### Documentation
 
-- Update README and user guides to enhance clarity on Dragonfly's features, session types, and terminal capabilities; add new sections for workspace layout, security, and network configurations.
+- Update README and user guides to enhance clarity on NyaTerm's features, session types, and terminal capabilities; add new sections for workspace layout, security, and network configurations.
 - **sidebars:** Update guide sections to include new topics on session types, layout, and authentication while reorganizing existing items for better clarity.
 
 ## [0.7.0] - 2026-04-12
@@ -283,7 +283,7 @@ This changelog is inferred from release bump commits in git history (for example
 ### Changed
 
 - Update version synchronization in sync-version script.
-- Update dragonfly dependency version to 0.6.0.
+- Update nyaterm dependency version to 0.6.0.
 
 ## [0.6.0] - 2026-04-11
 
@@ -503,7 +503,7 @@ This changelog is inferred from release bump commits in git history (for example
 - **assets:** Update app icons, logo assets, and remove unused SVGs.
 - **cleanup:** Update tauri config and remove unused assets.
 - **i18n:** Integrate i18next across the application.
-- **ui:** Update page title from `Dragonfly Terminal` to `Dragonfly`.
+- **ui:** Update page title from `NyaTerm Terminal` to `NyaTerm`.
 - Update scrollbar styling.
 - Update global UI, layout visibility, and theme configuration.
 - Adopt shadcn/ui components.

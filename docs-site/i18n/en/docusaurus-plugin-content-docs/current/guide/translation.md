@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Translation
 
-Dragonfly includes multi-provider text translation, which is useful for quickly translating logs, errors, command descriptions, or any unfamiliar text you see in the terminal.
+NyaTerm includes multi-provider text translation, which is useful for quickly translating logs, errors, command descriptions, or any unfamiliar text you see in the terminal.
 
 ## How to use it
 

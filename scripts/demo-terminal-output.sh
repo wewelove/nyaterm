@@ -38,7 +38,7 @@ log_line() {
   printf '%s%s%s\n' "$color" "$*" "$RESET"
 }
 
-section "Dragonfly terminal output demo"
+section "NyaTerm terminal output demo"
 log_line "$DIM" "2026-04-13T09:15:30Z [demo] session=alpha host=203.0.113.10 task=deploy-preview"
 log_line "$BLUE" "INFO    Loading release bundle version=v0.7.0 size=128MiB duration=2.4s"
 log_line "$GREEN" "SUCCESS SSH authentication completed for operator@203.0.113.10"
