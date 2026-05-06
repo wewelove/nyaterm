@@ -106,6 +106,7 @@ jobs:
           echo "Downloading GitHub Release assets for ${TAG}..."
 
           gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
             --dir release-assets \
             --clobber
 
