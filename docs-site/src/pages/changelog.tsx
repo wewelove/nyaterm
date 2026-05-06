@@ -13,8 +13,10 @@ function formatVersionLabel(version: string) {
     return {tag: version, date: ''};
   }
 
+  const isSemver = /^\d+\.\d+\.\d+/.test(match[1]);
+
   return {
-    tag: `v${match[1]}`,
+    tag: isSemver ? `v${match[1]}` : match[1],
     date: match[2],
   };
 }

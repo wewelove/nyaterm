@@ -10,6 +10,157 @@ export type ChangelogRelease = {
 
 const changelogReleasesEn: ChangelogRelease[] = [
   {
+    version: '[1.0.0] - 2026-05-06',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**terminal-ai:** Add AI output capture in XTerminal with marker-based command execution capture.',
+          '**connections:** Enhance connection management with recent connection tracking and matching localization strings.',
+          '**downloads:** Enhance download platform management with architecture support and dynamic release asset fetching.',
+          '**release:** Add Cloudflare R2 publishing and GitHub Actions workflows for release asset publishing.',
+          '**branding:** Update the NyaTerm logo SVG with a new gradient and eye cutout mask.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**shell:** Remove PowerShell support from ShellKind and related shell handling logic.',
+          '**branding:** Replace Dragonfly references with NyaTerm across documentation and the codebase.',
+          '**updater:** Update the Tauri updater endpoint for improved version fetching.',
+          '**deps:** Add strip-ansi-escapes and vte dependencies for more reliable terminal output handling.',
+          '**ci:** Clean up obsolete debug publishing workflows.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**workflow:** Download GitHub Release assets during the publishing workflow.',
+          '**workflow:** Add the TAG environment variable to the build-release workflow.',
+        ],
+      },
+      {
+        title: 'Documentation',
+        items: ['**homepage:** Update home page images for dark and light themes.'],
+      },
+    ],
+  },
+  {
+    version: '[0.9.0] - 2026-04-30',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**ai-assistant:** Integrate the AI Assistant into the application, including terminal and file explorer actions, session history search, grouped sessions, copy selection, and session deletion.',
+          '**agent:** Add agent mode with command execution, max step and timeout settings, command risk assessment, critical chmod/chown patterns, and a syntax-highlighted step view.',
+          '**ai-chat:** Enhance AI chat streaming with session handling, cleanup, reasoning content, markdown support, structured output parsing, and improved logging.',
+          '**storage:** Implement redb-based user data storage with JSON document updates, legacy migration improvements, and remote file reading.',
+          '**macos:** Add macOS configuration and platform-specific header, child window, and layout adjustments.',
+          '**update-dialog:** Render release notes as Markdown in the update dialog.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**app-layout:** Restructure the App component, introduce layout components, and streamline AppPanelContent panel rendering.',
+          '**ai-settings:** Expand AI model listing and settings, simplify file-size settings, sort grouped models, and add AI localization updates.',
+          '**ssh-form:** Refactor SshForm into tabs for proxy, jump host, and two-factor authentication settings.',
+          '**ui:** Improve AIAssistantPanel, ModelCombobox, QuickCommands, action tooltips, and thinking text styling.',
+          '**deps:** Add react-markdown, remark-gfm, react-syntax-highlighter, browserslist, lightningcss, and related dependency updates.',
+          '**codebase:** Clean up formatting, import ordering, and function signatures across multiple modules.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**dialogs:** Add cleanup handling for dialog and alert dialog overlays.',
+          '**ai-assistant:** Improve truncate_preview string truncation and remove the toast notification for text selection.',
+          '**macos:** Correct titleBarStyle casing in the macOS configuration file.',
+          '**ssh-form:** Adjust SshForm formatting and dialog import ordering.',
+        ],
+      },
+      {
+        title: 'Documentation',
+        items: [
+          'Update configuration storage documentation for the redb-backed data model.',
+          'Expand documentation to include AI Assistant features and updates.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[0.8.5] - 2026-04-28',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**session-sync:** Implement session synchronization support.',
+          '**quick-commands:** Add support for sending commands to all users from QuickCommands.',
+          '**release:** Add workflows to repair latest.json and release updater assets.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**ci:** Update the build-release workflow, repair asset download scripts, and release asset publishing flow.',
+          '**docs:** Update the homepage URL and add a documentation page link to the header menu.',
+          '**i18n:** Add synchronization group features and menu option strings in English and Chinese.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**ci:** Enhance build-release workflow cache cleanup, add libudev-dev to build dependencies, and fix GITHUB_TOKEN indentation.',
+          '**updater:** Add Tauri updater signing key preparation and improve updater manifest generation.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[0.8.4] - 2026-04-27',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**ssh:** Implement HostKeyVerifyManager for host key verification and known_hosts management.',
+          '**ssh:** Enhance host key verification logging and add a timeout for verification.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: ['**i18n:** Add SSH host key verification messages in English and Chinese locales.'],
+      },
+      {
+        title: 'Fixed',
+        items: ['**host-key-verification:** Add HostKeyVerifyDialog and integrate host key verification handling in the app.'],
+      },
+      {
+        title: 'Documentation',
+        items: ['Update Docusaurus configuration to handle broken anchors.'],
+      },
+    ],
+  },
+  {
+    version: '[0.8.3] - 2026-04-27',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**terminal:** Implement command suggestion visibility based on shell integration state and terminal mode.',
+          '**file-explorer:** Add a parent directory entry and update context menu behavior for smoother navigation.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: ['**resource-monitor:** Enhance the resource monitor UI and improve performance metric formatting.'],
+      },
+      {
+        title: 'Documentation',
+        items: ['Add CHANGELOG.md to document notable changes for version 0.8.2.'],
+      },
+    ],
+  },
+  {
     version: '[0.8.2] - 2026-04-23',
     sections: [
       {
@@ -697,6 +848,154 @@ const changelogReleasesEn: ChangelogRelease[] = [
 ];
 
 const changelogReleasesZhCN: ChangelogRelease[] = [
+  {
+    version: '[1.0.0] - 2026-05-06',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**terminal-ai:** 在 XTerminal 中新增 AI 输出捕获，并支持基于标记的命令执行输出捕获。',
+          '**connections:** 增强连接管理，加入最近连接跟踪，并补充对应本地化文案。',
+          '**downloads:** 增强下载平台管理，支持架构识别和动态获取发布资产。',
+          '**release:** 新增 Cloudflare R2 发布流程和用于发布资产上传的 GitHub Actions 工作流。',
+          '**branding:** 更新 NyaTerm logo SVG，使用新的渐变和眼部镂空遮罩。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**shell:** 移除 ShellKind 及相关逻辑中的 PowerShell 支持。',
+          '**branding:** 将文档和代码库中的 Dragonfly 引用替换为 NyaTerm。',
+          '**updater:** 更新 Tauri updater endpoint，以改进版本获取流程。',
+          '**deps:** 新增 strip-ansi-escapes 和 vte 依赖，以提升终端输出处理的可靠性。',
+          '**ci:** 清理过期的调试发布工作流。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**workflow:** 在发布工作流中下载 GitHub Release 资产。',
+          '**workflow:** 为 build-release 工作流新增 TAG 环境变量。',
+        ],
+      },
+      {
+        title: '文档',
+        items: ['**homepage:** 更新首页在深色和浅色主题下的图片。'],
+      },
+    ],
+  },
+  {
+    version: '[0.9.0] - 2026-04-30',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**ai-assistant:** 将 AI Assistant 集成到应用中，支持终端和文件浏览器动作、会话历史搜索、会话分组、复制选择内容以及删除会话。',
+          '**agent:** 新增 agent 模式，支持命令执行、最大步骤和超时设置、命令风险评估、chmod/chown 高风险模式以及带语法高亮的步骤视图。',
+          '**ai-chat:** 增强 AI 聊天流处理，加入会话管理、清理、推理内容、Markdown 支持、结构化输出解析和更完善的日志。',
+          '**storage:** 实现基于 redb 的用户数据存储，并支持 JSON 文档更新、旧数据迁移改进和远程文件读取。',
+          '**macos:** 新增 macOS 配置，并加入平台相关的 Header、子窗口和布局调整。',
+          '**update-dialog:** 在更新对话框中支持以 Markdown 渲染发布说明。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**app-layout:** 重构 App 组件，引入新的布局组件，并简化 AppPanelContent 的面板渲染逻辑。',
+          '**ai-settings:** 扩展 AI 模型列表和设置，简化文件大小设置，支持分组模型排序，并补充 AI 本地化内容。',
+          '**ssh-form:** 将 SshForm 重构为用于代理、跳板机和双因素认证设置的标签页结构。',
+          '**ui:** 改进 AIAssistantPanel、ModelCombobox、QuickCommands、操作按钮 tooltip 和思考文本样式。',
+          '**deps:** 新增 react-markdown、remark-gfm、react-syntax-highlighter、browserslist、lightningcss，并更新相关依赖。',
+          '**codebase:** 清理多个模块中的格式、导入顺序和函数签名。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**dialogs:** 为 dialog 和 alert dialog 遮罩层增加清理处理。',
+          '**ai-assistant:** 改进 truncate_preview 字符串截断逻辑，并移除文本选择时的 toast 提示。',
+          '**macos:** 修正 macOS 配置文件中的 titleBarStyle 大小写。',
+          '**ssh-form:** 调整 SshForm 格式并整理对话框导入顺序。',
+        ],
+      },
+      {
+        title: '文档',
+        items: ['更新配置存储文档，以说明基于 redb 的数据模型。', '扩展文档，补充 AI Assistant 功能和相关更新。'],
+      },
+    ],
+  },
+  {
+    version: '[0.8.5] - 2026-04-28',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**session-sync:** 实现会话同步支持。',
+          '**quick-commands:** 支持在 QuickCommands 中向所有用户发送命令。',
+          '**release:** 新增用于修复 latest.json 和发布 updater 资产的工作流。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**ci:** 更新 build-release 工作流、资产修复下载脚本和发布资产上传流程。',
+          '**docs:** 更新首页 URL，并在头部菜单中新增文档页面链接。',
+          '**i18n:** 为英文和中文新增同步分组功能和菜单选项文案。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**ci:** 增强 build-release 工作流的缓存清理，新增 libudev-dev 构建依赖，并修复 GITHUB_TOKEN 缩进。',
+          '**updater:** 新增 Tauri updater 签名密钥准备步骤，并改进 updater manifest 生成流程。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[0.8.4] - 2026-04-27',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**ssh:** 实现 HostKeyVerifyManager，用于主机密钥验证和 known_hosts 管理。',
+          '**ssh:** 增强主机密钥验证日志，并加入验证超时机制。',
+        ],
+      },
+      {
+        title: '变更',
+        items: ['**i18n:** 为英文和中文语言环境新增 SSH 主机密钥验证提示文案。'],
+      },
+      {
+        title: '修复',
+        items: ['**host-key-verification:** 新增 HostKeyVerifyDialog，并将主机密钥验证处理集成到应用中。'],
+      },
+      {
+        title: '文档',
+        items: ['更新 Docusaurus 配置以处理 broken anchors。'],
+      },
+    ],
+  },
+  {
+    version: '[0.8.3] - 2026-04-27',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**terminal:** 基于 shell integration 状态和终端模式实现命令建议可见性逻辑。',
+          '**file-explorer:** 新增返回上级目录入口，并更新上下文菜单行为以改善导航体验。',
+        ],
+      },
+      {
+        title: '变更',
+        items: ['**resource-monitor:** 增强资源监视器界面，并改进性能指标格式化展示。'],
+      },
+      {
+        title: '文档',
+        items: ['新增 CHANGELOG.md，用于记录 0.8.2 版本的重要变更。'],
+      },
+    ],
+  },
   {
     version: '[0.8.2] - 2026-04-23',
     sections: [
