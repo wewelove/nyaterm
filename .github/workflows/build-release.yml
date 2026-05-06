@@ -641,6 +641,7 @@ jobs:
       contents: read
 
     env:
+      TAG: ${{ github.ref_name }}
       R2_BUCKET: nyaterm
       DOWNLOAD_BASE_URL: https://downloads.nyaterm.app
       R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
