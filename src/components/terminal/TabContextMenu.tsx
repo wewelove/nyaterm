@@ -9,6 +9,7 @@ import {
   MdDriveFileRenameOutline,
   MdHorizontalSplit,
   MdInfoOutline,
+  MdMerge,
   MdPlayArrow,
   MdRefresh,
   MdVerticalSplit,
@@ -61,6 +62,7 @@ interface TabContextMenuProps {
   onDuplicateSession: (tab: Tab) => void | Promise<void>;
   onReconnectSession: (tab: Tab) => void | Promise<void>;
   onSplitSession: (tab: Tab, direction: PaneSplitDirection) => void | Promise<void>;
+  onUnsplit?: () => void;
   onCloseSession: (tab: Tab) => void | Promise<void>;
   onCloseAll: () => void | Promise<void>;
   onCloseInactive: (keepTabId: string) => void | Promise<void>;
@@ -77,6 +79,7 @@ export default function TabContextMenu({
   onDuplicateSession,
   onReconnectSession,
   onSplitSession,
+  onUnsplit,
   onCloseSession,
   onCloseAll,
   onCloseInactive,
@@ -258,6 +261,13 @@ export default function TabContextMenu({
             <MdVerticalSplit className={iconClass} />
             {t("tabCtx.splitVertical")}
           </ContextMenuItem>
+
+          {onUnsplit && (
+            <ContextMenuItem onClick={onUnsplit}>
+              <MdMerge className={iconClass} />
+              {t("tabCtx.unsplit")}
+            </ContextMenuItem>
+          )}
 
           <ContextMenuSeparator />
 

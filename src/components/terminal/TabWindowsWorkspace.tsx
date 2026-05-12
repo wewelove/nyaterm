@@ -22,12 +22,14 @@ interface TabWindowsWorkspaceProps {
   onDuplicateSession: (tab: Tab) => void | Promise<void>;
   onReconnectSession: (tab: Tab) => void | Promise<void>;
   onSplitSession: (tab: Tab, direction: PaneSplitDirection) => void | Promise<void>;
+  onUnsplit?: () => void;
   onCloseSession: (tab: Tab) => void | Promise<void>;
   onCloseAll: () => void | Promise<void>;
   onCloseInactive: (keepTabId: string) => void | Promise<void>;
   onCloseRight: (tabId: string) => void | Promise<void>;
   onSessionInfo: (tab: Tab) => void | Promise<void>;
   onReorderTabs: (leafId: string, fromTabId: string, toIndex: number) => void;
+  onMoveTabToLeaf?: (fromTabId: string, targetLeafId: string, toIndex: number) => void;
   onActivatePane: (tabId: string, paneId: string) => void;
   onUpdatePaneSplitRatio: (tabId: string, splitId: string, ratio: number) => void;
   onUpdateWindowSplitRatio: (splitId: string, ratio: number) => void;
@@ -47,12 +49,14 @@ function SplitWindow({
   onDuplicateSession,
   onReconnectSession,
   onSplitSession,
+  onUnsplit,
   onCloseSession,
   onCloseAll,
   onCloseInactive,
   onCloseRight,
   onSessionInfo,
   onReorderTabs,
+  onMoveTabToLeaf,
   onActivatePane,
   onUpdatePaneSplitRatio,
   onUpdateWindowSplitRatio,
@@ -93,12 +97,14 @@ function SplitWindow({
           onDuplicateSession={onDuplicateSession}
           onReconnectSession={onReconnectSession}
           onSplitSession={onSplitSession}
+          onUnsplit={onUnsplit}
           onCloseSession={onCloseSession}
           onCloseAll={onCloseAll}
           onCloseInactive={onCloseInactive}
           onCloseRight={onCloseRight}
           onSessionInfo={onSessionInfo}
           onReorderTabs={onReorderTabs}
+          onMoveTabToLeaf={onMoveTabToLeaf}
           onActivatePane={onActivatePane}
           onUpdatePaneSplitRatio={onUpdatePaneSplitRatio}
           onUpdateWindowSplitRatio={onUpdateWindowSplitRatio}
@@ -120,12 +126,14 @@ function SplitWindow({
           onDuplicateSession={onDuplicateSession}
           onReconnectSession={onReconnectSession}
           onSplitSession={onSplitSession}
+          onUnsplit={onUnsplit}
           onCloseSession={onCloseSession}
           onCloseAll={onCloseAll}
           onCloseInactive={onCloseInactive}
           onCloseRight={onCloseRight}
           onSessionInfo={onSessionInfo}
           onReorderTabs={onReorderTabs}
+          onMoveTabToLeaf={onMoveTabToLeaf}
           onActivatePane={onActivatePane}
           onUpdatePaneSplitRatio={onUpdatePaneSplitRatio}
           onUpdateWindowSplitRatio={onUpdateWindowSplitRatio}
@@ -149,12 +157,14 @@ function LeafWindow({
   onDuplicateSession,
   onReconnectSession,
   onSplitSession,
+  onUnsplit,
   onCloseSession,
   onCloseAll,
   onCloseInactive,
   onCloseRight,
   onSessionInfo,
   onReorderTabs,
+  onMoveTabToLeaf,
   onActivatePane,
   onUpdatePaneSplitRatio,
   onReconnectPane,
@@ -198,12 +208,18 @@ function LeafWindow({
         onDuplicateSession={onDuplicateSession}
         onReconnectSession={onReconnectSession}
         onSplitSession={onSplitSession}
+        onUnsplit={onUnsplit}
         onCloseSession={onCloseSession}
         onCloseAll={onCloseAll}
         onCloseInactive={onCloseInactive}
         onCloseRight={onCloseRight}
         onSessionInfo={onSessionInfo}
         onReorderTabs={(fromTabId, toIndex) => onReorderTabs(leaf.id, fromTabId, toIndex)}
+        onMoveTabHere={
+          onMoveTabToLeaf
+            ? (fromTabId, toIndex) => onMoveTabToLeaf(fromTabId, leaf.id, toIndex)
+            : undefined
+        }
       />
 
       <div className="relative flex-1 overflow-hidden">
@@ -238,12 +254,14 @@ function WindowNodeView({
   onDuplicateSession,
   onReconnectSession,
   onSplitSession,
+  onUnsplit,
   onCloseSession,
   onCloseAll,
   onCloseInactive,
   onCloseRight,
   onSessionInfo,
   onReorderTabs,
+  onMoveTabToLeaf,
   onActivatePane,
   onUpdatePaneSplitRatio,
   onUpdateWindowSplitRatio,
@@ -266,12 +284,14 @@ function WindowNodeView({
         onDuplicateSession={onDuplicateSession}
         onReconnectSession={onReconnectSession}
         onSplitSession={onSplitSession}
+        onUnsplit={onUnsplit}
         onCloseSession={onCloseSession}
         onCloseAll={onCloseAll}
         onCloseInactive={onCloseInactive}
         onCloseRight={onCloseRight}
         onSessionInfo={onSessionInfo}
         onReorderTabs={onReorderTabs}
+        onMoveTabToLeaf={onMoveTabToLeaf}
         onActivatePane={onActivatePane}
         onUpdatePaneSplitRatio={onUpdatePaneSplitRatio}
         onUpdateWindowSplitRatio={onUpdateWindowSplitRatio}
@@ -294,12 +314,14 @@ function WindowNodeView({
       onDuplicateSession={onDuplicateSession}
       onReconnectSession={onReconnectSession}
       onSplitSession={onSplitSession}
+      onUnsplit={onUnsplit}
       onCloseSession={onCloseSession}
       onCloseAll={onCloseAll}
       onCloseInactive={onCloseInactive}
       onCloseRight={onCloseRight}
       onSessionInfo={onSessionInfo}
       onReorderTabs={onReorderTabs}
+      onMoveTabToLeaf={onMoveTabToLeaf}
       onActivatePane={onActivatePane}
       onUpdatePaneSplitRatio={onUpdatePaneSplitRatio}
       onReconnectPane={onReconnectPane}

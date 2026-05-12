@@ -351,6 +351,40 @@ export function splitTerminalWindowForTab(
   });
 }
 
+export function moveTabBetweenLeaves(
+  node: TerminalWindowNode,
+  tabId: string,
+  targetLeafId: string,
+  insertIndex: number,
+): TerminalWindowNode | null {
+  const sourceLeaf = findTerminalWindowLeafByTabId(node, tabId);
+  if (!sourceLeaf) return node;
+  if (sourceLeaf.id === targetLeafId) {
+    return reorderTabsInLeaf(node, tabId, insertIndex);
+  }
+
+  let next: TerminalWindowNode | null = removeTabFromTerminalWindows(node, tabId);
+  if (!next) return null;
+
+  next = updateLeafById(next, targetLeafId, (leaf) => {
+    const nextTabIds = [...leaf.tabIds];
+    const bounded = Math.max(0, Math.min(nextTabIds.length, insertIndex));
+    nextTabIds.splice(bounded, 0, tabId);
+    return normalizeLeaf({ ...leaf, tabIds: nextTabIds, activeTabId: tabId });
+  });
+
+  return next;
+}
+
+export function flattenTerminalWindows(
+  node: TerminalWindowNode,
+  activeTabId: string | null,
+): TerminalWindowNode {
+  const tabIds = collectWindowTabIds(node);
+  if (tabIds.length === 0) return node;
+  return createTerminalWindowLeaf(tabIds, activeTabId ?? tabIds[0] ?? null);
+}
+
 export function reconcileTerminalWindows(
   current: TerminalWindowNode | null,
   tabs: Tab[],
