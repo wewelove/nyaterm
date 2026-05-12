@@ -1255,7 +1255,8 @@
     "splitFailed": "会话拆分失败",
     "splitHorizontal": "水平拆分会话",
     "splitPersistFailed": "拆分布局保存失败",
-    "splitVertical": "垂直拆分会话"
+    "splitVertical": "垂直拆分会话",
+    "unsplit": "合并所有窗格"
   },
   "terminal": {
     "actionLinkAltClickHint": "Alt+单击：更多动作",

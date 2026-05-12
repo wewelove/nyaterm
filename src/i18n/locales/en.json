@@ -1255,7 +1255,8 @@
     "splitFailed": "Failed to split session",
     "splitHorizontal": "Split Horizontal",
     "splitPersistFailed": "Split layout could not be saved",
-    "splitVertical": "Split Vertical"
+    "splitVertical": "Split Vertical",
+    "unsplit": "Merge All Panes"
   },
   "terminal": {
     "actionLinkAltClickHint": "Alt+Click: more actions",
