@@ -3947,6 +3947,7 @@ dependencies = [
  "notify",
  "nucleo-matcher",
  "nyaterm-otp",
+ "open",
  "opendal",
  "portable-pty",
  "rand 0.8.5",
