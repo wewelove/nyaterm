@@ -90,6 +90,7 @@ opendal = { version = "0.55", features = [
     "layers-tracing",
 ] }
 redb = "4.1.0"
+zmodem2 = "0.5"
 
 [profile.release]
 lto = true
