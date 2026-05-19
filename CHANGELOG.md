@@ -4,6 +4,95 @@ All notable changes to this project will be documented in this file.
 
 This changelog is inferred from release bump commits in git history (for example `chore: bump version to vX.Y.Z`) and grouped by Conventional Commit type.
 
+## [1.0.4] - 2026-05-19
+
+### Added
+
+- **cloud_sync:** Implement cloud synchronization features with encryption and logging.
+- **ai:** Introduce AgentApprovalManager and refactor AI command handling.
+- **session-management:** Enhance session management by adding initialGroupId support.
+
+### Changed
+
+- **ai:** Remove risk assessment features and AiRiskLevel from AI components and configuration.
+- **i18n:** Update localization files for agent command execution and approval messages.
+- **window:** Improve always-on-top logic for modal windows.
+- **file-explorer:** Optimize file drop handling.
+- **sftp:** Consolidate SFTP handling by removing SSH namespace and introducing new backend structure.
+- **ssh-form:** Update SshForm and NewSessionPage for improved password handling and connection management.
+- **cleanup:** Remove unused components and functions from AiTab and XTerminal.
+
+## [1.0.3] - 2026-05-18
+
+### Added
+
+- **terminal:** Implement tab movement and unsplit functionality in terminal management.
+- **zmodem:** Implement Zmodem file transfer commands, detection, and event handling.
+- **shortcuts:** Implement customizable keyboard shortcuts and settings management.
+- **window:** Enhance modal child window handling.
+- **ai:** Enhance AI Assistant Panel with improved empty state handling.
+
+### Changed
+
+- **appearance:** Refactor font management and update default font settings.
+- **i18n:** Add Zmodem transfer messages, terminal font family settings, keybindings, and AI setup instructions to localization files.
+- **accessibility:** Add DialogDescription component to various dialogs.
+- **theme:** Update color values in githubDark theme for improved consistency.
+
+## [1.0.2] - 2026-05-17
+
+### Added
+
+- **credentials:** Implement credential management features with dialog and terminal autofill support.
+- **security:** Enhance Password Management with Secret Unlocking Functionality and password reveal functionality.
+- **terminal:** Add keyword highlighting settings and functionality in TerminalTab component.
+- **clipboard:** Add CopyButton component for clipboard functionality.
+- **tabbar:** Enhance TabBar component with dynamic tab visibility management and overflow handling.
+- **templates:** Add issue templates for bug reports and feature requests.
+
+### Changed
+
+- **theme:** Update theme colors and CSS variables for improved consistency.
+- **i18n:** Add localization entries for password management, search functionality, and hidden sessions.
+- **ui:** Add required field indicators and improve label styling in session forms.
+- **terminal:** Enhance ActionLinksAddon and KeywordHighlighter with improved timer management and refresh logic.
+- **docs:** Enhance AI Assistant and security features in documentation.
+
+## [1.0.1] - 2026-05-16
+
+### Added
+
+- **highlighting:** Add prompt highlighting support in keywordHighlightPresets.
+- **app:** Integrate single instance support in Tauri application.
+- **docs:** Add Umami analytics plugin to Docusaurus configuration.
+- **ci:** Add GitHub Actions workflow for R2 asset publishing.
+
+### Changed
+
+- **file-explorer:** Clean up FileExplorer component by removing unused code and optimizing state management.
+- **upload:** Simplify file upload handling in AutoUploadPage.
+- **highlighting:** Update operator colors and regex pattern for keyword highlighting.
+- **docs:** Update changelog with new releases and enhancements.
+- **ci:** Update Docusaurus dependencies and remove optional Umami config.
+
+## [1.0.4] - 2026-05-19
+
+## [1.0.3] - 2026-05-18
+
+## [1.0.2] - 2026-05-17
+
+## [1.0.1] - 2026-05-16
+
+## [1.0.0] - 2026-05-06
+
+## [0.9.0] - 2026-04-30
+
+## [0.8.5] - 2026-04-28
+
+## [0.8.4] - 2026-04-27
+
+## [0.8.3] - 2026-04-27
+
 ## [0.8.2] - 2026-04-23
 
 ### Added

@@ -101,6 +101,8 @@ NyaTerm is built for people who move between servers, local commands, devices, a
 - Optional keyword highlighting with built-in presets and custom rules
 - Large-output protection, configurable scrollback, SSH keep-alive, and session recording
 - Online search and translation from selected terminal text
+- Zmodem file transfer support directly from the terminal
+- Customizable keyboard shortcuts for terminal and UI actions
 
 ## SFTP and File Workflows
 

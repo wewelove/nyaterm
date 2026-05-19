@@ -10,6 +10,106 @@ export type ChangelogRelease = {
 
 const changelogReleasesEn: ChangelogRelease[] = [
   {
+    version: '[1.0.4] - 2026-05-19',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**cloud_sync:** Implement cloud synchronization features with encryption and logging.',
+          '**ai:** Introduce AgentApprovalManager and refactor AI command handling.',
+          '**session-management:** Enhance session management by adding initialGroupId support.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**ai:** Remove risk assessment features and AiRiskLevel from AI components and configuration.',
+          '**i18n:** Update localization files for agent command execution and approval messages.',
+          '**window:** Improve always-on-top logic for modal windows.',
+          '**file-explorer:** Optimize file drop handling.',
+          '**sftp:** Consolidate SFTP handling by removing SSH namespace and introducing new backend structure.',
+          '**ssh-form:** Update SshForm and NewSessionPage for improved password handling and connection management.',
+          '**cleanup:** Remove unused components and functions from AiTab and XTerminal.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.3] - 2026-05-18',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**terminal:** Implement tab movement and unsplit functionality in terminal management.',
+          '**zmodem:** Implement Zmodem file transfer commands, detection, and event handling.',
+          '**shortcuts:** Implement customizable keyboard shortcuts and settings management.',
+          '**window:** Enhance modal child window handling.',
+          '**ai:** Enhance AI Assistant Panel with improved empty state handling.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**appearance:** Refactor font management and update default font settings.',
+          '**i18n:** Add Zmodem transfer messages, terminal font family settings, keybindings, and AI setup instructions to localization files.',
+          '**accessibility:** Add DialogDescription component to various dialogs.',
+          '**theme:** Update color values in githubDark theme for improved consistency.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.2] - 2026-05-17',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**credentials:** Implement credential management features with dialog and terminal autofill support.',
+          '**security:** Enhance Password Management with Secret Unlocking Functionality and password reveal functionality.',
+          '**terminal:** Add keyword highlighting settings and functionality in TerminalTab component.',
+          '**clipboard:** Add CopyButton component for clipboard functionality.',
+          '**tabbar:** Enhance TabBar component with dynamic tab visibility management and overflow handling.',
+          '**templates:** Add issue templates for bug reports and feature requests.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**theme:** Update theme colors and CSS variables for improved consistency.',
+          '**i18n:** Add localization entries for password management, search functionality, and hidden sessions.',
+          '**ui:** Add required field indicators and improve label styling in session forms.',
+          '**terminal:** Enhance ActionLinksAddon and KeywordHighlighter with improved timer management and refresh logic.',
+          '**docs:** Enhance AI Assistant and security features in documentation.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.1] - 2026-05-16',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**highlighting:** Add prompt highlighting support in keywordHighlightPresets.',
+          '**app:** Integrate single instance support in Tauri application.',
+          '**docs:** Add Umami analytics plugin to Docusaurus configuration.',
+          '**ci:** Add GitHub Actions workflow for R2 asset publishing.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**file-explorer:** Clean up FileExplorer component by removing unused code and optimizing state management.',
+          '**upload:** Simplify file upload handling in AutoUploadPage.',
+          '**highlighting:** Update operator colors and regex pattern for keyword highlighting.',
+          '**docs:** Update changelog with new releases and enhancements.',
+          '**ci:** Update Docusaurus dependencies and remove optional Umami config.',
+        ],
+      },
+    ],
+  },
+
+  {
     version: '[1.0.0] - 2026-05-06',
     sections: [
       {
@@ -848,6 +948,106 @@ const changelogReleasesEn: ChangelogRelease[] = [
 ];
 
 const changelogReleasesZhCN: ChangelogRelease[] = [
+  {
+    version: '[1.0.4] - 2026-05-19',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**cloud_sync:** 实现云同步功能，加入加密支持与日志记录。',
+          '**ai:** 引入 AgentApprovalManager 并重构 AI 命令处理逻辑。',
+          '**session-management:** 增强会话管理，新增 initialGroupId 支持。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**ai:** 移除 AI 组件及配置中的风险评估功能和 AiRiskLevel。',
+          '**i18n:** 更新本地化文件，补充 agent 命令执行与审批提示。',
+          '**window:** 改进模态窗口的置顶逻辑。',
+          '**file-explorer:** 优化文件拖放处理逻辑。',
+          '**sftp:** 移除 SSH 命名空间并引入新的后端结构以整合 SFTP 处理。',
+          '**ssh-form:** 更新 SshForm 和 NewSessionPage，改进密码处理与连接管理。',
+          '**cleanup:** 移除 AiTab 和 XTerminal 中未使用的组件和函数。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.3] - 2026-05-18',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**terminal:** 在终端管理中实现标签页移动和解除分屏功能。',
+          '**zmodem:** 实现 Zmodem 文件传输命令、检测和事件处理。',
+          '**shortcuts:** 实现自定义键盘快捷键及设置管理。',
+          '**window:** 增强模态子窗口处理。',
+          '**ai:** 增强 AI Assistant 面板，改进空状态显示。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**appearance:** 重构字体管理并更新默认字体设置。',
+          '**i18n:** 在本地化文件中新增 Zmodem 传输信息、终端字体设置、快捷键及 AI 设置指南。',
+          '**accessibility:** 为多个对话框新增 DialogDescription 组件以提升无障碍体验。',
+          '**theme:** 更新 githubDark 主题中的颜色值以提升一致性。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.2] - 2026-05-17',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**credentials:** 实现凭据管理功能，支持对话框及终端自动填充。',
+          '**security:** 增强密码管理，支持密钥解锁和密码显示功能。',
+          '**terminal:** 在 TerminalTab 组件中新增关键词高亮设置及功能。',
+          '**clipboard:** 新增 CopyButton 组件用于剪贴板操作。',
+          '**tabbar:** 增强 TabBar 组件，支持动态标签页可见性管理和溢出处理。',
+          '**templates:** 新增缺陷报告和功能请求的 Issue 模板。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**theme:** 更新主题颜色及 CSS 变量以提升一致性。',
+          '**i18n:** 新增密码管理、搜索功能及隐藏会话的本地化条目。',
+          '**ui:** 在会话表单中新增必填项指示，改进标签样式。',
+          '**terminal:** 增强 ActionLinksAddon 和 KeywordHighlighter，改进计时器管理与刷新逻辑。',
+          '**docs:** 在文档中补充 AI 助手和安全功能相关内容。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.1] - 2026-05-16',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**highlighting:** 在 keywordHighlightPresets 中新增命令行提示符高亮支持。',
+          '**app:** 在 Tauri 应用中集成单例运行支持。',
+          '**docs:** 在 Docusaurus 配置中新增 Umami 分析插件。',
+          '**ci:** 新增用于 R2 资产发布的 GitHub Actions 工作流。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**file-explorer:** 清理 FileExplorer 组件，移除未使用代码并优化状态管理。',
+          '**upload:** 简化 AutoUploadPage 中的文件上传处理逻辑。',
+          '**highlighting:** 更新深色和浅色规则板中的操作符颜色，以及操作符的正则匹配模式。',
+          '**docs:** 更新更新日志，补充新版本与增强内容。',
+          '**ci:** 更新 Docusaurus 依赖，移除可选的 Umami 配置。',
+        ],
+      },
+    ],
+  },
+
   {
     version: '[1.0.0] - 2026-05-06',
     sections: [
