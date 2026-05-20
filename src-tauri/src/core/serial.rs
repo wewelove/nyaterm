@@ -24,6 +24,16 @@ pub struct SerialConfig {
     pub stop_bits: String,
     pub name: String,
     pub ai_execution_profile: AiExecutionProfile,
+    pub backspace_mode: String,
+}
+
+/// Replace DEL (0x7F) with BS (0x08) in-place.
+fn remap_del_to_bs(data: &mut [u8]) {
+    for byte in data.iter_mut() {
+        if *byte == 0x7f {
+            *byte = 0x08;
+        }
+    }
 }
 
 pub fn list_serial_ports() -> AppResult<Vec<String>> {
@@ -163,6 +173,8 @@ fn serial_session_thread(
         }
     };
 
+    let backspace_as_bs = config.backspace_mode == "ctrl_h";
+
     let port = Arc::new(Mutex::new(port));
     let output_event = format!("terminal-output-{}", session_id);
     let closed_event = format!("session-closed-{}", session_id);
@@ -291,9 +303,12 @@ fn serial_session_thread(
             SessionCommand::Attach => {
                 output.attach();
             }
-            SessionCommand::Write(data) => {
+            SessionCommand::Write(mut data) => {
                 if zmodem_state.lock().unwrap().is_some() {
                     continue;
+                }
+                if backspace_as_bs {
+                    remap_del_to_bs(&mut data);
                 }
                 let mut p = port.lock().unwrap();
                 let _ = p.write_all(&data);

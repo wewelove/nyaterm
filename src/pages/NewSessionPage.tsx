@@ -97,6 +97,8 @@ export default function NewSessionPage() {
     useState<AIExecutionProfile>("auto");
   const [serialAiExecutionProfile, setSerialAiExecutionProfile] =
     useState<AIExecutionProfile>("auto");
+  const [serialBackspaceMode, setSerialBackspaceMode] = useState("ctrl_h");
+  const [telnetBackspaceMode, setTelnetBackspaceMode] = useState("del");
 
   useEffect(() => {
     invoke<Group[]>("get_groups")
@@ -150,6 +152,7 @@ export default function NewSessionPage() {
           setHost(found.host || "");
           setTelnetPort(found.port || 23);
           setTelnetAiExecutionProfile(found.ai_execution_profile || "auto");
+          setTelnetBackspaceMode(found.backspace_mode || "del");
         } else if (found.type === "local_terminal") {
           setShellPath(found.shell_path || "powershell.exe");
           setWorkingDir(found.working_dir || "");
@@ -161,6 +164,7 @@ export default function NewSessionPage() {
           setParity(found.parity || "none");
           setStopBits(found.stop_bits || "1");
           setSerialAiExecutionProfile(found.ai_execution_profile || "auto");
+          setSerialBackspaceMode(found.backspace_mode || "ctrl_h");
         }
       })
       .catch(() => {});
@@ -220,6 +224,8 @@ export default function NewSessionPage() {
     setLocalAiExecutionProfile("auto");
     setTelnetAiExecutionProfile("auto");
     setSerialAiExecutionProfile("auto");
+    setSerialBackspaceMode("ctrl_h");
+    setTelnetBackspaceMode("del");
     setShowIconPicker(false);
     setError("");
     setConnecting(false);
@@ -450,7 +456,12 @@ export default function NewSessionPage() {
             }
           : {}),
         ...(currentTab === "telnet"
-          ? { host: normalizedHost, port: telnetPort, ai_execution_profile: aiExecutionProfile }
+          ? {
+              host: normalizedHost,
+              port: telnetPort,
+              ai_execution_profile: aiExecutionProfile,
+              backspace_mode: telnetBackspaceMode,
+            }
           : {}),
         ...(currentTab === "local"
           ? {
@@ -467,6 +478,7 @@ export default function NewSessionPage() {
               parity,
               stop_bits: stopBits,
               ai_execution_profile: aiExecutionProfile,
+              backspace_mode: serialBackspaceMode,
             }
           : {}),
       };
@@ -780,6 +792,8 @@ export default function NewSessionPage() {
               setPort={setTelnetPort}
               aiExecutionProfile={telnetAiExecutionProfile}
               setAiExecutionProfile={setTelnetAiExecutionProfile}
+              backspaceMode={telnetBackspaceMode}
+              setBackspaceMode={setTelnetBackspaceMode}
             />
           </TabsContent>
 
@@ -803,6 +817,8 @@ export default function NewSessionPage() {
               setStopBits={setStopBits}
               aiExecutionProfile={serialAiExecutionProfile}
               setAiExecutionProfile={setSerialAiExecutionProfile}
+              backspaceMode={serialBackspaceMode}
+              setBackspaceMode={setSerialBackspaceMode}
             />
           </TabsContent>
 

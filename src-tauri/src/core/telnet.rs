@@ -109,6 +109,15 @@ fn strip_telnet_commands(data: &[u8], on_negotiate: &mut impl FnMut(u8, u8)) -> 
     visible
 }
 
+/// Replace DEL (0x7F) with BS (0x08) in-place.
+fn remap_del_to_bs(data: &mut [u8]) {
+    for byte in data.iter_mut() {
+        if *byte == 0x7f {
+            *byte = 0x08;
+        }
+    }
+}
+
 pub async fn create_telnet_session(
     app: AppHandle,
     manager: Arc<SessionManager>,
@@ -117,6 +126,7 @@ pub async fn create_telnet_session(
     connection_id: Option<String>,
     name: String,
     ai_execution_profile: AiExecutionProfile,
+    backspace_mode: String,
 ) -> AppResult<String> {
     log_event(StructuredLog {
         level: StructuredLogLevel::Info,
@@ -161,7 +171,17 @@ pub async fn create_telnet_session(
     let mgr = manager.clone();
 
     tokio::spawn(async move {
-        telnet_session_task(app, sid, mgr, cmd_rx, host, port, connection_id).await;
+        telnet_session_task(
+            app,
+            sid,
+            mgr,
+            cmd_rx,
+            host,
+            port,
+            connection_id,
+            backspace_mode,
+        )
+        .await;
     });
 
     Ok(session_id)
@@ -175,7 +195,9 @@ async fn telnet_session_task(
     host: String,
     port: u16,
     connection_id: Option<String>,
+    backspace_mode: String,
 ) {
+    let backspace_as_bs = backspace_mode == "ctrl_h";
     let addr = format!("{}:{}", host, port);
     let stream = match TcpStream::connect(&addr).await {
         Ok(s) => s,
@@ -349,9 +371,12 @@ async fn telnet_session_task(
                     Some(SessionCommand::Attach) => {
                         output.attach();
                     }
-                    Some(SessionCommand::Write(data)) => {
+                    Some(SessionCommand::Write(mut data)) => {
                         if zmodem_state.lock().await.is_some() {
                             continue;
+                        }
+                        if backspace_as_bs {
+                            remap_del_to_bs(&mut data);
                         }
                         if let Err(e) = writer.write_all(&data).await {
                             log_rate_limited(StructuredLog {

@@ -2,6 +2,13 @@ import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { AIExecutionProfile } from "@/types/global";
 import { AiExecutionProfileField } from "./AiExecutionProfileField";
 
@@ -12,6 +19,8 @@ interface TelnetFormProps {
   setPort: (v: number) => void;
   aiExecutionProfile: AIExecutionProfile;
   setAiExecutionProfile: (v: AIExecutionProfile) => void;
+  backspaceMode: string;
+  setBackspaceMode: (v: string) => void;
 }
 
 function RequiredMark() {
@@ -25,6 +34,8 @@ export function TelnetForm({
   setPort,
   aiExecutionProfile,
   setAiExecutionProfile,
+  backspaceMode,
+  setBackspaceMode,
 }: TelnetFormProps) {
   const { t } = useTranslation();
   return (
@@ -57,10 +68,21 @@ export function TelnetForm({
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
-        <AiExecutionProfileField
-          value={aiExecutionProfile}
-          onChange={setAiExecutionProfile}
-        />
+        <div className="min-w-[10rem] flex-[1_1_10rem]">
+          <Label className="text-xs font-medium text-foreground/80">
+            {t("dialog.backspaceMode", "Backspace Mode")}
+          </Label>
+          <Select value={backspaceMode} onValueChange={setBackspaceMode}>
+            <SelectTrigger className="mt-1 h-8 text-xs font-normal">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ctrl_h">{t("dialog.backspaceCtrlH", "Ctrl+H (BS)")}</SelectItem>
+              <SelectItem value="del">{t("dialog.backspaceDel", "DEL (0x7F)")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <AiExecutionProfileField value={aiExecutionProfile} onChange={setAiExecutionProfile} />
       </div>
     </div>
   );

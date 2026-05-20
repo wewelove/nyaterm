@@ -32,6 +32,8 @@ interface SerialFormProps {
   setStopBits: (v: string) => void;
   aiExecutionProfile: AIExecutionProfile;
   setAiExecutionProfile: (v: AIExecutionProfile) => void;
+  backspaceMode: string;
+  setBackspaceMode: (v: string) => void;
 }
 
 function RequiredMark() {
@@ -55,6 +57,8 @@ export function SerialForm({
   setStopBits,
   aiExecutionProfile,
   setAiExecutionProfile,
+  backspaceMode,
+  setBackspaceMode,
 }: SerialFormProps) {
   const { t } = useTranslation();
 
@@ -180,10 +184,21 @@ export function SerialForm({
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
-        <AiExecutionProfileField
-          value={aiExecutionProfile}
-          onChange={setAiExecutionProfile}
-        />
+        <div className="min-w-[10rem] flex-[1_1_10rem]">
+          <Label className="text-xs font-medium text-foreground/80">
+            {t("dialog.backspaceMode", "Backspace Mode")}
+          </Label>
+          <Select value={backspaceMode} onValueChange={setBackspaceMode}>
+            <SelectTrigger className="mt-1 h-8 text-xs font-normal">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ctrl_h">{t("dialog.backspaceCtrlH", "Ctrl+H (BS)")}</SelectItem>
+              <SelectItem value="del">{t("dialog.backspaceDel", "DEL (0x7F)")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <AiExecutionProfileField value={aiExecutionProfile} onChange={setAiExecutionProfile} />
       </div>
     </div>
   );

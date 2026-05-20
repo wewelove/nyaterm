@@ -159,6 +159,7 @@ mod tests {
                 host: "example.com".to_string(),
                 port: 23,
                 ai_execution_profile: AiExecutionProfile::Auto,
+                backspace_mode: "del".to_string(),
             },
             group_id: None,
             description: None,

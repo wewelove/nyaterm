@@ -56,14 +56,21 @@ pub async fn create_telnet_session(
     port: Option<u16>,
     name: Option<String>,
 ) -> AppResult<String> {
-    let (h, p, n, ai_execution_profile) = if let Some(ref cid) = connection_id {
+    let (h, p, n, ai_execution_profile, bs_mode) = if let Some(ref cid) = connection_id {
         let conn = config::load_connection_by_id(&app, cid)?;
         match conn.config {
             config::ConnectionType::Telnet {
                 host: ref ch,
                 port: cp,
                 ai_execution_profile,
-            } => (ch.clone(), cp, conn.name.clone(), ai_execution_profile),
+                backspace_mode,
+            } => (
+                ch.clone(),
+                cp,
+                conn.name.clone(),
+                ai_execution_profile,
+                backspace_mode,
+            ),
             _ => {
                 return Err(AppError::Config(
                     "Connection is not a Telnet connection".to_string(),
@@ -76,6 +83,7 @@ pub async fn create_telnet_session(
             port.unwrap_or(23),
             name.unwrap_or_else(|| "Telnet".to_string()),
             config::AiExecutionProfile::Auto,
+            "del".to_string(),
         )
     };
     core::create_telnet_session(
@@ -86,6 +94,7 @@ pub async fn create_telnet_session(
         connection_id,
         n,
         ai_execution_profile,
+        bs_mode,
     )
     .await
 }
@@ -112,6 +121,7 @@ pub async fn create_serial_session(
                 parity,
                 stop_bits,
                 ai_execution_profile,
+                backspace_mode,
             } => core::SerialConfig {
                 port_name,
                 baud_rate,
@@ -120,6 +130,7 @@ pub async fn create_serial_session(
                 stop_bits,
                 name: conn.name,
                 ai_execution_profile,
+                backspace_mode,
             },
             _ => {
                 return Err(AppError::Config(
@@ -137,6 +148,7 @@ pub async fn create_serial_session(
             stop_bits: stop_bits.unwrap_or_else(|| "1".to_string()),
             name: name.unwrap_or_else(|| "Serial".to_string()),
             ai_execution_profile: config::AiExecutionProfile::Auto,
+            backspace_mode: "ctrl_h".to_string(),
         }
     };
     core::create_serial_session(app, state.inner().clone(), cfg, connection_id).await

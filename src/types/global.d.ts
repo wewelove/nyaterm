@@ -179,6 +179,8 @@ export interface SavedConnection {
   data_bits?: number;
   parity?: string;
   stop_bits?: string;
+  /** Backspace key mode for serial/telnet connections ("ctrl_h" or "del"). */
+  backspace_mode?: string;
 }
 
 /** Stored OTP entry for two-factor authentication. */
@@ -683,7 +685,13 @@ export interface AgentStepPayload {
 
 export type AiCaptureEvent =
   | { type: "commandStart"; command: string; stepIndex: number }
-  | { type: "commandEnd"; output: string; exitCode: number | null; durationMs: number; truncated: boolean };
+  | {
+      type: "commandEnd";
+      output: string;
+      exitCode: number | null;
+      durationMs: number;
+      truncated: boolean;
+    };
 
 export interface TunnelConfig {
   id: string;

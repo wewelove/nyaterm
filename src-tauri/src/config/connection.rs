@@ -46,6 +46,8 @@ pub enum ConnectionType {
         port: u16,
         #[serde(default)]
         ai_execution_profile: AiExecutionProfile,
+        #[serde(default = "default_backspace_mode_telnet")]
+        backspace_mode: String,
     },
     Serial {
         port_name: String,
@@ -59,6 +61,8 @@ pub enum ConnectionType {
         stop_bits: String,
         #[serde(default)]
         ai_execution_profile: AiExecutionProfile,
+        #[serde(default = "default_backspace_mode_serial")]
+        backspace_mode: String,
     },
 }
 
@@ -82,6 +86,12 @@ fn default_parity() -> String {
 }
 fn default_stop_bits() -> String {
     "1".to_string()
+}
+fn default_backspace_mode_serial() -> String {
+    "ctrl_h".to_string()
+}
+fn default_backspace_mode_telnet() -> String {
+    "del".to_string()
 }
 
 // ── Auth block ──────────────────────────────────────────────────────────────
