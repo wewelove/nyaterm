@@ -404,6 +404,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const appSettingsRef = useRef<AppSettings>(DEFAULT_APP_SETTINGS);
   const appSettingsLoaded = useRef(false);
   const appSettingsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uiSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Data State
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
@@ -503,15 +504,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Convenience helper to update just the UI config portion
+  // Convenience helper to update just the UI config portion via lightweight path
   const updateUi = useCallback(
     (updates: Partial<UiConfig> | ((prev: UiConfig) => Partial<UiConfig>)) => {
-      updateAppSettings((prev) => {
+      setAppSettings((prev) => {
         const nextUpdates = typeof updates === "function" ? updates(prev.ui) : updates;
-        return { ui: { ...prev.ui, ...nextUpdates } };
+        const nextUi = { ...prev.ui, ...nextUpdates };
+        const next = { ...prev, ui: nextUi };
+        appSettingsRef.current = next;
+        if (appSettingsLoaded.current) {
+          if (uiSaveTimerRef.current) clearTimeout(uiSaveTimerRef.current);
+          uiSaveTimerRef.current = setTimeout(() => {
+            invoke("save_app_ui_settings", { ui: nextUi }).catch((e) =>
+              logger.error({
+                domain: "settings.persistence",
+                event: "ui_settings.save_failed",
+                message: "Failed to save UI settings",
+                error: e,
+              }),
+            );
+          }, 500);
+        }
+        return next;
       });
     },
-    [updateAppSettings],
+    [],
   );
 
   const recordRecentConnection = useCallback(
@@ -565,12 +582,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (!options?.immediatePersist) return;
 
-      const nextSettings: AppSettings = {
-        ...appSettingsRef.current,
-        ui: { ...appSettingsRef.current.ui, open_tabs: openTabs },
-      };
-      appSettingsRef.current = nextSettings;
-      await invoke("save_app_settings", { settings: nextSettings });
+      const nextUi = { ...appSettingsRef.current.ui, open_tabs: openTabs };
+      appSettingsRef.current = { ...appSettingsRef.current, ui: nextUi };
+      await invoke("save_app_ui_settings", { ui: nextUi });
     },
     [updateUi],
   );
@@ -902,15 +916,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const persistTabsNow = useCallback(async () => {
     if (!hasRestored.current || !appSettingsRef.current.general.startup_restore) return;
-    const nextSettings: AppSettings = {
-      ...appSettingsRef.current,
-      ui: {
-        ...appSettingsRef.current.ui,
-        open_tabs: serializeTabsForPersistence(tabsRef.current),
-      },
+    const nextUi = {
+      ...appSettingsRef.current.ui,
+      open_tabs: serializeTabsForPersistence(tabsRef.current),
     };
-    appSettingsRef.current = nextSettings;
-    await invoke("save_app_settings", { settings: nextSettings });
+    appSettingsRef.current = { ...appSettingsRef.current, ui: nextUi };
+    await invoke("save_app_ui_settings", { ui: nextUi });
   }, []);
 
   // 5. Startup Restore Logic

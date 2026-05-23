@@ -203,9 +203,12 @@ export function useCommandHistory(
     triggerSearch();
   }, [canShowSuggestions, dismissSuggestions, maxCommandLength, minCommandLength, triggerSearch]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: inputStateRef is a stable ref object; .current is read inside the event callback.
   useEffect(() => {
     const refreshSuggestions = () => {
       if (!enabledRef.current) return;
+      const tracked = getTrackedCommand(inputStateRef.current).trim();
+      if (!showSuggestionsRef.current && !tracked) return;
       if (!canShowSuggestions()) return;
       triggerSearch();
     };
