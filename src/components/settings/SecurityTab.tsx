@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { SelectItem } from "@/components/ui/select";
 import { useApp } from "@/context/AppContext";
-import { invoke } from "@/lib/invoke";
 import { NumberInput } from "../ui/number-input";
 import {
   SettingInput,
@@ -15,54 +15,66 @@ import {
 export function SecurityTab() {
   const { t } = useTranslation();
   const { appSettings, updateAppSettings } = useApp();
-  const [masterPasswordValue, setMasterPasswordValue] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
 
-  useEffect(() => {
-    if (!appSettings.security.master_password) {
-      setMasterPasswordValue("");
+  const isSet = appSettings.security.master_password === "__SET__";
+
+  const handlePasswordChange = (val: string) => {
+    setNewPassword(val);
+    updateAppSettings({
+      security: { ...appSettings.security, master_password: val || "__SET__" },
+    });
+  };
+
+  const handleClear = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
       return;
     }
-
-    if (appSettings.security.master_password !== "__SET__") {
-      setMasterPasswordValue(appSettings.security.master_password);
-      return;
-    }
-
-    let cancelled = false;
-    invoke<string | null>("get_master_password_value")
-      .then((value) => {
-        if (!cancelled) {
-          setMasterPasswordValue(value ?? "");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMasterPasswordValue("");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appSettings.security.master_password]);
+    setConfirmClear(false);
+    setNewPassword("");
+    updateAppSettings({
+      security: { ...appSettings.security, master_password: undefined },
+    });
+  };
 
   return (
     <div className="space-y-5">
       <SettingSection title={t("settings.masterPasswordSection")}>
+        {isSet && (
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              {t("settings.masterPasswordIsSet")}
+            </span>
+            <Button
+              variant={confirmClear ? "destructive" : "outline"}
+              size="sm"
+              onClick={handleClear}
+            >
+              {confirmClear
+                ? t("settings.masterPasswordConfirmClear")
+                : t("settings.masterPasswordClear")}
+            </Button>
+            {confirmClear && (
+              <Button variant="ghost" size="sm" onClick={() => setConfirmClear(false)}>
+                {t("common.cancel")}
+              </Button>
+            )}
+          </div>
+        )}
         <SettingInput
-          label={t("settings.masterPassword")}
+          label={isSet ? t("settings.masterPasswordNew") : t("settings.masterPassword")}
           desc={t("settings.masterPasswordDesc")}
           type="password"
           controlClassName="max-w-lg"
-          placeholder={t("settings.masterPasswordPlaceholder")}
-          value={masterPasswordValue}
-          onChange={(e) => {
-            const val = e.target.value;
-            setMasterPasswordValue(val);
-            updateAppSettings({
-              security: { ...appSettings.security, master_password: val || undefined },
-            });
-          }}
+          placeholder={
+            isSet
+              ? t("settings.masterPasswordNewPlaceholder")
+              : t("settings.masterPasswordPlaceholder")
+          }
+          value={newPassword}
+          onChange={(e) => handlePasswordChange(e.target.value)}
         />
       </SettingSection>
 
