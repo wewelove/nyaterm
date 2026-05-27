@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BiImport } from "react-icons/bi";
 import { useTranslation } from "react-i18next";
 import {
   MdAdd,
@@ -8,7 +9,6 @@ import {
   MdClose,
   MdDelete,
   MdEdit,
-  MdFileUpload,
   MdFilterList,
   MdKeyboardReturn,
   MdPushPin,
@@ -468,7 +468,7 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
                     aria-label={t("quickCommands.import")}
                     onClick={() => setImportDialogOpen(true)}
                   >
-                    <MdFileUpload className="text-[1.05rem]" />
+                    <BiImport className="text-[1.05rem]" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top">{t("quickCommands.import")}</TooltipContent>
