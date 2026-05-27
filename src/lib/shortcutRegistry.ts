@@ -198,6 +198,39 @@ export function formatKeysForDisplay(keys: string): string {
     .join("+");
 }
 
+/** Format the tab index shortcut using only the configurable prefix, since the label supplies 1-9. */
+export function formatIndexedKeysForDisplay(keys: string): string {
+  const first = keys.split(",")[0].trim();
+  const prefix = first.replace(/\+(?:1-9|[1-9])$/i, "");
+  return formatKeysForDisplay(prefix || first);
+}
+
+/** Expand a tab index shortcut template into concrete key combinations for a numbered tab. */
+export function resolveIndexedKeys(keys: string, tabNumber: number): string {
+  const digit = String(tabNumber);
+  return keys
+    .split(",")
+    .map((combo) => {
+      const trimmed = combo.trim();
+      if (/(?:1-9|[1-9])$/i.test(trimmed)) {
+        return trimmed.replace(/(?:1-9|[1-9])$/i, digit);
+      }
+      if (isModifierOnlyCombo(trimmed)) {
+        return `${trimmed}+${digit}`;
+      }
+      return tabNumber === 1 ? trimmed : "";
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function isModifierOnlyCombo(combo: string): boolean {
+  return combo
+    .split("+")
+    .map((key) => key.trim().toLowerCase())
+    .every((key) => ["ctrl", "meta", "shift", "alt"].includes(key));
+}
+
 function formatSingleKey(key: string): string {
   const lower = key.toLowerCase();
   if (lower === "ctrl" || lower === "meta") return MOD;
@@ -239,6 +272,21 @@ export function keyEventToHotkeyString(e: KeyboardEvent): string {
     const ctrlCombo = ["ctrl", ...parts].join("+");
     const metaCombo = ["meta", ...parts].join("+");
     return `${ctrlCombo}, ${metaCombo}`;
+  }
+  return parts.join("+");
+}
+
+/** Capture a numbered-tab shortcut prefix, including a modifier key pressed on its own. */
+export function keyEventToIndexedHotkeyString(e: KeyboardEvent): string {
+  const combo = keyEventToHotkeyString(e);
+  if (combo) return combo;
+  if (!/^(Control|Meta|Alt|Shift)(Left|Right)?$/.test(e.code)) return "";
+
+  const parts: string[] = [];
+  if (e.shiftKey) parts.push("shift");
+  if (e.altKey) parts.push("alt");
+  if (e.ctrlKey || e.metaKey) {
+    return `${["ctrl", ...parts].join("+")}, ${["meta", ...parts].join("+")}`;
   }
   return parts.join("+");
 }

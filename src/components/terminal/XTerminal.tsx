@@ -30,7 +30,7 @@ import {
   sendSessionInput,
   sendSessionInputWithSync,
 } from "@/lib/sessionInput";
-import { matchesKeyEvent } from "@/lib/shortcutRegistry";
+import { matchesKeyEvent, resolveIndexedKeys } from "@/lib/shortcutRegistry";
 import { registerTerminalContextProvider } from "@/lib/terminalContext";
 import {
   applyTerminalInputData,
@@ -698,9 +698,9 @@ export default function XTerminal({
 
     let lastSelection = "";
 
-    const kb = terminalAppSettings.keybindings;
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
+      const kb = terminalAppSettingsRef.current.keybindings;
 
       if (matchesKeyEvent(resolveShortcutKeys("terminal.copy", kb), e)) {
         e.preventDefault();
@@ -753,16 +753,16 @@ export default function XTerminal({
         "view.openSettings",
         "terminal.manageSyncGroups",
         "special.lockScreen",
-        "tab.switchTo",
       ];
       for (const sid of swallowIds) {
-        if (sid === "tab.switchTo") {
-          if ((e.ctrlKey || e.metaKey) && !e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
-            return false;
-          }
-          continue;
-        }
         if (matchesKeyEvent(resolveShortcutKeys(sid, kb), e)) {
+          return false;
+        }
+      }
+      for (let tabNumber = 1; tabNumber <= 9; tabNumber += 1) {
+        if (
+          matchesKeyEvent(resolveIndexedKeys(resolveShortcutKeys("tab.switchTo", kb), tabNumber), e)
+        ) {
           return false;
         }
       }

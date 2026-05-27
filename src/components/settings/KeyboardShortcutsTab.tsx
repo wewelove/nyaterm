@@ -4,8 +4,10 @@ import { MdEdit, MdRefresh, MdSearch } from "react-icons/md";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useApp } from "@/context/AppContext";
 import {
+  formatIndexedKeysForDisplay,
   formatKeysForDisplay,
   keyEventToHotkeyString,
+  keyEventToIndexedHotkeyString,
   resolveKeys,
   SHORTCUT_CATEGORIES,
   SHORTCUT_REGISTRY,
@@ -29,7 +31,10 @@ export function KeyboardShortcutsTab() {
       return {
         ...def,
         keys,
-        displayKeys: formatKeysForDisplay(keys),
+        displayKeys:
+          def.id === "tab.switchTo"
+            ? formatIndexedKeysForDisplay(keys)
+            : formatKeysForDisplay(keys),
         isCustom: def.id in overrides,
       };
     });
@@ -146,7 +151,10 @@ export function KeyboardShortcutsTab() {
         return;
       }
 
-      const combo = keyEventToHotkeyString(e);
+      const combo =
+        recordingId === "tab.switchTo"
+          ? keyEventToIndexedHotkeyString(e)
+          : keyEventToHotkeyString(e);
       if (combo) {
         setPendingKeys(combo);
       }
@@ -257,7 +265,11 @@ function ShortcutRow({
   recorderRef,
   t,
 }: ShortcutRowProps) {
-  const keysToDisplay = pendingKeys ? formatKeysForDisplay(pendingKeys) : shortcut.displayKeys;
+  const keysToDisplay = pendingKeys
+    ? shortcut.id === "tab.switchTo"
+      ? formatIndexedKeysForDisplay(pendingKeys)
+      : formatKeysForDisplay(pendingKeys)
+    : shortcut.displayKeys;
   const keyParts = keysToDisplay.split("+").filter(Boolean);
 
   return (

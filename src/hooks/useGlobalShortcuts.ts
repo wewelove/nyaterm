@@ -1,6 +1,6 @@
 import { useHotkeys } from "react-hotkeys-hook";
 import { resolveShortcutKeys } from "@/hooks/useShortcutMap";
-import { MOD } from "@/lib/shortcutRegistry";
+import { MOD, resolveIndexedKeys } from "@/lib/shortcutRegistry";
 
 export { MOD };
 
@@ -36,15 +36,16 @@ export function useGlobalShortcuts(
   useHotkeys(k("tab.next"), cb.onNextTab, HOTKEY_OPTIONS);
   useHotkeys(k("tab.prev"), cb.onPrevTab, HOTKEY_OPTIONS);
 
-  useHotkeys("ctrl+1, meta+1", () => cb.onSwitchTab(0), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+2, meta+2", () => cb.onSwitchTab(1), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+3, meta+3", () => cb.onSwitchTab(2), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+4, meta+4", () => cb.onSwitchTab(3), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+5, meta+5", () => cb.onSwitchTab(4), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+6, meta+6", () => cb.onSwitchTab(5), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+7, meta+7", () => cb.onSwitchTab(6), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+8, meta+8", () => cb.onSwitchTab(7), HOTKEY_OPTIONS);
-  useHotkeys("ctrl+9, meta+9", () => cb.onSwitchTab(-1), HOTKEY_OPTIONS);
+  const switchTabKeys = k("tab.switchTo");
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 1), () => cb.onSwitchTab(0), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 2), () => cb.onSwitchTab(1), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 3), () => cb.onSwitchTab(2), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 4), () => cb.onSwitchTab(3), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 5), () => cb.onSwitchTab(4), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 6), () => cb.onSwitchTab(5), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 7), () => cb.onSwitchTab(6), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 8), () => cb.onSwitchTab(7), HOTKEY_OPTIONS);
+  useHotkeys(resolveIndexedKeys(switchTabKeys, 9), () => cb.onSwitchTab(-1), HOTKEY_OPTIONS);
 
   useHotkeys(k("view.toggleLeftSidebar"), cb.onToggleLeftSidebar, HOTKEY_OPTIONS);
   useHotkeys(k("view.toggleRightSidebar"), cb.onToggleRightSidebar, HOTKEY_OPTIONS);

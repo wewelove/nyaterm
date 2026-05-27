@@ -785,11 +785,15 @@ function App() {
 
   const handleSwitchTab = useCallback(
     (index: number) => {
-      if (tabs.length === 0) return;
-      const target = index === -1 ? tabs[tabs.length - 1] : tabs[index];
-      if (target) setActiveTabId(target.id);
+      const leaf =
+        terminalWindows && activeTabId
+          ? findTerminalWindowLeafByTabId(terminalWindows, activeTabId)
+          : null;
+      const tabIds = leaf?.tabIds ?? tabs.map((tab) => tab.id);
+      const targetTabId = index === -1 ? tabIds[tabIds.length - 1] : tabIds[index];
+      if (targetTabId) setActiveTabId(targetTabId);
     },
-    [tabs, setActiveTabId],
+    [activeTabId, setActiveTabId, tabs, terminalWindows],
   );
 
   const handleToggleLeftSidebar = useCallback(() => {

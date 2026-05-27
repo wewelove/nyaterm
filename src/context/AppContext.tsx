@@ -368,6 +368,9 @@ function preserveAppSettingsReferences(prev: AppSettings, next: AppSettings): Ap
     ? prev.cloud_sync
     : next.cloud_sync;
   const ui = areSettingsValuesEqual(prev.ui, next.ui) ? prev.ui : next.ui;
+  const keybindings = areSettingsValuesEqual(prev.keybindings, next.keybindings)
+    ? prev.keybindings
+    : next.keybindings;
 
   if (
     general === prev.general &&
@@ -382,7 +385,8 @@ function preserveAppSettingsReferences(prev: AppSettings, next: AppSettings): Ap
     diagnostics === prev.diagnostics &&
     ai === prev.ai &&
     cloudSync === prev.cloud_sync &&
-    ui === prev.ui
+    ui === prev.ui &&
+    keybindings === prev.keybindings
   ) {
     return prev;
   }
@@ -402,6 +406,7 @@ function preserveAppSettingsReferences(prev: AppSettings, next: AppSettings): Ap
     ai,
     cloud_sync: cloudSync,
     ui,
+    keybindings,
   };
 }
 
