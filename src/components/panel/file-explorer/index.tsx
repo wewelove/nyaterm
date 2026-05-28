@@ -424,7 +424,7 @@ function FileExplorer({
 }: FileExplorerProps) {
   const { t } = useTranslation();
   const { appSettings, updateUi } = useApp();
-  const { enqueueUploads } = useTransfer();
+  const { enqueueDownloads, enqueueUploads } = useTransfer();
   const canBrowseFiles = !!activeSessionId && activeSessionType === "SSH";
   const hasUnsupportedSession =
     !!activeSessionId && !!activeSessionType && activeSessionType !== "SSH";
@@ -1817,6 +1817,13 @@ function FileExplorer({
 
     try {
       const askEach = appSettings.transfer.ask_save_location;
+      const downloads: Array<{
+        sessionId: string;
+        fileName: string;
+        localPath: string;
+        remotePath: string;
+        kind: "file" | "directory";
+      }> = [];
 
       if (askEach) {
         for (const entry of entries) {
@@ -1824,21 +1831,26 @@ function FileExplorer({
             const localDir = await openDialog({ directory: true });
             if (!localDir || typeof localDir !== "string") continue;
             const localPath = await join(localDir, entry.name);
-            await invoke("download_remote_directory", {
+            downloads.push({
               sessionId: activeSessionId,
+              fileName: entry.name,
               remotePath: getEntryFullPath(entry),
               localPath,
+              kind: "directory",
             });
           } else {
             const localPath = await saveDialog({ defaultPath: entry.name });
             if (!localPath) continue;
-            await invoke("download_remote_file", {
+            downloads.push({
               sessionId: activeSessionId,
+              fileName: entry.name,
               remotePath: getEntryFullPath(entry),
               localPath,
+              kind: "file",
             });
           }
         }
+        enqueueDownloads(downloads);
         return;
       }
 
@@ -1846,20 +1858,15 @@ function FileExplorer({
 
       for (const entry of entries) {
         const localPath = await join(defaultDir, entry.name);
-        if (entry.is_dir) {
-          await invoke("download_remote_directory", {
-            sessionId: activeSessionId,
-            remotePath: getEntryFullPath(entry),
-            localPath,
-          });
-        } else {
-          await invoke("download_remote_file", {
-            sessionId: activeSessionId,
-            remotePath: getEntryFullPath(entry),
-            localPath,
-          });
-        }
+        downloads.push({
+          sessionId: activeSessionId,
+          fileName: entry.name,
+          remotePath: getEntryFullPath(entry),
+          localPath,
+          kind: entry.is_dir ? "directory" : "file",
+        });
       }
+      enqueueDownloads(downloads);
     } catch (e) {
       logger.error({
         domain: "transfer.lifecycle",

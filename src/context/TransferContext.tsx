@@ -31,6 +31,23 @@ export interface EnqueueUploadRequest {
   kind: TransferKind;
 }
 
+export interface EnqueueDownloadRequest {
+  sessionId: string;
+  fileName: string;
+  localPath: string;
+  remotePath: string;
+  kind: TransferKind;
+}
+
+interface QueuedTransferRequest {
+  sessionId: string;
+  fileName: string;
+  localPath: string;
+  remotePath: string;
+  kind: TransferKind;
+  direction: TransferDirection;
+}
+
 export interface TransferItem {
   id: string;
   sessionId: string;
@@ -61,6 +78,7 @@ interface TransferContextValue {
   cancelTransfer: (id: string) => Promise<void>;
   retryTransfer: (item: TransferItem) => Promise<void>;
   enqueueUploads: (uploads: EnqueueUploadRequest[]) => string[];
+  enqueueDownloads: (downloads: EnqueueDownloadRequest[]) => string[];
 }
 
 const TransferContext = createContext<TransferContextValue | null>(null);
@@ -95,8 +113,8 @@ export function TransferProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const [transferMap, setTransferMap] = useState<Map<string, TransferItem>>(() => new Map());
   const transferMapRef = useRef(transferMap);
-  const queuedUploadsRef = useRef<Map<string, EnqueueUploadRequest>>(new Map());
-  const activeQueuedUploadIdRef = useRef<string | null>(null);
+  const queuedTransfersRef = useRef<Map<string, QueuedTransferRequest>>(new Map());
+  const parkedTransferIdsRef = useRef<Set<string>>(new Set());
   const [queueRevision, setQueueRevision] = useState(0);
 
   const transfers = useMemo(() => Array.from(transferMap.values()), [transferMap]);
@@ -134,7 +152,9 @@ export function TransferProvider({ children }: { children: ReactNode }) {
             itemCountTotal: p.item_count_total,
             itemCountCompleted: p.item_count_completed,
             timestamp: existing?.timestamp ?? Date.now(),
-            queueState: queuedUploadsRef.current.has(p.id) ? "running" : undefined,
+            queueState:
+              existing?.queueState ??
+              (queuedTransfersRef.current.has(p.id) ? "running" : undefined),
           });
           return next;
         });
@@ -182,6 +202,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
             totalSize: p.total_size,
             itemCountTotal: p.item_count_total ?? existing.itemCountTotal,
             itemCountCompleted: p.item_count_completed ?? existing.itemCountCompleted,
+            queueState: undefined,
             error: undefined,
           };
         } else {
@@ -193,6 +214,8 @@ export function TransferProvider({ children }: { children: ReactNode }) {
             totalSize: p.total_size,
             itemCountTotal: p.item_count_total ?? existing.itemCountTotal,
             itemCountCompleted: p.item_count_completed ?? existing.itemCountCompleted,
+            queueState:
+              p.status === "completed" || p.status === "error" ? undefined : existing.queueState,
             error: p.error_msg,
           };
         }
@@ -200,6 +223,19 @@ export function TransferProvider({ children }: { children: ReactNode }) {
         next.set(p.id, updated);
         return next;
       });
+
+      if (
+        p.status === "paused" ||
+        p.status === "cancelled" ||
+        p.status === "completed" ||
+        p.status === "error"
+      ) {
+        if (p.status !== "paused") {
+          parkedTransferIdsRef.current.delete(p.id);
+          queuedTransfersRef.current.delete(p.id);
+        }
+        setQueueRevision((revision) => revision + 1);
+      }
 
       if (p.status === "completed" && p.direction === "download" && !p.parent_id) {
         toast.success(
@@ -220,24 +256,69 @@ export function TransferProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void queueRevision;
-    if (activeQueuedUploadIdRef.current) {
+    const hasRunningQueueTransfer = Array.from(transferMap.values()).some(
+      (transfer) => transfer.queueState === "running" && transfer.status === "transferring",
+    );
+    if (hasRunningQueueTransfer) {
       return;
     }
 
     const nextQueued = Array.from(transferMap.values())
-      .filter((transfer) => queuedUploadsRef.current.has(transfer.id))
+      .filter(
+        (transfer) =>
+          queuedTransfersRef.current.has(transfer.id) ||
+          parkedTransferIdsRef.current.has(transfer.id),
+      )
       .find((transfer) => transfer.status === "queued");
 
     if (!nextQueued) {
       return;
     }
 
-    const request = queuedUploadsRef.current.get(nextQueued.id);
+    if (parkedTransferIdsRef.current.has(nextQueued.id)) {
+      parkedTransferIdsRef.current.delete(nextQueued.id);
+      setTransferMap((prev) => {
+        const existing = prev.get(nextQueued.id);
+        if (!existing || existing.status !== "queued") {
+          return prev;
+        }
+        const next = new Map(prev);
+        next.set(nextQueued.id, {
+          ...existing,
+          status: "transferring",
+          queueState: "running",
+          error: undefined,
+        });
+        return next;
+      });
+
+      void invoke("resume_transfer", { transferId: nextQueued.id }).catch((error) => {
+        toast.error(String(error));
+        setTransferMap((prev) => {
+          const existing = prev.get(nextQueued.id);
+          if (!existing || existing.status === "completed" || existing.status === "cancelled") {
+            return prev;
+          }
+          const next = new Map(prev);
+          next.set(nextQueued.id, {
+            ...existing,
+            status: "error",
+            queueState: undefined,
+            error: String(error),
+          });
+          return next;
+        });
+        setQueueRevision((revision) => revision + 1);
+      });
+      return;
+    }
+
+    const request = queuedTransfersRef.current.get(nextQueued.id);
     if (!request) {
       return;
     }
 
-    activeQueuedUploadIdRef.current = nextQueued.id;
+    queuedTransfersRef.current.delete(nextQueued.id);
     setTransferMap((prev) => {
       const existing = prev.get(nextQueued.id);
       if (!existing || existing.status !== "queued") {
@@ -255,18 +336,32 @@ export function TransferProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
-        if (request.kind === "directory") {
+        if (request.direction === "upload" && request.kind === "directory") {
           await invoke("upload_local_directory", {
             sessionId: request.sessionId,
             localPath: request.localPath,
             remotePath: request.remotePath,
             transferId: nextQueued.id,
           });
-        } else {
+        } else if (request.direction === "upload") {
           await invoke("upload_local_file", {
             sessionId: request.sessionId,
             localPath: request.localPath,
             remotePath: request.remotePath,
+            transferId: nextQueued.id,
+          });
+        } else if (request.kind === "directory") {
+          await invoke("download_remote_directory", {
+            sessionId: request.sessionId,
+            remotePath: request.remotePath,
+            localPath: request.localPath,
+            transferId: nextQueued.id,
+          });
+        } else {
+          await invoke("download_remote_file", {
+            sessionId: request.sessionId,
+            remotePath: request.remotePath,
+            localPath: request.localPath,
             transferId: nextQueued.id,
           });
         }
@@ -291,8 +386,6 @@ export function TransferProvider({ children }: { children: ReactNode }) {
           return next;
         });
       } finally {
-        queuedUploadsRef.current.delete(nextQueued.id);
-        activeQueuedUploadIdRef.current = null;
         setQueueRevision((revision) => revision + 1);
       }
     })();
@@ -309,12 +402,19 @@ export function TransferProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearAll = useCallback(() => {
-    queuedUploadsRef.current.clear();
+    queuedTransfersRef.current.clear();
+    parkedTransferIdsRef.current.clear();
     setTransferMap(new Map());
   }, []);
 
   const removeTransfer = useCallback((id: string) => {
-    queuedUploadsRef.current.delete(id);
+    if (parkedTransferIdsRef.current.has(id)) {
+      parkedTransferIdsRef.current.delete(id);
+      void invoke("cancel_transfer", { transferId: id }).catch((error) => {
+        toast.error(String(error));
+      });
+    }
+    queuedTransfersRef.current.delete(id);
     setTransferMap((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Map(prev);
@@ -325,7 +425,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
 
   const pauseTransfer = useCallback(async (id: string) => {
     const existing = transferMapRef.current.get(id);
-    if (queuedUploadsRef.current.has(id) && existing?.status === "queued") {
+    if (queuedTransfersRef.current.has(id) && existing?.status === "queued") {
       setTransferMap((prev) => {
         const queued = prev.get(id);
         if (!queued || queued.status !== "queued") return prev;
@@ -333,6 +433,18 @@ export function TransferProvider({ children }: { children: ReactNode }) {
         next.set(id, { ...queued, status: "paused" });
         return next;
       });
+      return;
+    }
+
+    if (parkedTransferIdsRef.current.has(id) && existing?.status === "queued") {
+      setTransferMap((prev) => {
+        const queued = prev.get(id);
+        if (!queued || queued.status !== "queued") return prev;
+        const next = new Map(prev);
+        next.set(id, { ...queued, status: "paused", queueState: "running" });
+        return next;
+      });
+      setQueueRevision((revision) => revision + 1);
       return;
     }
 
@@ -345,16 +457,25 @@ export function TransferProvider({ children }: { children: ReactNode }) {
 
   const resumeTransfer = useCallback(async (id: string) => {
     const existing = transferMapRef.current.get(id);
-    if (
-      queuedUploadsRef.current.has(id) &&
-      activeQueuedUploadIdRef.current !== id &&
-      existing?.status === "paused"
-    ) {
+    if (queuedTransfersRef.current.has(id) && existing?.status === "paused") {
       setTransferMap((prev) => {
         const queued = prev.get(id);
         if (!queued || queued.status !== "paused") return prev;
         const next = new Map(prev);
         next.set(id, { ...queued, status: "queued" });
+        return next;
+      });
+      setQueueRevision((revision) => revision + 1);
+      return;
+    }
+
+    if (existing?.queueState === "running" && existing.status === "paused") {
+      parkedTransferIdsRef.current.add(id);
+      setTransferMap((prev) => {
+        const paused = prev.get(id);
+        if (!paused || paused.status !== "paused") return prev;
+        const next = new Map(prev);
+        next.set(id, { ...paused, status: "queued", queueState: "pending" });
         return next;
       });
       setQueueRevision((revision) => revision + 1);
@@ -370,14 +491,37 @@ export function TransferProvider({ children }: { children: ReactNode }) {
 
   const cancelTransfer = useCallback(async (id: string) => {
     const existing = transferMapRef.current.get(id);
-    if (queuedUploadsRef.current.has(id) && activeQueuedUploadIdRef.current !== id) {
-      queuedUploadsRef.current.delete(id);
+    if (queuedTransfersRef.current.has(id)) {
+      queuedTransfersRef.current.delete(id);
       setTransferMap((prev) => {
         const queued = prev.get(id);
         if (!queued || queued.status === "completed" || queued.status === "error") return prev;
         const next = new Map(prev);
         next.set(id, {
           ...queued,
+          status: "cancelled",
+          queueState: undefined,
+          error: undefined,
+        });
+        return next;
+      });
+      setQueueRevision((revision) => revision + 1);
+      return;
+    }
+
+    if (parkedTransferIdsRef.current.has(id)) {
+      parkedTransferIdsRef.current.delete(id);
+      try {
+        await invoke("cancel_transfer", { transferId: id });
+      } catch (error) {
+        toast.error(String(error));
+      }
+      setTransferMap((prev) => {
+        const parked = prev.get(id);
+        if (!parked || parked.status === "completed" || parked.status === "error") return prev;
+        const next = new Map(prev);
+        next.set(id, {
+          ...parked,
           status: "cancelled",
           queueState: undefined,
           error: undefined,
@@ -401,10 +545,12 @@ export function TransferProvider({ children }: { children: ReactNode }) {
         next.set(id, {
           ...existing,
           status: "cancelled",
+          queueState: undefined,
           error: undefined,
         });
         return next;
       });
+      setQueueRevision((revision) => revision + 1);
     } catch (error) {
       toast.error(String(error));
     }
@@ -433,12 +579,14 @@ export function TransferProvider({ children }: { children: ReactNode }) {
           sessionId: item.sessionId,
           remotePath: item.remotePath,
           localPath: item.localPath,
+          transferId: item.id,
         });
       } else {
         await invoke("download_remote_file", {
           sessionId: item.sessionId,
           remotePath: item.remotePath,
           localPath: item.localPath,
+          transferId: item.id,
         });
       }
     } catch (error) {
@@ -446,28 +594,29 @@ export function TransferProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const enqueueUploads = useCallback((uploads: EnqueueUploadRequest[]) => {
-    const normalizedUploads = uploads.filter(
-      (upload) => upload.sessionId && upload.localPath && upload.remotePath && upload.fileName,
+  const enqueueTransfers = useCallback((transfers: QueuedTransferRequest[]) => {
+    const normalizedTransfers = transfers.filter(
+      (transfer) =>
+        transfer.sessionId && transfer.localPath && transfer.remotePath && transfer.fileName,
     );
-    if (normalizedUploads.length === 0) {
+    if (normalizedTransfers.length === 0) {
       return [];
     }
 
-    const ids = normalizedUploads.map(() => createTransferId());
+    const ids = normalizedTransfers.map(() => createTransferId());
     setTransferMap((prev) => {
       const next = new Map(prev);
-      normalizedUploads.forEach((upload, index) => {
+      normalizedTransfers.forEach((transfer, index) => {
         const id = ids[index];
-        queuedUploadsRef.current.set(id, upload);
+        queuedTransfersRef.current.set(id, transfer);
         next.set(id, {
           id,
-          sessionId: upload.sessionId,
-          fileName: upload.fileName,
-          remotePath: upload.remotePath,
-          localPath: upload.localPath,
-          direction: "upload",
-          kind: upload.kind,
+          sessionId: transfer.sessionId,
+          fileName: transfer.fileName,
+          remotePath: transfer.remotePath,
+          localPath: transfer.localPath,
+          direction: transfer.direction,
+          kind: transfer.kind,
           status: "queued",
           size: 0,
           bytesTransferred: 0,
@@ -482,6 +631,20 @@ export function TransferProvider({ children }: { children: ReactNode }) {
     return ids;
   }, []);
 
+  const enqueueUploads = useCallback(
+    (uploads: EnqueueUploadRequest[]) =>
+      enqueueTransfers(uploads.map((upload) => ({ ...upload, direction: "upload" as const }))),
+    [enqueueTransfers],
+  );
+
+  const enqueueDownloads = useCallback(
+    (downloads: EnqueueDownloadRequest[]) =>
+      enqueueTransfers(
+        downloads.map((download) => ({ ...download, direction: "download" as const })),
+      ),
+    [enqueueTransfers],
+  );
+
   const contextValue = useMemo(
     () => ({
       transfers,
@@ -493,6 +656,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
       cancelTransfer,
       retryTransfer,
       enqueueUploads,
+      enqueueDownloads,
     }),
     [
       transfers,
@@ -504,6 +668,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
       cancelTransfer,
       retryTransfer,
       enqueueUploads,
+      enqueueDownloads,
     ],
   );
 

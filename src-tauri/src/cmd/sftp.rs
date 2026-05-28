@@ -46,6 +46,7 @@ pub async fn download_remote_file(
     session_id: String,
     remote_path: String,
     local_path: String,
+    transfer_id: Option<String>,
 ) -> AppResult<()> {
     sftp::download_remote_file(
         app,
@@ -53,6 +54,7 @@ pub async fn download_remote_file(
         &session_id,
         &remote_path,
         &local_path,
+        transfer_id,
     )
     .await
 }
@@ -143,6 +145,7 @@ pub async fn download_remote_directory(
     session_id: String,
     remote_path: String,
     local_path: String,
+    transfer_id: Option<String>,
 ) -> AppResult<()> {
     sftp::download_remote_directory(
         app,
@@ -150,6 +153,7 @@ pub async fn download_remote_directory(
         &session_id,
         &remote_path,
         &local_path,
+        transfer_id,
     )
     .await
 }

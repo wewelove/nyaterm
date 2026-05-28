@@ -312,6 +312,7 @@ pub async fn download_remote_file(
     session_id: &str,
     remote_path: &str,
     local_path: &str,
+    transfer_id: Option<String>,
 ) -> AppResult<()> {
     let auto_fs = get_or_create_auto_fs(&manager, session_id).await?;
     let transfer_settings = crate::config::load_app_settings(&app)
@@ -325,6 +326,7 @@ pub async fn download_remote_file(
         remote_path,
         local_path,
         &transfer_settings,
+        transfer_id,
     )
     .await
 }
@@ -490,11 +492,12 @@ pub async fn download_remote_directory(
     session_id: &str,
     remote_path: &str,
     local_path: &str,
+    transfer_id: Option<String>,
 ) -> AppResult<()> {
     let auto_fs = get_or_create_auto_fs(&manager, session_id).await?;
     let guard = auto_fs.backend().await?;
     let fs = guard.as_ref().unwrap();
-    fs.download_directory(&app, session_id, remote_path, local_path)
+    fs.download_directory(&app, session_id, remote_path, local_path, transfer_id)
         .await
 }
 

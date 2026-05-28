@@ -29,6 +29,7 @@ pub(crate) trait RemoteFs: Send + Sync {
         remote_path: &str,
         local_path: &str,
         transfer_settings: &crate::config::TransferSettings,
+        transfer_id: Option<String>,
     ) -> AppResult<()>;
 
     async fn upload_file(
@@ -47,6 +48,7 @@ pub(crate) trait RemoteFs: Send + Sync {
         session_id: &str,
         remote_path: &str,
         local_path: &str,
+        transfer_id: Option<String>,
     ) -> AppResult<()>;
 
     async fn upload_directory(

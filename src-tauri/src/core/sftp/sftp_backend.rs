@@ -830,6 +830,7 @@ impl RemoteFs for SftpBackend {
         remote_path: &str,
         local_path: &str,
         transfer_settings: &crate::config::TransferSettings,
+        transfer_id: Option<String>,
     ) -> AppResult<()> {
         let max_retries = transfer_settings.max_transfer_retries;
         let actual_local_path =
@@ -837,7 +838,9 @@ impl RemoteFs for SftpBackend {
                 Some(path) => path,
                 None => {
                     let file_name = remote_path.split('/').last().unwrap_or(remote_path);
-                    let transfer_id = uuid::Uuid::new_v4().to_string();
+                    let transfer_id = transfer_id
+                        .clone()
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                     remember_transfer_target_external(
                         transfer_id.clone(),
                         local_path.to_string(),
@@ -894,7 +897,7 @@ impl RemoteFs for SftpBackend {
                 &actual_local_path,
                 transfer_settings,
                 create_child_file_transfer_controller(
-                    None,
+                    transfer_id.clone(),
                     session_id,
                     file_name_from_path(remote_path),
                     remote_path,
@@ -1024,10 +1027,11 @@ impl RemoteFs for SftpBackend {
         session_id: &str,
         remote_path: &str,
         local_path: &str,
+        transfer_id: Option<String>,
     ) -> AppResult<()> {
         let total_files = self.count_remote_files(remote_path).await?;
         let directory_controller = create_directory_transfer_controller(
-            None,
+            transfer_id,
             session_id,
             file_name_from_path(remote_path),
             remote_path,
