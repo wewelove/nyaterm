@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
+import { ActionButton, ActionFooter } from "@/components/ui/action-footer";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -416,14 +415,14 @@ export function TunnelDialog({
           ) : null}
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
+        <ActionFooter className="-mx-6 -mb-6 mt-2 rounded-b-lg">
+          <ActionButton variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             {t("common.cancel")}
-          </Button>
-          <Button onClick={handleSubmit} disabled={saving}>
+          </ActionButton>
+          <ActionButton onClick={handleSubmit} disabled={saving}>
             {saving ? t("common.saving") : t("common.save")}
-          </Button>
-        </DialogFooter>
+          </ActionButton>
+        </ActionFooter>
       </DialogContent>
     </Dialog>
   );

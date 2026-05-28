@@ -15,6 +15,7 @@ import { LocalTerminal } from "@/components/sessions/LocalTerminal";
 import { SerialForm } from "@/components/sessions/SerialForm";
 import { SshForm } from "@/components/sessions/SshForm";
 import { TelnetForm } from "@/components/sessions/TelnetForm";
+import { ActionButton, ActionFooter } from "@/components/ui/action-footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -814,20 +815,18 @@ export default function NewSessionPage() {
       </Tabs>
 
       {/* Footer */}
-      <div className="flex shrink-0 flex-row gap-2 border-t px-5 py-3 justify-end items-center">
-        <Button variant="ghost" size="sm" className="text-xs px-4" onClick={handleClose}>
+      <ActionFooter>
+        <ActionButton variant="outline" onClick={handleClose}>
           {t("dialog.cancel")}
-        </Button>
-        <Button
-          size="sm"
-          className="text-xs px-4"
+        </ActionButton>
+        <ActionButton
           onClick={handleSave}
           disabled={saveDisabled}
           title={validationError || undefined}
         >
           {connecting ? t("dialog.saving") : t("dialog.save")}
-        </Button>
-      </div>
+        </ActionButton>
+      </ActionFooter>
     </div>
   );
 }
