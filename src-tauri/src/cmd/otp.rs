@@ -17,6 +17,13 @@ pub struct OtpCodeResult {
     pub remaining_seconds: u64,
 }
 
+pub(crate) struct TotpCodeResult {
+    pub code: String,
+    pub remaining_seconds: u64,
+    pub time_step: u64,
+    pub period: u64,
+}
+
 #[tauri::command]
 pub fn get_otp_entries(app: tauri::AppHandle) -> AppResult<Vec<OtpEntry>> {
     let mut cfg = config::load_otp_entries(&app)?;
@@ -169,29 +176,68 @@ pub(crate) fn generate_otp_for_entry(app: &tauri::AppHandle, id: &str) -> AppRes
             })
         }
         _ => {
-            let period = if entry.period > 0 { entry.period } else { 30 };
-            let totp = nyaterm_otp::Totp::new(
-                alg,
-                entry.issuer.clone(),
-                entry.username.clone(),
-                entry.digits,
-                period,
-                secret,
-            );
-
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("system clock before UNIX epoch")
                 .as_secs();
-
-            let raw = totp.generate_at(now);
-            let code = format!("{:0>width$}", raw, width = entry.digits as usize);
-            let remaining = period - (now % period);
-
+            let result = generate_totp_code(&entry, secret, alg, now);
             Ok(OtpCodeResult {
-                code,
-                remaining_seconds: remaining,
+                code: result.code,
+                remaining_seconds: result.remaining_seconds,
             })
         }
+    }
+}
+
+pub(crate) fn generate_totp_code_for_entry_at(
+    app: &tauri::AppHandle,
+    id: &str,
+    now: u64,
+) -> AppResult<Option<TotpCodeResult>> {
+    let entry = config::load_otp_entry_by_id(app, id)?;
+    if entry.otp_type.as_str() != "totp" {
+        return Ok(None);
+    }
+
+    let secret_str = entry
+        .secret
+        .as_deref()
+        .ok_or_else(|| crate::error::AppError::Config("OTP entry has no secret".to_string()))?;
+
+    let alg = match entry.algorithm.as_str() {
+        "SHA256" => nyaterm_otp::Algorithm::SHA256,
+        "SHA512" => nyaterm_otp::Algorithm::SHA512,
+        _ => nyaterm_otp::Algorithm::SHA1,
+    };
+
+    let secret = nyaterm_otp::Secret::from_base32(secret_str)
+        .map_err(|e| crate::error::AppError::Config(format!("Invalid base32 secret: {e:?}")))?;
+
+    Ok(Some(generate_totp_code(&entry, secret, alg, now)))
+}
+
+fn generate_totp_code(
+    entry: &OtpEntry,
+    secret: nyaterm_otp::Secret,
+    alg: nyaterm_otp::Algorithm,
+    now: u64,
+) -> TotpCodeResult {
+    let period = if entry.period > 0 { entry.period } else { 30 };
+    let totp = nyaterm_otp::Totp::new(
+        alg,
+        entry.issuer.clone(),
+        entry.username.clone(),
+        entry.digits,
+        period,
+        secret,
+    );
+    let raw = totp.generate_at(now);
+    let code = format!("{:0>width$}", raw, width = entry.digits as usize);
+
+    TotpCodeResult {
+        code,
+        remaining_seconds: period - (now % period),
+        time_step: now / period,
+        period,
     }
 }

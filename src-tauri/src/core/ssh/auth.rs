@@ -1,14 +1,14 @@
 use super::client::{SshAuth, SshConfig, SshHandler};
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
-use russh::MethodKind;
 use russh::client::{self, KeyboardInteractiveAuthResponse};
+use russh::MethodKind;
 use serde::Serialize;
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
 /// Manages pending keyboard-interactive auth requests awaiting user input from the frontend.
 pub struct PendingAuthManager {
@@ -148,20 +148,7 @@ fn resolve_auth(app: &AppHandle, conn: &crate::config::SavedConnection) -> AppRe
     match conn_auth.mode.as_str() {
         "none" => Ok(SshAuth::None),
         "password" => {
-            if let Some(ref ciphertext) = conn_auth.password {
-                let password = crate::utils::crypto::decrypt(ciphertext).map_err(|e| {
-                    AppError::Auth(format!("Failed to decrypt inline password: {e}"))
-                })?;
-                return Ok(SshAuth::Password { password });
-            }
-
-            let Some(pw_id) = conn_auth.password_id.as_deref() else {
-                return Ok(SshAuth::None);
-            };
-            let pw_entry = crate::config::load_password_by_id(app, pw_id)?;
-            let password = pw_entry
-                .password
-                .ok_or_else(|| AppError::Auth("No stored password".to_string()))?;
+            let password = resolve_password_material(Some(app), conn_auth)?;
             Ok(SshAuth::Password { password })
         }
         "key" => {
@@ -178,6 +165,28 @@ fn resolve_auth(app: &AppHandle, conn: &crate::config::SavedConnection) -> AppRe
         }
         other => Err(AppError::Auth(format!("Unknown auth type: {}", other))),
     }
+}
+
+fn resolve_password_material(
+    app: Option<&AppHandle>,
+    conn_auth: &crate::config::ConnectionAuth,
+) -> AppResult<String> {
+    if let Some(ref ciphertext) = conn_auth.password {
+        return crate::utils::crypto::decrypt(ciphertext)
+            .map_err(|e| AppError::Auth(format!("Failed to decrypt inline password: {e}")));
+    }
+
+    let Some(pw_id) = conn_auth.password_id.as_deref().filter(|id| !id.is_empty()) else {
+        return Err(AppError::Auth(
+            "No password for this connection".to_string(),
+        ));
+    };
+
+    let app = app.ok_or_else(|| AppError::Auth("No password for this connection".to_string()))?;
+    let pw_entry = crate::config::load_password_by_id(app, pw_id)?;
+    pw_entry
+        .password
+        .ok_or_else(|| AppError::Auth("No stored password".to_string()))
 }
 
 fn resolve_proxy_jump(
@@ -404,6 +413,65 @@ struct OtpAutoFillInfo {
     auto_fill: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TotpUseCandidate {
+    otp_id: String,
+    code: String,
+    time_step: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct UsedTotpCode {
+    code: String,
+    time_step: u64,
+}
+
+struct PreparedOtpResponses {
+    responses: Vec<String>,
+    used_totp: Option<TotpUseCandidate>,
+}
+
+static USED_TOTP_CODES: OnceLock<StdMutex<HashMap<String, UsedTotpCode>>> = OnceLock::new();
+
+fn used_totp_codes() -> &'static StdMutex<HashMap<String, UsedTotpCode>> {
+    USED_TOTP_CODES.get_or_init(|| StdMutex::new(HashMap::new()))
+}
+
+fn unix_seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before UNIX epoch")
+        .as_secs()
+}
+
+fn seconds_until_next_totp_step(now: u64, period: u64) -> u64 {
+    let period = period.max(1);
+    let remaining = period - (now % period);
+    remaining.max(1)
+}
+
+fn is_totp_code_reused(candidate: &TotpUseCandidate) -> bool {
+    let used = used_totp_codes()
+        .lock()
+        .expect("used TOTP code cache poisoned");
+    used.get(&candidate.otp_id).is_some_and(|record| {
+        record.code == candidate.code && record.time_step == candidate.time_step
+    })
+}
+
+fn record_totp_code_use(candidate: TotpUseCandidate) {
+    let mut used = used_totp_codes()
+        .lock()
+        .expect("used TOTP code cache poisoned");
+    used.insert(
+        candidate.otp_id,
+        UsedTotpCode {
+            code: candidate.code,
+            time_step: candidate.time_step,
+        },
+    );
+}
+
 #[derive(Debug, Clone, Copy)]
 enum KeyboardInteractiveMode<'a> {
     AdditionalFactor,
@@ -433,6 +501,147 @@ fn resolve_otp_info(app: &AppHandle, connection_id: &str) -> Option<OtpAutoFillI
     Some(OtpAutoFillInfo {
         otp_id,
         auto_fill: auth.auto_fill_otp,
+    })
+}
+
+async fn wait_for_next_totp_code(
+    connection_id: Option<&str>,
+    otp_id: &str,
+    code: &crate::cmd::otp::TotpCodeResult,
+) {
+    log_structured(
+        StructuredLogLevel::Info,
+        "security.flow",
+        "otp.reuse_wait",
+        "Waiting for next TOTP code before submitting keyboard-interactive response",
+        connection_id,
+        None,
+        Some(json!({
+            "otp_entry_id": otp_id,
+            "time_step": code.time_step,
+            "wait_seconds": code.remaining_seconds,
+        })),
+        None,
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(
+        seconds_until_next_totp_step(unix_seconds_now(), code.period),
+    ))
+    .await;
+}
+
+async fn generate_keyboard_interactive_otp_responses(
+    app: &AppHandle,
+    info: &OtpAutoFillInfo,
+    prompt_count: usize,
+    connection_id: Option<&str>,
+) -> AppResult<PreparedOtpResponses> {
+    let now = unix_seconds_now();
+    let Some(mut code) = crate::cmd::otp::generate_totp_code_for_entry_at(app, &info.otp_id, now)?
+    else {
+        let result = crate::cmd::otp::generate_otp_for_entry(app, &info.otp_id)?;
+        return Ok(PreparedOtpResponses {
+            responses: vec![result.code; prompt_count],
+            used_totp: None,
+        });
+    };
+
+    let mut candidate = TotpUseCandidate {
+        otp_id: info.otp_id.clone(),
+        code: code.code.clone(),
+        time_step: code.time_step,
+    };
+
+    if is_totp_code_reused(&candidate) {
+        wait_for_next_totp_code(connection_id, &info.otp_id, &code).await;
+        code = crate::cmd::otp::generate_totp_code_for_entry_at(
+            app,
+            &info.otp_id,
+            unix_seconds_now(),
+        )?
+        .ok_or_else(|| AppError::Auth("OTP entry is no longer TOTP".to_string()))?;
+        candidate = TotpUseCandidate {
+            otp_id: info.otp_id.clone(),
+            code: code.code.clone(),
+            time_step: code.time_step,
+        };
+    }
+
+    Ok(PreparedOtpResponses {
+        responses: vec![code.code; prompt_count],
+        used_totp: Some(candidate),
+    })
+}
+
+async fn prepare_manual_otp_responses(
+    app: &AppHandle,
+    otp_info: Option<&OtpAutoFillInfo>,
+    responses: Vec<String>,
+    connection_id: Option<&str>,
+) -> AppResult<PreparedOtpResponses> {
+    let Some(info) = otp_info else {
+        return Ok(PreparedOtpResponses {
+            responses,
+            used_totp: None,
+        });
+    };
+    if responses.is_empty() {
+        return Ok(PreparedOtpResponses {
+            responses,
+            used_totp: None,
+        });
+    }
+
+    let Some(mut code) =
+        crate::cmd::otp::generate_totp_code_for_entry_at(app, &info.otp_id, unix_seconds_now())?
+    else {
+        return Ok(PreparedOtpResponses {
+            responses,
+            used_totp: None,
+        });
+    };
+
+    let matching_indices: Vec<usize> = responses
+        .iter()
+        .enumerate()
+        .filter_map(|(index, response)| (response == &code.code).then_some(index))
+        .collect();
+    if matching_indices.is_empty() {
+        return Ok(PreparedOtpResponses {
+            responses,
+            used_totp: None,
+        });
+    }
+
+    let mut candidate = TotpUseCandidate {
+        otp_id: info.otp_id.clone(),
+        code: code.code.clone(),
+        time_step: code.time_step,
+    };
+    let mut responses = responses;
+
+    if is_totp_code_reused(&candidate) {
+        wait_for_next_totp_code(connection_id, &info.otp_id, &code).await;
+        code = crate::cmd::otp::generate_totp_code_for_entry_at(
+            app,
+            &info.otp_id,
+            unix_seconds_now(),
+        )?
+        .ok_or_else(|| AppError::Auth("OTP entry is no longer TOTP".to_string()))?;
+        for index in matching_indices {
+            if let Some(response) = responses.get_mut(index) {
+                *response = code.code.clone();
+            }
+        }
+        candidate = TotpUseCandidate {
+            otp_id: info.otp_id.clone(),
+            code: code.code.clone(),
+            time_step: code.time_step,
+        };
+    }
+
+    Ok(PreparedOtpResponses {
+        responses,
+        used_totp: Some(candidate),
     })
 }
 
@@ -474,10 +683,14 @@ async fn finish_keyboard_interactive(
         .authenticate_keyboard_interactive_start(username, None)
         .await
         .map_err(|error| AppError::Auth(format!("Keyboard-interactive start failed: {}", error)))?;
+    let mut pending_totp_use: Option<TotpUseCandidate> = None;
 
     loop {
         match step {
             KeyboardInteractiveAuthResponse::Success => {
+                if let Some(candidate) = pending_totp_use.take() {
+                    record_totp_code_use(candidate);
+                }
                 log_structured(
                     StructuredLogLevel::Info,
                     "ssh.auth",
@@ -573,8 +786,15 @@ async fn finish_keyboard_interactive(
                         })),
                         None,
                     );
-                    let result = crate::cmd::otp::generate_otp_for_entry(app, &info.otp_id)?;
-                    prompts.iter().map(|_| result.code.clone()).collect()
+                    let prepared = generate_keyboard_interactive_otp_responses(
+                        app,
+                        info,
+                        prompts.len(),
+                        connection_id,
+                    )
+                    .await?;
+                    pending_totp_use = prepared.used_totp;
+                    prepared.responses
                 } else {
                     let request_id = uuid::Uuid::new_v4().to_string();
                     let rx = pending_mgr.register(request_id.clone()).await;
@@ -607,7 +827,7 @@ async fn finish_keyboard_interactive(
                     );
                     let _ = app.emit("otp-request", &payload);
 
-                    match rx.await {
+                    let responses = match rx.await {
                         Ok(Some(responses)) => responses,
                         Ok(None) => {
                             return Err(AppError::Auth(
@@ -619,7 +839,12 @@ async fn finish_keyboard_interactive(
                                 "2FA authentication request dropped".to_string(),
                             ));
                         }
-                    }
+                    };
+                    let prepared =
+                        prepare_manual_otp_responses(app, otp_info, responses, connection_id)
+                            .await?;
+                    pending_totp_use = prepared.used_totp;
+                    prepared.responses
                 };
 
                 step = handle
@@ -737,7 +962,12 @@ fn should_auto_fill_password_prompts(prompts: &[client::Prompt]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyboardInteractiveMode, should_auto_fill_password_prompts};
+    use super::{
+        is_totp_code_reused, record_totp_code_use, resolve_password_material,
+        seconds_until_next_totp_step, should_auto_fill_password_prompts, used_totp_codes,
+        KeyboardInteractiveMode, TotpUseCandidate,
+    };
+    use crate::config::ConnectionAuth;
     use russh::client::Prompt;
 
     #[test]
@@ -778,10 +1008,54 @@ mod tests {
 
     #[test]
     fn additional_factor_mode_never_exposes_password_fallback() {
-        assert!(
-            KeyboardInteractiveMode::AdditionalFactor
-                .password()
-                .is_none()
-        );
+        assert!(KeyboardInteractiveMode::AdditionalFactor
+            .password()
+            .is_none());
+    }
+
+    #[test]
+    fn password_mode_without_material_returns_recoverable_error() {
+        let auth = ConnectionAuth {
+            mode: "password".to_string(),
+            ..Default::default()
+        };
+
+        let error = resolve_password_material(None, &auth).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("No password for this connection"));
+    }
+
+    #[test]
+    fn totp_step_wait_uses_remaining_period() {
+        assert_eq!(seconds_until_next_totp_step(31, 30), 29);
+        assert_eq!(seconds_until_next_totp_step(59, 30), 1);
+        assert_eq!(seconds_until_next_totp_step(60, 30), 30);
+    }
+
+    #[test]
+    fn used_totp_cache_matches_same_code_and_step_only() {
+        used_totp_codes()
+            .lock()
+            .expect("used TOTP code cache poisoned")
+            .clear();
+        let candidate = TotpUseCandidate {
+            otp_id: "otp-1".to_string(),
+            code: "123456".to_string(),
+            time_step: 42,
+        };
+
+        assert!(!is_totp_code_reused(&candidate));
+        record_totp_code_use(candidate.clone());
+        assert!(is_totp_code_reused(&candidate));
+        assert!(!is_totp_code_reused(&TotpUseCandidate {
+            time_step: 43,
+            ..candidate.clone()
+        }));
+        assert!(!is_totp_code_reused(&TotpUseCandidate {
+            code: "654321".to_string(),
+            ..candidate
+        }));
     }
 }

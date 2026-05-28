@@ -23,7 +23,9 @@ export function getErrorMessage(error: unknown): string {
 const EDIT_CONNECTION_RECOVERY_PATTERNS = [
   "authentication failed: invalid credentials",
   "authentication failed: key rejected",
+  "authentication failed: none auth rejected",
   "authentication failed for jump host",
+  "none auth failed",
   "no password for this connection",
   "no stored password",
   "no ssh key for this connection",

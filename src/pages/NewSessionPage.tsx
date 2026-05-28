@@ -293,6 +293,9 @@ export default function NewSessionPage() {
       if (!username.trim()) {
         return t("dialog.usernameRequired", "Username is required");
       }
+      if (authType === "password" && !passwordId && !password && !hasPassword) {
+        return t("dialog.passwordRequired");
+      }
     }
 
     if (currentTab === "telnet") {
@@ -309,7 +312,19 @@ export default function NewSessionPage() {
     }
 
     return "";
-  }, [currentTab, host, serialPortName, sshPort, telnetPort, t, username]);
+  }, [
+    authType,
+    currentTab,
+    hasPassword,
+    host,
+    password,
+    passwordId,
+    serialPortName,
+    sshPort,
+    telnetPort,
+    t,
+    username,
+  ]);
 
   const validationError = getValidationError();
   const saveDisabled = connecting || !!validationError;
@@ -378,11 +393,7 @@ export default function NewSessionPage() {
         currentTab === "ssh"
           ? (() => {
               const resolvedAuthMode: SshAuthMode =
-                authType === "password" && (passwordId || password || hasPassword)
-                  ? "password"
-                  : authType === "key" && keyId
-                    ? "key"
-                    : "none";
+                authType === "password" ? "password" : authType === "key" && keyId ? "key" : "none";
               const nextAuth: NonNullable<SavedConnection["auth"]> = {
                 mode: resolvedAuthMode,
                 password_id: resolvedAuthMode === "password" ? passwordId || "" : "",
