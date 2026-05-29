@@ -21,6 +21,11 @@ fn create_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
         })?;
 
     let mut builder = tauri::WebviewWindowBuilder::from_config(app, &main_window_config)?;
+    let window_state = crate::window_state::load_main_window_state();
+    builder = builder
+        .inner_size(window_state.width, window_state.height)
+        .maximized(window_state.maximized);
+
     if let Some(runtime) = app.try_state::<AppRuntime>() {
         if runtime.portable() {
             builder = builder.data_directory(runtime.webview_data_dir().to_path_buf());
@@ -121,12 +126,24 @@ pub fn show_main_window(app: &tauri::AppHandle) {
 
 pub fn hide_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = crate::window_state::save_main_webview_window_state(&window) {
+            tracing::warn!("Failed to save main window state before hide: {}", error);
+        }
         let _ = window.hide();
         crate::tray::schedule_refresh(app);
     }
 }
 
 pub fn prepare_app_shutdown(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = crate::window_state::save_main_webview_window_state(&window) {
+            tracing::warn!(
+                "Failed to save main window state before shutdown: {}",
+                error
+            );
+        }
+    }
+
     let session_manager = app.state::<Arc<SessionManager>>();
     session_manager.flush_history_before_shutdown();
 
@@ -143,17 +160,27 @@ pub fn quit_application(app: &tauri::AppHandle) {
 }
 
 pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
-    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-        if window.label() == "main" {
-            if let Ok(settings) = crate::config::load_app_settings(window.app_handle()) {
-                if settings.general.minimize_to_tray {
-                    hide_main_window(window.app_handle());
-                    api.prevent_close();
-                    return;
-                }
+    if window.label() == "main" {
+        match event {
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                crate::window_state::schedule_main_window_state_save(window.app_handle());
             }
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if let Err(error) = crate::window_state::save_main_window_state(window) {
+                    tracing::warn!("Failed to save main window state on close: {}", error);
+                }
 
-            prepare_app_shutdown(window.app_handle());
+                if let Ok(settings) = crate::config::load_app_settings(window.app_handle()) {
+                    if settings.general.minimize_to_tray {
+                        hide_main_window(window.app_handle());
+                        api.prevent_close();
+                        return;
+                    }
+                }
+
+                prepare_app_shutdown(window.app_handle());
+            }
+            _ => {}
         }
     }
 }

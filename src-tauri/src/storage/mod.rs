@@ -58,6 +58,7 @@ pub enum SettingsDocKey {
     AiHistory,
     AiAudit,
     SftpFileBackendCache,
+    WindowState,
 }
 impl SettingsDocKey {
     fn storage_key(self) -> &'static str {
@@ -69,6 +70,7 @@ impl SettingsDocKey {
             Self::AiHistory => "settings/doc/ai-history",
             Self::AiAudit => "settings/doc/ai-audit",
             Self::SftpFileBackendCache => "settings/doc/file-backend-cache",
+            Self::WindowState => "settings/doc/window-state",
         }
     }
 
@@ -81,6 +83,7 @@ impl SettingsDocKey {
             Self::AiHistory => Some(tables::LEGACY_JSON_AI_HISTORY),
             Self::AiAudit => Some(tables::LEGACY_JSON_AI_AUDIT),
             Self::SftpFileBackendCache => Some("file-backend-cache"),
+            Self::WindowState => None,
         }
     }
 }

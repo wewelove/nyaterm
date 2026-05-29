@@ -11,6 +11,7 @@ mod runtime;
 mod storage;
 mod tray;
 mod utils;
+mod window_state;
 
 use std::sync::Arc;
 
