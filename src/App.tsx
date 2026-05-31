@@ -61,7 +61,6 @@ import {
   findSessionPaneById,
   findTabBySessionId,
   getActivePane,
-  getTabDisplayName,
 } from "./lib/workspaceTabs";
 import type {
   AppSettings,
@@ -69,6 +68,7 @@ import type {
   PaneSplitDirection,
   SavedConnection,
   SessionPane,
+  SessionInfo,
   SessionType,
   Tab,
 } from "./types/global";
@@ -97,6 +97,14 @@ async function createSessionForConnection(connection: Pick<SavedConnection, "id"
     default:
       return invoke<string>("create_ssh_session", { connectionId: connection.id });
   }
+}
+
+function safeRecordingName(name: string) {
+  return name.replace(/[^\w.-]/g, "_") || "session";
+}
+
+function joinPath(dir: string, fileName: string) {
+  return `${dir}${dir.endsWith("\\") || dir.endsWith("/") ? "" : "/"}${fileName}`;
 }
 
 /** Root layout: header, activity bars, sidebars, terminal area, dialogs. */
@@ -160,6 +168,44 @@ function App() {
 
   // Recording state: tracks which sessions are currently being recorded
   const [recordingSessions, setRecordingSessions] = useState<Set<string>>(new Set());
+
+  const refreshRecordingSessions = useCallback(async () => {
+    try {
+      const sessionIds = await invoke<string[]>("list_recording_sessions");
+      setRecordingSessions(new Set(sessionIds));
+    } catch (error) {
+      logger.error({
+        domain: "session.lifecycle",
+        event: "recording.list_failed",
+        message: "Failed to list recording sessions",
+        error,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRecordingSessions();
+    const unlisten = listen("sessions-changed", () => {
+      void refreshRecordingSessions();
+    });
+    return () => {
+      unlisten.then((dispose) => dispose());
+    };
+  }, [refreshRecordingSessions]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    void invoke("set_recording_memory_limit", {
+      maxBytes: Math.max(1, appSettings.transfer.recording_memory_limit_bytes || 5 * 1024 * 1024),
+    }).catch((error) => {
+      logger.error({
+        domain: "settings.persistence",
+        event: "recording.memory_limit_sync_failed",
+        message: "Failed to sync recording memory limit",
+        error,
+      });
+    });
+  }, [appSettings.transfer.recording_memory_limit_bytes, settingsLoaded]);
 
   // OTP / 2FA dialog state
   const [otpRequest, setOtpRequest] = useState<OtpRequest | null>(null);
@@ -1360,53 +1406,97 @@ function App() {
     appSettings.keybindings,
   );
 
-  // Recording toggle
-  const handleToggleRecording = useCallback(async () => {
-    if (!activeTab || !activePane || activePane.connecting || activePane.connectError) return;
-    const sessionId = activePane.sessionId;
-    const isActive = recordingSessions.has(sessionId);
+  const buildRecordingFilePath = useCallback(
+    async (prefix: "recording" | "session", sessionName: string) => {
+      const dir = appSettings.transfer.recording_path || (await downloadDir());
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      return joinPath(dir, `${prefix}-${safeRecordingName(sessionName)}-${timestamp}.log`);
+    },
+    [appSettings.transfer.recording_path],
+  );
 
-    if (isActive) {
-      try {
-        const savedPath = await invoke<string>("stop_recording", { sessionId });
-        setRecordingSessions((prev) => {
-          const next = new Set(prev);
-          next.delete(sessionId);
-          return next;
-        });
-        toast.success(t("recording.saved", { path: savedPath }));
-      } catch (e) {
-        logger.error({
-          domain: "session.lifecycle",
-          event: "recording.stop_failed",
-          message: "Failed to stop recording",
-          ids: { session_id: sessionId },
-          error: e,
-        });
+  const handleToggleSessionRecording = useCallback(
+    async (session: SessionInfo) => {
+      const sessionId = session.id;
+      const isActive = recordingSessions.has(sessionId);
+
+      if (isActive) {
+        try {
+          const savedPath = await invoke<string>("stop_recording", { sessionId });
+          setRecordingSessions((prev) => {
+            const next = new Set(prev);
+            next.delete(sessionId);
+            return next;
+          });
+          toast.success(t("recording.saved", { path: savedPath }));
+        } catch (error) {
+          logger.error({
+            domain: "session.lifecycle",
+            event: "recording.stop_failed",
+            message: "Failed to stop recording",
+            ids: { session_id: sessionId },
+            error,
+          });
+          toast.error(t("recording.stopFailed"));
+        }
+        return;
       }
-    } else {
+
       try {
-        const dir = appSettings.transfer.recording_path || (await downloadDir());
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-        const safeName = getTabDisplayName(activeTab).replace(/[^\w.-]/g, "_");
-        const filePath = `${dir}${dir.endsWith("\\") || dir.endsWith("/") ? "" : "/"}recording-${safeName}-${timestamp}.log`;
-        await invoke("start_recording", { sessionId, filePath });
+        const filePath = await buildRecordingFilePath("recording", session.name);
+        await invoke("start_recording", {
+          sessionId,
+          filePath,
+          includeIoLabels: appSettings.transfer.recording_include_io_labels,
+        });
         setRecordingSessions((prev) => {
           const next = new Set(prev);
           next.add(sessionId);
           return next;
         });
-      } catch (e) {
+        toast.success(t("recording.started"));
+      } catch (error) {
         logger.error({
           domain: "session.lifecycle",
           event: "recording.start_failed",
           message: "Failed to start recording",
           ids: { session_id: sessionId },
-          error: e,
+          error,
         });
+        toast.error(t("recording.startFailed"));
       }
-    }
-  }, [activePane, activeTab, appSettings.transfer.recording_path, recordingSessions, t]);
+    },
+    [
+      appSettings.transfer.recording_include_io_labels,
+      buildRecordingFilePath,
+      recordingSessions,
+      t,
+    ],
+  );
+
+  const handleSaveSessionTranscript = useCallback(
+    async (session: SessionInfo) => {
+      try {
+        const filePath = await buildRecordingFilePath("session", session.name);
+        const savedPath = await invoke<string>("save_session_transcript", {
+          sessionId: session.id,
+          filePath,
+          includeIoLabels: appSettings.transfer.recording_include_io_labels,
+        });
+        toast.success(t("recording.transcriptSaved", { path: savedPath }));
+      } catch (error) {
+        logger.error({
+          domain: "session.lifecycle",
+          event: "recording.transcript_save_failed",
+          message: "Failed to save session transcript",
+          ids: { session_id: session.id },
+          error,
+        });
+        toast.error(t("recording.saveFailed"));
+      }
+    },
+    [appSettings.transfer.recording_include_io_labels, buildRecordingFilePath, t],
+  );
 
   // Resize handlers
   const handleLeftResize = useCallback(
@@ -1458,11 +1548,9 @@ function App() {
     handleToggleLabel,
   } = useActivityBarController({
     uiConfig,
-    activePane,
     recordingSessions,
     updateUi,
     setIsLocked,
-    onToggleRecording: handleToggleRecording,
     t,
   });
 
@@ -1505,6 +1593,7 @@ function App() {
         activeConnection={activeConnection}
         activeSessionId={activeSessionId}
         activeSshSessionId={activeSshSessionId}
+        recordingSessions={recordingSessions}
         aiIntent={aiIntent}
         transferHeight={uiConfig.transfer_height || 180}
         onTransferResize={handleTransferResize}
@@ -1515,6 +1604,8 @@ function App() {
         onSessionDisconnect={handleDisconnectSessionById}
         canReconnect={canReconnectSessionById}
         onCommandSend={handleHistoryCommand}
+        onToggleSessionRecording={handleToggleSessionRecording}
+        onSaveSessionTranscript={handleSaveSessionTranscript}
       />
     ),
     [
@@ -1524,13 +1615,16 @@ function App() {
       activeSshSessionId,
       aiIntent,
       canReconnectSessionById,
+      handleSaveSessionTranscript,
       handleDisconnectSessionById,
       handleEditConnection,
       handleHistoryCommand,
       handleNewSession,
       handleReconnectSessionById,
       handleSessionClick,
+      handleToggleSessionRecording,
       handleTransferResize,
+      recordingSessions,
       uiConfig.transfer_height,
     ],
   );

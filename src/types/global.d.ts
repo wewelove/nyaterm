@@ -262,6 +262,7 @@ export type RightPanelId =
   | "activeSessions"
   | "commandHistory"
   | "resourceMonitor"
+  | "recording"
   | "syncBackupHistory";
 
 export type ActivityBarZone = "left_top" | "left_bottom" | "right_top" | "right_bottom";
@@ -526,6 +527,8 @@ export interface TransferSettings {
   ask_save_location: boolean;
   default_editor: string;
   recording_path: string;
+  recording_include_io_labels: boolean;
+  recording_memory_limit_bytes: number;
 }
 
 export type DiagnosticsLogLevel = "warn" | "info" | "debug";

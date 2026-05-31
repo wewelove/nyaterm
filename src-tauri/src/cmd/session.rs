@@ -389,9 +389,10 @@ pub async fn start_recording(
     state: tauri::State<'_, Arc<RecordingManager>>,
     session_id: String,
     file_path: String,
+    include_io_labels: bool,
 ) -> AppResult<()> {
     let mgr = state.inner().clone();
-    tokio::task::spawn_blocking(move || mgr.start(&session_id, &file_path))
+    tokio::task::spawn_blocking(move || mgr.start(&session_id, &file_path, include_io_labels))
         .await
         .map_err(|e| AppError::Config(format!("Task join error: {e}")))?
 }
@@ -413,6 +414,37 @@ pub async fn is_recording(
     session_id: String,
 ) -> AppResult<bool> {
     Ok(state.is_recording(&session_id))
+}
+
+#[tauri::command]
+pub async fn save_session_transcript(
+    state: tauri::State<'_, Arc<RecordingManager>>,
+    session_id: String,
+    file_path: String,
+    include_io_labels: bool,
+) -> AppResult<String> {
+    let mgr = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        mgr.save_transcript(&session_id, &file_path, include_io_labels)
+    })
+    .await
+    .map_err(|e| AppError::Config(format!("Task join error: {e}")))?
+}
+
+#[tauri::command]
+pub async fn list_recording_sessions(
+    state: tauri::State<'_, Arc<RecordingManager>>,
+) -> AppResult<Vec<String>> {
+    Ok(state.list_recording_sessions())
+}
+
+#[tauri::command]
+pub async fn set_recording_memory_limit(
+    state: tauri::State<'_, Arc<RecordingManager>>,
+    max_bytes: usize,
+) -> AppResult<()> {
+    state.set_memory_limit(max_bytes);
+    Ok(())
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 use crate::error::{AppError, AppResult};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::mem;
@@ -7,9 +7,64 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use time::OffsetDateTime;
 
-struct RecordingState {
+pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 5 * 1024 * 1024;
+
+#[derive(Clone, Debug)]
+struct TranscriptRecord {
+    timestamp: String,
+    label: &'static str,
+    data: String,
+    size_bytes: usize,
+}
+
+impl TranscriptRecord {
+    fn new(label: &'static str, data: String) -> Self {
+        let timestamp = chrono_timestamp();
+        let size_bytes = format_record_parts(&timestamp, label, &data, true).len();
+        Self {
+            timestamp,
+            label,
+            data,
+            size_bytes,
+        }
+    }
+
+    fn format(&self, include_io_labels: bool) -> String {
+        format_record_parts(&self.timestamp, self.label, &self.data, include_io_labels)
+    }
+}
+
+struct FileRecording {
     writer: BufWriter<File>,
     file_path: PathBuf,
+    include_io_labels: bool,
+}
+
+impl FileRecording {
+    fn new(file: File, file_path: PathBuf, include_io_labels: bool) -> Self {
+        Self {
+            writer: BufWriter::new(file),
+            file_path,
+            include_io_labels,
+        }
+    }
+
+    fn write_record(&mut self, record: &TranscriptRecord) {
+        let _ = self
+            .writer
+            .write_all(record.format(self.include_io_labels).as_bytes());
+    }
+
+    fn finish(&mut self) {
+        let _ = self.writer.flush();
+    }
+}
+
+struct SessionCaptureState {
+    recording: Option<FileRecording>,
+    records: VecDeque<TranscriptRecord>,
+    record_bytes: usize,
+    memory_limit_bytes: usize,
     input_buffer: String,
     output_buffer: String,
     live_echo_buffer: String,
@@ -17,11 +72,13 @@ struct RecordingState {
     suppress_next_newline: bool,
 }
 
-impl RecordingState {
-    fn new(file: File, file_path: PathBuf) -> Self {
+impl SessionCaptureState {
+    fn new(memory_limit_bytes: usize) -> Self {
         Self {
-            writer: BufWriter::new(file),
-            file_path,
+            recording: None,
+            records: VecDeque::new(),
+            record_bytes: 0,
+            memory_limit_bytes,
             input_buffer: String::new(),
             output_buffer: String::new(),
             live_echo_buffer: String::new(),
@@ -30,12 +87,37 @@ impl RecordingState {
         }
     }
 
-    fn write_record(&mut self, label: &str, data: &str) {
-        if data.is_empty() {
-            return;
+    fn set_memory_limit(&mut self, memory_limit_bytes: usize) {
+        self.memory_limit_bytes = memory_limit_bytes;
+        self.trim_records();
+    }
+
+    fn start_recording(
+        &mut self,
+        file: File,
+        file_path: PathBuf,
+        include_io_labels: bool,
+    ) -> AppResult<()> {
+        if self.recording.is_some() {
+            return Err(AppError::Config("Recording is already active".to_string()));
         }
-        let timestamp = chrono_timestamp();
-        let _ = writeln!(self.writer, "[{timestamp}] [{label}] {data}");
+        self.flush_output_lines(true);
+        self.recording = Some(FileRecording::new(file, file_path, include_io_labels));
+        Ok(())
+    }
+
+    fn stop_recording(&mut self) -> AppResult<String> {
+        if self.recording.is_none() {
+            return Err(AppError::Config("No active recording".to_string()));
+        }
+        self.commit_partial_input();
+        self.flush_output_lines(true);
+        let mut recording = self
+            .recording
+            .take()
+            .ok_or_else(|| AppError::Config("No active recording".to_string()))?;
+        recording.finish();
+        Ok(recording.file_path.to_string_lossy().to_string())
     }
 
     fn write_input(&mut self, data: &[u8]) {
@@ -97,7 +179,38 @@ impl RecordingState {
     fn finish(&mut self) {
         self.commit_partial_input();
         self.flush_output_lines(true);
-        let _ = self.writer.flush();
+        if let Some(recording) = self.recording.as_mut() {
+            recording.finish();
+        }
+        self.recording = None;
+    }
+
+    fn snapshot_records(&mut self) -> Vec<TranscriptRecord> {
+        self.flush_output_lines(true);
+        self.records.iter().cloned().collect()
+    }
+
+    fn append_record(&mut self, label: &'static str, data: String) {
+        if data.is_empty() {
+            return;
+        }
+
+        let record = TranscriptRecord::new(label, data);
+        if let Some(recording) = self.recording.as_mut() {
+            recording.write_record(&record);
+        }
+
+        self.record_bytes += record.size_bytes;
+        self.records.push_back(record);
+        self.trim_records();
+    }
+
+    fn trim_records(&mut self) {
+        while self.records.len() > 1 && self.record_bytes > self.memory_limit_bytes {
+            if let Some(record) = self.records.pop_front() {
+                self.record_bytes = self.record_bytes.saturating_sub(record.size_bytes);
+            }
+        }
     }
 
     fn handle_backspace(&mut self) {
@@ -118,7 +231,7 @@ impl RecordingState {
             return;
         }
 
-        self.write_record("INPUT", &line);
+        self.append_record("INPUT", line.clone());
         self.submitted_line_echo = Some(line);
     }
 
@@ -132,7 +245,7 @@ impl RecordingState {
             return;
         }
 
-        self.write_record("INPUT", &line);
+        self.append_record("INPUT", line);
     }
 
     fn consume_live_echo(&mut self, text: &str) -> String {
@@ -166,81 +279,165 @@ impl RecordingState {
         while let Some(pos) = self.output_buffer.find('\n') {
             let line = self.output_buffer[..pos].to_string();
             self.output_buffer.drain(..=pos);
-            self.write_record("OUTPUT", &line);
+            self.append_record("OUTPUT", line);
         }
 
         if flush_partial && !self.output_buffer.is_empty() {
             let tail = mem::take(&mut self.output_buffer);
-            self.write_record("OUTPUT", &tail);
+            self.append_record("OUTPUT", tail);
         }
     }
 }
 
 pub struct RecordingManager {
-    recordings: Mutex<HashMap<String, RecordingState>>,
+    sessions: Mutex<HashMap<String, SessionCaptureState>>,
+    memory_limit_bytes: Mutex<usize>,
 }
 
 impl RecordingManager {
     pub fn new() -> Self {
         Self {
-            recordings: Mutex::new(HashMap::new()),
+            sessions: Mutex::new(HashMap::new()),
+            memory_limit_bytes: Mutex::new(DEFAULT_MEMORY_LIMIT_BYTES),
         }
     }
 
-    pub fn start(&self, session_id: &str, file_path: &str) -> AppResult<()> {
-        let path = PathBuf::from(file_path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| AppError::Config(format!("Failed to create directory: {e}")))?;
-        }
+    pub fn start(
+        &self,
+        session_id: &str,
+        file_path: &str,
+        include_io_labels: bool,
+    ) -> AppResult<()> {
+        let path = prepare_output_file_path(file_path)?;
         let file = File::create(&path)
             .map_err(|e| AppError::Config(format!("Failed to create recording file: {e}")))?;
-        let state = RecordingState::new(file, path);
-        self.recordings
-            .lock()
-            .unwrap()
-            .insert(session_id.to_string(), state);
-        Ok(())
+        let memory_limit_bytes = *self.memory_limit_bytes.lock().unwrap();
+
+        let mut sessions = self.sessions.lock().unwrap();
+        let state = sessions
+            .entry(session_id.to_string())
+            .or_insert_with(|| SessionCaptureState::new(memory_limit_bytes));
+        state.set_memory_limit(memory_limit_bytes);
+        state.start_recording(file, path, include_io_labels)
     }
 
     pub fn stop(&self, session_id: &str) -> AppResult<String> {
-        let mut state = {
-            let mut recordings = self.recordings.lock().unwrap();
-            recordings
-                .remove(session_id)
-                .ok_or_else(|| AppError::Config("No active recording".to_string()))?
+        let mut sessions = self.sessions.lock().unwrap();
+        let state = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AppError::Config("No active recording".to_string()))?;
+        state.stop_recording()
+    }
+
+    pub fn save_transcript(
+        &self,
+        session_id: &str,
+        file_path: &str,
+        include_io_labels: bool,
+    ) -> AppResult<String> {
+        let path = prepare_output_file_path(file_path)?;
+        let records = {
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions
+                .get_mut(session_id)
+                .map(SessionCaptureState::snapshot_records)
+                .unwrap_or_default()
         };
-        // finish() flushes to disk -- run outside the mutex to minimize lock hold time
-        state.finish();
-        Ok(state.file_path.to_string_lossy().to_string())
+
+        let mut writer = BufWriter::new(
+            File::create(&path)
+                .map_err(|e| AppError::Config(format!("Failed to create transcript file: {e}")))?,
+        );
+        for record in &records {
+            writer
+                .write_all(record.format(include_io_labels).as_bytes())
+                .map_err(|e| AppError::Config(format!("Failed to write transcript file: {e}")))?;
+        }
+        writer
+            .flush()
+            .map_err(|e| AppError::Config(format!("Failed to flush transcript file: {e}")))?;
+        Ok(path.to_string_lossy().to_string())
+    }
+
+    pub fn set_memory_limit(&self, max_bytes: usize) {
+        let bounded = max_bytes.max(1);
+        *self.memory_limit_bytes.lock().unwrap() = bounded;
+
+        let mut sessions = self.sessions.lock().unwrap();
+        for state in sessions.values_mut() {
+            state.set_memory_limit(bounded);
+        }
     }
 
     pub fn is_recording(&self, session_id: &str) -> bool {
-        self.recordings.lock().unwrap().contains_key(session_id)
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .is_some_and(|state| state.recording.is_some())
+    }
+
+    pub fn list_recording_sessions(&self) -> Vec<String> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(id, state)| state.recording.as_ref().map(|_| id.clone()))
+            .collect()
     }
 
     pub fn write_output(&self, session_id: &str, data: &str) {
-        let mut recordings = self.recordings.lock().unwrap();
-        if let Some(state) = recordings.get_mut(session_id) {
-            state.write_output(data);
-        }
+        let memory_limit_bytes = *self.memory_limit_bytes.lock().unwrap();
+        let mut sessions = self.sessions.lock().unwrap();
+        let state = sessions
+            .entry(session_id.to_string())
+            .or_insert_with(|| SessionCaptureState::new(memory_limit_bytes));
+        state.set_memory_limit(memory_limit_bytes);
+        state.write_output(data);
     }
 
     pub fn write_input(&self, session_id: &str, data: &[u8]) {
-        let mut recordings = self.recordings.lock().unwrap();
-        if let Some(state) = recordings.get_mut(session_id) {
-            state.write_input(data);
-        }
+        let memory_limit_bytes = *self.memory_limit_bytes.lock().unwrap();
+        let mut sessions = self.sessions.lock().unwrap();
+        let state = sessions
+            .entry(session_id.to_string())
+            .or_insert_with(|| SessionCaptureState::new(memory_limit_bytes));
+        state.set_memory_limit(memory_limit_bytes);
+        state.write_input(data);
     }
 
     pub fn cleanup_session(&self, session_id: &str) {
         let removed = {
-            let mut recordings = self.recordings.lock().unwrap();
-            recordings.remove(session_id)
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions.remove(session_id)
         };
         if let Some(mut state) = removed {
             state.finish();
         }
+    }
+}
+
+fn prepare_output_file_path(file_path: &str) -> AppResult<PathBuf> {
+    let path = PathBuf::from(file_path);
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .map_err(|e| AppError::Config(format!("Failed to create directory: {e}")))?;
+        }
+    }
+    Ok(path)
+}
+
+fn format_record_parts(
+    timestamp: &str,
+    label: &str,
+    data: &str,
+    include_io_labels: bool,
+) -> String {
+    if include_io_labels {
+        format!("[{timestamp}] [{label}] {data}\n")
+    } else {
+        format!("[{timestamp}] {data}\n")
     }
 }
 
@@ -369,7 +566,21 @@ fn strip_terminal_control_sequences(text: &str) -> String {
 mod tests {
     use super::{
         consume_matching_prefix, strip_one_leading_newline, strip_terminal_control_sequences,
+        RecordingManager,
     };
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_path(name: &str) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("nyaterm-recording-{name}-{nanos}.log"))
+            .to_string_lossy()
+            .to_string()
+    }
 
     #[test]
     fn strips_terminal_escape_sequences_from_output() {
@@ -398,5 +609,84 @@ mod tests {
         assert_eq!(strip_one_leading_newline("\nhello"), "hello");
         assert_eq!(strip_one_leading_newline("hello"), "hello");
         assert_eq!(strip_one_leading_newline("\n\nhello"), "\nhello");
+    }
+
+    #[test]
+    fn writes_recording_with_and_without_io_labels() {
+        let manager = RecordingManager::new();
+        let labeled_path = unique_path("labels");
+        manager.start("s1", &labeled_path, true).unwrap();
+        manager.write_input("s1", b"echo hi\r");
+        manager.write_output("s1", "echo hi\r\nhi\n");
+        manager.stop("s1").unwrap();
+
+        let labeled = fs::read_to_string(&labeled_path).unwrap();
+        assert!(labeled.contains("[INPUT] echo hi"));
+        assert!(labeled.contains("[OUTPUT] hi"));
+
+        let plain_path = unique_path("plain");
+        manager.start("s1", &plain_path, false).unwrap();
+        manager.write_output("s1", "done\n");
+        manager.stop("s1").unwrap();
+
+        let plain = fs::read_to_string(&plain_path).unwrap();
+        assert!(!plain.contains("[INPUT]"));
+        assert!(!plain.contains("[OUTPUT]"));
+        assert!(plain.contains("done"));
+
+        let _ = fs::remove_file(labeled_path);
+        let _ = fs::remove_file(plain_path);
+    }
+
+    #[test]
+    fn saves_memory_transcript_and_trims_old_records() {
+        let manager = RecordingManager::new();
+        manager.set_memory_limit(90);
+        manager.write_output("s1", "first line\n");
+        manager.write_output("s1", "second line\n");
+        manager.write_output("s1", "third line\n");
+
+        let path = unique_path("memory");
+        manager.save_transcript("s1", &path, true).unwrap();
+        let saved = fs::read_to_string(&path).unwrap();
+
+        assert!(!saved.contains("first line"));
+        assert!(saved.contains("third line"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn recording_does_not_backfill_existing_memory() {
+        let manager = RecordingManager::new();
+        manager.write_output("s1", "before\n");
+
+        let path = unique_path("no-backfill");
+        manager.start("s1", &path, true).unwrap();
+        manager.write_output("s1", "after\n");
+        manager.stop("s1").unwrap();
+
+        let recorded = fs::read_to_string(&path).unwrap();
+        assert!(!recorded.contains("before"));
+        assert!(recorded.contains("after"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn recording_does_not_backfill_partial_output_buffer() {
+        let manager = RecordingManager::new();
+        manager.write_output("s1", "prompt without newline");
+
+        let path = unique_path("no-partial-backfill");
+        manager.start("s1", &path, true).unwrap();
+        manager.write_output("s1", "\nafter\n");
+        manager.stop("s1").unwrap();
+
+        let recorded = fs::read_to_string(&path).unwrap();
+        assert!(!recorded.contains("prompt without newline"));
+        assert!(recorded.contains("after"));
+
+        let _ = fs::remove_file(path);
     }
 }

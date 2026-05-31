@@ -16,31 +16,26 @@ import {
   MdSettings,
 } from "react-icons/md";
 import { PiRecordFill } from "react-icons/pi";
-import { toast } from "sonner";
 import type { ActivityBarItem } from "@/components/layout/ActivityBar";
 import { getItemSide } from "@/lib/appWorkspace";
 import { openSettings } from "@/lib/windowManager";
-import type { ActivityBarLayout, ActivityBarZone, SessionPane, UiConfig } from "@/types/global";
+import type { ActivityBarLayout, ActivityBarZone, UiConfig } from "@/types/global";
 
 type UpdateUi = (updates: Partial<UiConfig> | ((prev: UiConfig) => Partial<UiConfig>)) => void;
 
 interface UseActivityBarControllerOptions {
   uiConfig: UiConfig;
-  activePane: SessionPane | null;
   recordingSessions: Set<string>;
   updateUi: UpdateUi;
   setIsLocked: (locked: boolean) => void;
-  onToggleRecording: () => void | Promise<void>;
   t: TFunction;
 }
 
 export function useActivityBarController({
   uiConfig,
-  activePane,
   recordingSessions,
   updateUi,
   setIsLocked,
-  onToggleRecording,
   t,
 }: UseActivityBarControllerOptions) {
   const itemRegistry = useMemo<Record<string, { icon: ReactNode; tooltip: string }>>(
@@ -60,21 +55,14 @@ export function useActivityBarController({
       recording: {
         icon: (
           <PiRecordFill
-            className={
-              activePane && recordingSessions.has(activePane.sessionId)
-                ? "animate-pulse"
-                : undefined
-            }
+            className={recordingSessions.size > 0 ? "animate-pulse" : undefined}
           />
         ),
-        tooltip:
-          activePane && recordingSessions.has(activePane.sessionId)
-            ? t("recording.stop")
-            : t("recording.start"),
+        tooltip: t("recording.panelTitle"),
       },
       lock: { icon: <MdLock />, tooltip: t("statusBar.lock") },
     }),
-    [activePane, recordingSessions, t],
+    [recordingSessions, t],
   );
 
   const layout = uiConfig.activity_bar_layout;
@@ -174,9 +162,9 @@ export function useActivityBarController({
     const activeIds = new Set<string>();
     if (uiConfig.show_quick_cmd_bar) activeIds.add("quickCmdBar");
     if (uiConfig.show_serial_send_panel) activeIds.add("serialSend");
-    if (activePane && recordingSessions.has(activePane.sessionId)) activeIds.add("recording");
+    if (recordingSessions.size > 0) activeIds.add("recording");
     return activeIds;
-  }, [activePane, recordingSessions, uiConfig.show_quick_cmd_bar, uiConfig.show_serial_send_panel]);
+  }, [recordingSessions, uiConfig.show_quick_cmd_bar, uiConfig.show_serial_send_panel]);
 
   useEffect(() => {
     if (!uiConfig.show_quick_cmd_bar || !uiConfig.show_serial_send_panel) return;
@@ -207,15 +195,6 @@ export function useActivityBarController({
         }));
         return;
       }
-      if (id === "recording") {
-        if (!activePane || activePane.connecting || activePane.connectError) {
-          toast.error(t("panel.noActiveSessions"));
-          return;
-        }
-        void onToggleRecording();
-        return;
-      }
-
       const side = getItemSide(id, layout);
       if (side === "left") {
         updateUi((prev) => ({ active_left_panel: prev.active_left_panel === id ? null : id }));
@@ -223,7 +202,7 @@ export function useActivityBarController({
         updateUi((prev) => ({ active_right_panel: prev.active_right_panel === id ? null : id }));
       }
     },
-    [activePane, layout, onToggleRecording, setIsLocked, t, updateUi],
+    [layout, setIsLocked, updateUi],
   );
 
   const handleReorder = useCallback(

@@ -88,6 +88,10 @@ export function TransferTab() {
 
   const update = (patch: Partial<typeof transfer>) =>
     updateAppSettings({ transfer: { ...transfer, ...patch } });
+  const recordingMemoryLimitMiB = Math.max(
+    1,
+    Math.round((transfer.recording_memory_limit_bytes || 5 * 1024 * 1024) / (1024 * 1024)),
+  );
 
   return (
     <div className="space-y-5">
@@ -125,6 +129,28 @@ export function TransferTab() {
           value={transfer.recording_path}
           placeholder={defaultDownloadDir}
           onChange={(v) => update({ recording_path: v })}
+        />
+
+        <SettingRow
+          label={t("settings.recordingIncludeIoLabels")}
+          desc={t("settings.recordingIncludeIoLabelsDesc")}
+        >
+          <SettingSwitch
+            checked={transfer.recording_include_io_labels}
+            onChange={(v) => update({ recording_include_io_labels: v })}
+          />
+        </SettingRow>
+
+        <SettingNumberInput
+          label={t("settings.recordingMemoryLimit")}
+          desc={t("settings.recordingMemoryLimitDesc")}
+          min={1}
+          max={100}
+          value={recordingMemoryLimitMiB}
+          controlClassName="max-w-sm"
+          onChange={(v) =>
+            update({ recording_memory_limit_bytes: Math.max(1, v) * 1024 * 1024 })
+          }
         />
       </SettingSection>
 

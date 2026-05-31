@@ -7,7 +7,6 @@ export const NON_PANEL_IDS = new Set([
   "lock",
   "quickCmdBar",
   "serialSend",
-  "recording",
 ]);
 
 export type TrayAction =

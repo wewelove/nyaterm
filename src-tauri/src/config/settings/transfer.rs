@@ -1,6 +1,8 @@
 use super::super::{default_false, default_true};
 use serde::{Deserialize, Serialize};
 
+const DEFAULT_RECORDING_MEMORY_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferSettings {
     #[serde(default = "default_transfer_threads")]
@@ -28,6 +30,10 @@ pub struct TransferSettings {
     #[serde(default)]
     pub recording_path: String,
     #[serde(default = "default_true")]
+    pub recording_include_io_labels: bool,
+    #[serde(default = "default_recording_memory_limit_bytes")]
+    pub recording_memory_limit_bytes: u64,
+    #[serde(default = "default_true")]
     pub zmodem_enabled: bool,
 }
 
@@ -46,6 +52,9 @@ fn default_max_retries() -> u32 {
 fn default_buffer_size() -> u32 {
     32
 }
+fn default_recording_memory_limit_bytes() -> u64 {
+    DEFAULT_RECORDING_MEMORY_LIMIT_BYTES
+}
 
 impl Default for TransferSettings {
     fn default() -> Self {
@@ -62,6 +71,8 @@ impl Default for TransferSettings {
             ask_save_location: false,
             default_editor: String::new(),
             recording_path: String::new(),
+            recording_include_io_labels: true,
+            recording_memory_limit_bytes: default_recording_memory_limit_bytes(),
             zmodem_enabled: true,
         }
     }

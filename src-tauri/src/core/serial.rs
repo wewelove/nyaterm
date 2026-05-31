@@ -6,14 +6,14 @@ use super::session::{
 use super::zmodem::{ZmodemAction, ZmodemDetector, ZmodemEvent, ZmodemTransfer};
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
-use crate::core::SessionOutputCoalescer;
+use crate::core::{RecordingManager, SessionOutputCoalescer};
 use crate::error::{AppError, AppResult};
 use crate::observability::{log_event, log_rate_limited, StructuredLog, StructuredLogLevel};
 use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 pub struct SerialConfig {
@@ -178,6 +178,9 @@ fn serial_session_thread(
     let output_event = format!("terminal-output-{}", session_id);
     let closed_event = format!("session-closed-{}", session_id);
     let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
+    let recording_mgr: Option<Arc<RecordingManager>> = app
+        .try_state::<Arc<RecordingManager>>()
+        .map(|state| state.inner().clone());
 
     let capture_processor = Arc::new(Mutex::new(OutputCaptureProcessor::new()));
     let capture_for_reader = capture_processor.clone();
@@ -193,6 +196,7 @@ fn serial_session_thread(
     let sid_reader = session_id.clone();
     let port_reader = port.clone();
     let output_reader = output.clone();
+    let recording_mgr_reader = recording_mgr.clone();
 
     let reader_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let reader_flag = reader_running.clone();
@@ -238,6 +242,9 @@ fn serial_session_thread(
                         if header_offset > 0 {
                             let pre = String::from_utf8_lossy(&raw[..header_offset]).to_string();
                             if !pre.is_empty() {
+                                if let Some(ref recorder) = recording_mgr_reader {
+                                    recorder.write_output(&sid_reader, &pre);
+                                }
                                 output_reader.push_owned(pre);
                             }
                         }
@@ -255,6 +262,9 @@ fn serial_session_thread(
                         }
                     }
                     if !text.is_empty() {
+                        if let Some(ref recorder) = recording_mgr_reader {
+                            recorder.write_output(&sid_reader, &text);
+                        }
                         output_reader.push_owned(text);
                     }
                 }
@@ -308,6 +318,9 @@ fn serial_session_thread(
                 }
                 if backspace_as_bs {
                     remap_del_to_bs(&mut data);
+                }
+                if let Some(ref recorder) = recording_mgr {
+                    recorder.write_input(&session_id, &data);
                 }
                 let mut p = port.lock().unwrap();
                 let _ = p.write_all(&data);
@@ -395,6 +408,10 @@ fn serial_session_thread(
 
     reader_running.store(false, std::sync::atomic::Ordering::Relaxed);
     output.close();
+
+    if let Some(ref recorder) = recording_mgr {
+        recorder.cleanup_session(&session_id);
+    }
 
     rt_handle.block_on(async {
         manager.remove_session(&session_id).await;

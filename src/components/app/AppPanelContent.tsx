@@ -6,13 +6,14 @@ import CommandHistory from "@/components/panel/CommandHistory";
 import FileExplorer from "@/components/panel/file-explorer";
 import FileTransfer from "@/components/panel/file-explorer/FileTransfer";
 import NetworkPanel from "@/components/panel/NetworkPanel";
+import RecordingPanel from "@/components/panel/RecordingPanel";
 import ResourceMonitor from "@/components/panel/ResourceMonitor";
 import SyncBackupHistoryPanel from "@/components/panel/SyncBackupHistoryPanel";
 import SavedConnections from "@/components/panel/saved-connections";
 import SecurityAuthPanel from "@/components/panel/security-auth";
 import type { AIOpenIntent } from "@/lib/aiEvents";
 import type { NewSessionTarget } from "@/lib/windowManager";
-import type { SavedConnection, SessionPane } from "@/types/global";
+import type { SavedConnection, SessionInfo, SessionPane } from "@/types/global";
 
 interface AppPanelContentProps {
   panelId: string | null;
@@ -20,6 +21,7 @@ interface AppPanelContentProps {
   activeConnection: SavedConnection | null;
   activeSessionId: string | null;
   activeSshSessionId: string | null;
+  recordingSessions: Set<string>;
   aiIntent: AIOpenIntent | null;
   transferHeight: number;
   onTransferResize: (delta: number) => void;
@@ -34,6 +36,8 @@ interface AppPanelContentProps {
   onSessionDisconnect: (sessionId: string) => Promise<void> | void;
   canReconnect: (sessionId: string) => boolean;
   onCommandSend: (command: string, execute?: boolean) => void;
+  onToggleSessionRecording: (session: SessionInfo) => Promise<void> | void;
+  onSaveSessionTranscript: (session: SessionInfo) => Promise<void> | void;
 }
 
 export default function AppPanelContent({
@@ -42,6 +46,7 @@ export default function AppPanelContent({
   activeConnection,
   activeSessionId,
   activeSshSessionId,
+  recordingSessions,
   aiIntent,
   transferHeight,
   onTransferResize,
@@ -52,6 +57,8 @@ export default function AppPanelContent({
   onSessionDisconnect,
   canReconnect,
   onCommandSend,
+  onToggleSessionRecording,
+  onSaveSessionTranscript,
 }: AppPanelContentProps) {
   const liveActivePane =
     activePane && !activePane.connecting && !activePane.connectError ? activePane : null;
@@ -94,6 +101,16 @@ export default function AppPanelContent({
             onSessionReconnect={onSessionReconnect}
             onSessionDisconnect={onSessionDisconnect}
             canReconnect={canReconnect}
+          />
+        );
+      case "recording":
+        return (
+          <RecordingPanel
+            activeSessionId={activeSessionId}
+            recordingSessions={recordingSessions}
+            onSessionClick={onSessionClick}
+            onToggleRecording={onToggleSessionRecording}
+            onSaveTranscript={onSaveSessionTranscript}
           />
         );
       case "commandHistory":
