@@ -21,6 +21,7 @@ import { emitAIErrorDetected } from "@/lib/aiEvents";
 import { renderAiCommandEnd, renderAiCommandStart } from "@/lib/aiTerminalRenderer";
 import { buildTerminalThemeColors, isTerminalTransparencyEnabled } from "@/lib/backgroundImage";
 import { readClipboardText } from "@/lib/clipboard";
+import { detectCredentialPromptKind } from "@/lib/credentialAutofill";
 import { invoke } from "@/lib/invoke";
 import { hexLuminance } from "@/lib/keywordHighlightPresets";
 import { logger } from "@/lib/logger";
@@ -296,6 +297,8 @@ export default function XTerminal({
   const handleVisibilityChangeRef = useRef<(() => void) | null>(null);
   const replaceInputCommandRef = useRef<((command: string) => void) | null>(null);
   const lastErrorNoticeAtRef = useRef(0);
+  const credentialPromptBufferRef = useRef("");
+  const credentialPromptInputUntilRef = useRef(0);
 
   useEffect(() => {
     sessionTypeRef.current = sessionType;
@@ -379,6 +382,11 @@ export default function XTerminal({
   // Shell integration state
   const { shellIntegrationRef } = useShellIntegration();
   const canShowCommandSuggestions = useCallback(() => {
+    if (credentialPromptInputUntilRef.current > Date.now()) {
+      return false;
+    }
+    credentialPromptInputUntilRef.current = 0;
+
     const terminal = terminalRef.current;
     if (terminal?.buffer.active.type === "alternate") {
       return false;
@@ -613,6 +621,8 @@ export default function XTerminal({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     inputStateRef.current = createTerminalInputState();
+    credentialPromptBufferRef.current = "";
+    credentialPromptInputUntilRef.current = 0;
     shellIntegrationRef.current.enabled = false;
     shellIntegrationRef.current.commandRunning = false;
     const isTerminalAlive = () => !disposed && terminalRef.current === terminal;
@@ -846,6 +856,27 @@ export default function XTerminal({
     let captureUnlisten: UnlistenFn | null = null;
     let zmodemUnlisten: UnlistenFn | null = null;
 
+    const clearCredentialPromptInputMode = () => {
+      credentialPromptBufferRef.current = "";
+      credentialPromptInputUntilRef.current = 0;
+    };
+
+    const updateCredentialPromptInputMode = (payload: string) => {
+      credentialPromptBufferRef.current = `${credentialPromptBufferRef.current}${payload}`.slice(
+        -4096,
+      );
+
+      if (detectCredentialPromptKind(credentialPromptBufferRef.current)) {
+        credentialPromptInputUntilRef.current = Date.now() + 120_000;
+        dismissSuggestions();
+        return;
+      }
+
+      if (/[\r\n]/u.test(payload)) {
+        credentialPromptInputUntilRef.current = 0;
+      }
+    };
+
     const refreshGutter = () => {
       if (!isTerminalAlive()) return;
       if (performanceModeRef.current === "overloaded") return;
@@ -1056,6 +1087,7 @@ export default function XTerminal({
         if (!isTerminalAlive()) return;
         queuedOutputChunksRef.current.push(event.payload);
         queuedOutputCharsRef.current += event.payload.length;
+        updateCredentialPromptInputMode(event.payload);
         feedCredentialOutput(event.payload);
         if (visibleRef.current && hasErrorKeyword(event.payload)) {
           const now = Date.now();
@@ -1091,6 +1123,7 @@ export default function XTerminal({
           terminal.write(`\x1b[33m[${tRef.current("terminal.pressEnterToReconnect")}]\x1b[0m\r\n`);
         }
         inputStateRef.current = createTerminalInputState();
+        clearCredentialPromptInputMode();
         dismissSuggestions();
       });
       if (disposed) {
@@ -1269,8 +1302,16 @@ export default function XTerminal({
         }
       }
 
-      const command = data === "\r" ? getTrackedSubmissionCommand(inputStateRef.current) : "";
+      const suppressSubmission =
+        data === "\r" && credentialPromptInputUntilRef.current > Date.now();
+      const command =
+        data === "\r" && !suppressSubmission
+          ? getTrackedSubmissionCommand(inputStateRef.current)
+          : "";
       inputStateRef.current = applyTerminalInputData(inputStateRef.current, data);
+      if (data === "\r" || data === "\u0003") {
+        clearCredentialPromptInputMode();
+      }
       syncSuggestionsWithInputState();
       sendRawInput(data, data === "\r" && command ? command : null);
     });
@@ -1349,6 +1390,7 @@ export default function XTerminal({
       containerEl.removeEventListener("mouseup", handleMiddleClick);
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       inputStateRef.current = createTerminalInputState();
+      clearCredentialPromptInputMode();
       shellIntegrationRef.current.enabled = false;
       shellIntegrationRef.current.commandRunning = false;
       executeActionCommandRef.current = null;
