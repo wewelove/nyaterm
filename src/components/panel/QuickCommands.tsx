@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BiImport } from "react-icons/bi";
 import { useTranslation } from "react-i18next";
+import { BiImport } from "react-icons/bi";
 import {
   MdAdd,
   MdAutoAwesome,
@@ -17,7 +17,9 @@ import {
   MdSort,
   MdTerminal,
 } from "react-icons/md";
+import DeleteQuickCommandCategoryDialog from "@/components/dialog/quick-commands/DeleteQuickCommandCategoryDialog";
 import QuickCommandsImportDialog from "@/components/dialog/quick-commands/QuickCommandsImportDialog";
+import RenameQuickCommandCategoryDialog from "@/components/dialog/quick-commands/RenameQuickCommandCategoryDialog";
 import PanelHeader from "@/components/layout/PanelHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,10 +85,12 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
   // UI State
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [sortMode, setSortMode] = useState<"updated" | "name" | "useCount">("updated");
+  const [sortMode, setSortMode] = useState<"created" | "name" | "useCount">("created");
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [categoryToRename, setCategoryToRename] = useState<QuickCommandCategory | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<QuickCommandCategory | null>(null);
 
   // Variable Prompt State
   const [promptCmd, setPromptCmd] = useState<QuickCommand | null>(null);
@@ -134,6 +138,34 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
   const handleDelete = useCallback((id: string) => {
     setCommands((prev) => prev.filter((c) => c.id !== id));
   }, []);
+
+  const handleConfirmDeleteCategory = useCallback(() => {
+    if (!categoryToDelete) return;
+
+    const categoryId = categoryToDelete.id;
+    setSavedCategories((prev) => prev.filter((category) => category.id !== categoryId));
+    setCommands((prev) => prev.filter((cmd) => cmd.category_id !== categoryId));
+    setSelectedCategory((current) => (current === categoryId ? "all" : current));
+    setCategoryToDelete(null);
+  }, [categoryToDelete]);
+
+  const handleConfirmRenameCategory = useCallback(
+    (name: string) => {
+      if (!categoryToRename) return;
+
+      const renamedCategory = { ...categoryToRename, name };
+      setSavedCategories((prev) => {
+        const exists = prev.some((category) => category.id === renamedCategory.id);
+        return exists
+          ? prev.map((category) =>
+              category.id === renamedCategory.id ? renamedCategory : category,
+            )
+          : [...prev, renamedCategory];
+      });
+      setCategoryToRename(null);
+    },
+    [categoryToRename],
+  );
 
   const incrementUseCount = useCallback((id: string) => {
     setCommands((prev) =>
@@ -328,7 +360,10 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
         case "useCount":
           return (b.use_count ?? 0) - (a.use_count ?? 0);
         default:
-          return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+          return (
+            (a.created_at ?? a.updated_at ?? Number.MAX_SAFE_INTEGER) -
+            (b.created_at ?? b.updated_at ?? Number.MAX_SAFE_INTEGER)
+          );
       }
     });
 
@@ -341,6 +376,12 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
     hasActiveFilters && commands.length > 0
       ? `${filteredCommands.length}/${commands.length}`
       : `${commands.length}`;
+  const selectedCategoryForAction = allCategories.find(
+    (category) => category.id === selectedCategory,
+  );
+  const categoryToDeleteCommandCount = categoryToDelete
+    ? commands.filter((cmd) => cmd.category_id === categoryToDelete.id).length
+    : 0;
   const headerControlClassName =
     "h-7 border-0 bg-[var(--df-bg-hover)] py-1 text-xs text-[var(--df-text)] shadow-none";
 
@@ -404,6 +445,42 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
                 </Select>
               </div>
 
+              {selectedCategoryForAction && (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-6 w-6 shrink-0 rounded-md p-0 transition-colors hover:bg-[var(--df-bg-hover)]"
+                        style={{ color: "var(--df-text-muted)" }}
+                        aria-label={t("quickCommands.renameCategory")}
+                        onClick={() => setCategoryToRename(selectedCategoryForAction)}
+                      >
+                        <MdEdit className="text-[1.05rem]" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t("quickCommands.renameCategory")}</TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-6 w-6 shrink-0 rounded-md p-0 transition-colors hover:bg-[var(--df-bg-hover)]"
+                        style={{ color: "var(--df-text-muted)" }}
+                        aria-label={t("quickCommands.deleteCategory")}
+                        onClick={() => setCategoryToDelete(selectedCategoryForAction)}
+                      >
+                        <MdDelete className="text-[1.05rem]" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t("quickCommands.deleteCategory")}</TooltipContent>
+                  </Tooltip>
+                </>
+              )}
+
               <DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -414,7 +491,7 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
                         className="h-6 w-6 shrink-0 rounded-md p-0 transition-colors hover:bg-[var(--df-bg-hover)]"
                         style={{
                           color:
-                            sortMode !== "updated" ? "var(--df-primary)" : "var(--df-text-muted)",
+                            sortMode !== "created" ? "var(--df-primary)" : "var(--df-text-muted)",
                         }}
                         aria-label={t("quickCommands.sort")}
                       >
@@ -429,8 +506,8 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
                     value={sortMode}
                     onValueChange={(v) => setSortMode(v as typeof sortMode)}
                   >
-                    <DropdownMenuRadioItem value="updated" className="text-xs">
-                      {t("quickCommands.sortByUpdated")}
+                    <DropdownMenuRadioItem value="created" className="text-xs">
+                      {t("quickCommands.sortByCreated")}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="name" className="text-xs">
                       {t("quickCommands.sortByName")}
@@ -694,6 +771,18 @@ function QuickCommands({ onSend, onSendToAll }: QuickCommandsProps) {
           open={importDialogOpen}
           onClose={() => setImportDialogOpen(false)}
           onImported={handleImported}
+        />
+        <RenameQuickCommandCategoryDialog
+          category={categoryToRename}
+          categories={allCategories}
+          onCancel={() => setCategoryToRename(null)}
+          onConfirm={handleConfirmRenameCategory}
+        />
+        <DeleteQuickCommandCategoryDialog
+          category={categoryToDelete}
+          commandCount={categoryToDeleteCommandCount}
+          onCancel={() => setCategoryToDelete(null)}
+          onConfirm={handleConfirmDeleteCategory}
         />
       </div>
     </TooltipProvider>
