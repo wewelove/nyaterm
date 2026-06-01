@@ -344,6 +344,7 @@
     "delete": "删除",
     "deleteFailedCount": "有 {{count}} 个项目删除失败",
     "deleteFailedItem": "有 1 个项目删除失败",
+    "directoryHistory": "目录历史",
     "downloadSelected": "下载选中",
     "editPath": "点击编辑路径",
     "emptyDirectory": "空目录",

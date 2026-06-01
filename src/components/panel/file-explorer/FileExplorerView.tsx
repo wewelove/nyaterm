@@ -97,6 +97,7 @@ import {
   normalizeDirectoryPath,
   PARENT_DIRECTORY_ENTRY,
   PARENT_DIRECTORY_ENTRY_NAME,
+  pushVisitedHistory,
   type RemoteTextFile,
   type ResolvedLocalDropPathEntry,
 } from "./model";
@@ -149,6 +150,7 @@ function FileExplorer({
     null,
   );
   const [cwdTrackingActive, setCwdTrackingActive] = useState(false);
+  const [visitedHistory, setVisitedHistory] = useState<string[]>([]);
   const alwaysUploadFilesRef = useRef<Set<string>>(new Set());
   const filesRef = useRef<FileEntry[]>([]);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -162,6 +164,7 @@ function FileExplorer({
   const inlineRenameScopeRef = useRef("");
   const historyRef = useRef<string[]>([]);
   const historyIndexRef = useRef(-1);
+  const visitedHistoryRef = useRef<string[]>([]);
   const dragSelectionRef = useRef<{
     anchor: string;
     baseSelection: Set<string>;
@@ -180,6 +183,7 @@ function FileExplorer({
   canBrowseFilesRef.current = canBrowseFiles;
   currentPathRef.current = currentPath;
   homeDirRef.current = homeDir;
+  visitedHistoryRef.current = visitedHistory;
 
   const resetExternalDropHover = useCallback(() => {
     setIsExternalDropActive(false);
@@ -290,6 +294,7 @@ function FileExplorer({
         homeDirRef.current,
         historyRef.current,
         historyIndexRef.current,
+        visitedHistoryRef.current,
       );
       if (snapshot) {
         sessionCacheRef.current.set(activeSessionId, snapshot);
@@ -305,6 +310,34 @@ function FileExplorer({
     window.addEventListener("mouseup", handleMouseUp);
     return () => {
       window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  // Keep the in-memory per-session cache bounded to live sessions so closed
+  // sessions release their cached directory listing and history.
+  useEffect(() => {
+    const pruneClosedSessions = async () => {
+      const cache = sessionCacheRef.current;
+      if (cache.size === 0) return;
+      try {
+        const sessions = await invoke<SessionInfo[]>("list_sessions");
+        const liveIds = new Set(sessions.map((session) => session.id));
+        for (const sessionId of [...cache.keys()]) {
+          if (!liveIds.has(sessionId)) {
+            cache.delete(sessionId);
+          }
+        }
+      } catch {
+        // Backend might be unavailable; keep the cache untouched until next event.
+      }
+    };
+
+    void pruneClosedSessions();
+    const unlisten = listen("sessions-changed", () => {
+      void pruneClosedSessions();
+    });
+    return () => {
+      unlisten.then((dispose) => dispose());
     };
   }, []);
 
@@ -409,9 +442,13 @@ function FileExplorer({
           pushDirectoryHistory(normalizedPath);
         }
 
+        const nextVisitedHistory = pushVisitedHistory(visitedHistoryRef.current, normalizedPath);
+        visitedHistoryRef.current = nextVisitedHistory;
+
         startTransition(() => {
           setFiles(entries);
           setCurrentPath(normalizedPath);
+          setVisitedHistory(nextVisitedHistory);
           setSelectedFiles((prev) => {
             if (pathChanged) {
               const shouldSelectEntry =
@@ -449,6 +486,7 @@ function FileExplorer({
           cached?.homeDir ?? homeDirRef.current,
           historyRef.current,
           historyIndexRef.current,
+          nextVisitedHistory,
         );
         if (snapshot) {
           sessionCacheRef.current.set(activeSessionId, snapshot);
@@ -573,6 +611,7 @@ function FileExplorer({
         homeDirRef.current,
         historyRef.current,
         historyIndexRef.current,
+        visitedHistoryRef.current,
       );
       if (snapshot) {
         cache.set(prevId, snapshot);
@@ -588,6 +627,8 @@ function FileExplorer({
       setSelectedFiles(new Set());
       historyRef.current = [];
       historyIndexRef.current = -1;
+      visitedHistoryRef.current = [];
+      setVisitedHistory([]);
       lastSelectedRef.current = null;
       return;
     }
@@ -601,12 +642,16 @@ function FileExplorer({
       setError(null);
       historyRef.current = [...cached.history];
       historyIndexRef.current = cached.historyIndex;
+      visitedHistoryRef.current = [...cached.visitedHistory];
+      setVisitedHistory([...cached.visitedHistory]);
       lastSelectedRef.current = null;
       return;
     }
 
     historyRef.current = [];
     historyIndexRef.current = -1;
+    visitedHistoryRef.current = [];
+    setVisitedHistory([]);
     lastSelectedRef.current = null;
     setSelectedFiles(new Set());
 
@@ -900,6 +945,18 @@ function FileExplorer({
       if (!loaded) {
         historyIndexRef.current = previousIndex;
       }
+    },
+    [loadDirectory],
+  );
+
+  const handleSelectHistoryPath = useCallback(
+    (path: string) => {
+      const normalizedPath = normalizeDirectoryPath(path);
+      if (!normalizedPath || normalizedPath === normalizeDirectoryPath(currentPathRef.current)) {
+        return;
+      }
+      setFileSearchQuery("");
+      void loadDirectory(normalizedPath);
     },
     [loadDirectory],
   );
@@ -1543,9 +1600,11 @@ function FileExplorer({
           displayPath={displayPath}
           currentPath={currentPath}
           homeDir={homeDir}
+          directoryHistory={visitedHistory}
           onPathInputTextChange={setPathInputText}
           onEditingPathChange={setIsEditingPath}
           onLoadDirectory={(path) => void loadDirectory(path)}
+          onSelectHistoryPath={handleSelectHistoryPath}
         />
       )}
 

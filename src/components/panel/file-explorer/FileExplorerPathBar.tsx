@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { type RefObject, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 interface FileExplorerPathBarProps {
@@ -8,10 +8,16 @@ interface FileExplorerPathBarProps {
   displayPath: string;
   currentPath: string;
   homeDir: string;
+  directoryHistory: string[];
   onPathInputTextChange: (value: string) => void;
   onEditingPathChange: (editing: boolean) => void;
   onLoadDirectory: (path: string) => void;
+  onSelectHistoryPath: (path: string) => void;
 }
+
+// Roughly five rows are visible before the list starts scrolling.
+const HISTORY_ROW_HEIGHT = 24;
+const HISTORY_VISIBLE_ROWS = 5;
 
 export function FileExplorerPathBar({
   isEditingPath,
@@ -20,15 +26,45 @@ export function FileExplorerPathBar({
   displayPath,
   currentPath,
   homeDir,
+  directoryHistory,
   onPathInputTextChange,
   onEditingPathChange,
   onLoadDirectory,
+  onSelectHistoryPath,
 }: FileExplorerPathBarProps) {
   const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the editor/history popup when clicking outside the path bar. This is
+  // more robust than relying on input blur, which would fire while dragging the
+  // history scrollbar.
+  useEffect(() => {
+    if (!isEditingPath) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        onEditingPathChange(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isEditingPath, onEditingPathChange]);
+
+  const formatHistoryPath = (path: string) => {
+    if (!homeDir) return path;
+    if (path === homeDir) return "~";
+    if (path.startsWith(`${homeDir}/`)) return `~${path.slice(homeDir.length)}`;
+    return path;
+  };
+
+  const showHistory = isEditingPath && directoryHistory.length > 0;
+  const normalizedCurrentPath = currentPath || homeDir;
 
   return (
     <div
-      className="px-2 py-1 border-b flex items-center"
+      ref={containerRef}
+      className="relative px-2 py-1 border-b flex items-center"
       style={{ borderColor: "var(--df-border)", minHeight: "26px" }}
     >
       {isEditingPath ? (
@@ -54,7 +90,6 @@ export function FileExplorerPathBar({
               onEditingPathChange(false);
             }
           }}
-          onBlur={() => onEditingPathChange(false)}
         />
       ) : (
         <div
@@ -69,6 +104,48 @@ export function FileExplorerPathBar({
           title={t("fileExplorer.editPath")}
         >
           {displayPath}
+        </div>
+      )}
+
+      {showHistory && (
+        <div
+          className="terminal-scroll absolute inset-x-0 top-full z-30 mt-px overflow-y-auto rounded-b-md border shadow-lg"
+          style={{
+            backgroundColor: "var(--df-bg-panel)",
+            borderColor: "var(--df-border)",
+            maxHeight: `${HISTORY_ROW_HEIGHT * HISTORY_VISIBLE_ROWS}px`,
+          }}
+          aria-label={t("fileExplorer.directoryHistory")}
+        >
+          {directoryHistory.map((path) => {
+            const isCurrent = path === normalizedCurrentPath;
+            return (
+              <button
+                key={path}
+                type="button"
+                className="flex w-full items-center truncate px-2 text-left text-[0.625rem] font-mono transition-colors"
+                style={{
+                  height: `${HISTORY_ROW_HEIGHT}px`,
+                  color: isCurrent ? "var(--df-primary)" : "var(--df-text)",
+                }}
+                title={path}
+                // Prevent the input from blurring before the click is handled.
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.backgroundColor = "var(--df-bg-hover)";
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.backgroundColor = "transparent";
+                }}
+                onClick={() => {
+                  onEditingPathChange(false);
+                  onSelectHistoryPath(path);
+                }}
+              >
+                <span className="truncate">{formatHistoryPath(path)}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

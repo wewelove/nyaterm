@@ -17,6 +17,7 @@ export type FileExplorerSessionCache = {
   homeDir: string;
   history: string[];
   historyIndex: number;
+  visitedHistory: string[];
 };
 
 export type LoadDirectoryOptions = {
@@ -33,6 +34,7 @@ export type InlineRenameState = {
 };
 
 export const fileExplorerSessionCacheStore = new Map<string, FileExplorerSessionCache>();
+export const MAX_VISITED_HISTORY = 30;
 export const FILE_LIST_ITEM_HEIGHT = 30;
 export const FILE_LIST_HEADER_HEIGHT = 28;
 export const FILE_LIST_OVERSCAN = 8;
@@ -123,6 +125,22 @@ export function isParentDirectoryEntry(entry: FileEntry) {
   return entry.name === PARENT_DIRECTORY_ENTRY_NAME;
 }
 
+/**
+ * Records a freshly visited directory into the in-memory visited list.
+ * Deduplicates by path (moving an existing entry to the top), keeps the most
+ * recent first, and caps the list to avoid unbounded growth per session.
+ */
+export function pushVisitedHistory(list: string[], path: string): string[] {
+  const normalizedPath = normalizeDirectoryPath(path);
+  if (!normalizedPath) return list;
+  const withoutDuplicate = list.filter((entry) => entry !== normalizedPath);
+  withoutDuplicate.unshift(normalizedPath);
+  if (withoutDuplicate.length > MAX_VISITED_HISTORY) {
+    withoutDuplicate.length = MAX_VISITED_HISTORY;
+  }
+  return withoutDuplicate;
+}
+
 function naturalCompare(left: string, right: string) {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
 }
@@ -171,6 +189,7 @@ export function buildSessionCacheSnapshot(
   homeDir: string,
   history: string[],
   historyIndex: number,
+  visitedHistory: string[],
 ): FileExplorerSessionCache | null {
   const normalizedCurrentPath = normalizeDirectoryPath(currentPath);
   const normalizedHomeDir = normalizeDirectoryPath(homeDir);
@@ -185,11 +204,17 @@ export function buildSessionCacheSnapshot(
   const nextHistory = normalizedHistory.length > 0 ? normalizedHistory : [normalizedCurrentPath];
   const nextHistoryIndex = Math.min(Math.max(historyIndex, 0), nextHistory.length - 1);
 
+  const normalizedVisited = visitedHistory
+    .map((entry) => normalizeDirectoryPath(entry))
+    .filter((entry): entry is string => !!entry)
+    .slice(0, MAX_VISITED_HISTORY);
+
   return {
     files,
     currentPath: normalizedCurrentPath,
     homeDir: normalizedHomeDir || normalizedCurrentPath,
     history: nextHistory,
     historyIndex: nextHistoryIndex,
+    visitedHistory: normalizedVisited,
   };
 }
