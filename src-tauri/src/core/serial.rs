@@ -3,7 +3,9 @@
 use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
-use super::zmodem::{ZmodemAction, ZmodemDetector, ZmodemEvent, ZmodemTransfer};
+use super::zmodem::{
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemEvent, ZmodemTransfer,
+};
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::{RecordingManager, SessionOutputCoalescer};
@@ -173,8 +175,37 @@ fn serial_session_thread(
     };
 
     let backspace_as_bs = config.backspace_mode == "ctrl_h";
+    let mut reader_port = match port.try_clone() {
+        Ok(port) => port,
+        Err(e) => {
+            log_event(StructuredLog {
+                level: StructuredLogLevel::Error,
+                domain: "session.lifecycle".to_string(),
+                event: "session.connection_failed".to_string(),
+                message: "Failed to clone serial port for reading".to_string(),
+                ids: Some(serde_json::json!({
+                    "session_id": session_id.clone(),
+                    "connection_id": connection_id.clone(),
+                })),
+                data: Some(serde_json::json!({
+                    "session_type": "Serial",
+                    "port_name": config.port_name.clone(),
+                    "baud_rate": config.baud_rate,
+                })),
+                error: Some(serde_json::json!({ "message": e.to_string() })),
+                client_timestamp: None,
+            });
+            let _ = app.emit(
+                &format!("session-error-{}", session_id),
+                format!("Failed to clone serial port: {}", e),
+            );
+            let _ = app.emit(&format!("session-closed-{}", session_id), ());
+            rt_handle.block_on(async { manager.remove_session(&session_id).await });
+            return;
+        }
+    };
 
-    let port = Arc::new(Mutex::new(port));
+    let port_writer = Arc::new(Mutex::new(port));
     let output_event = format!("terminal-output-{}", session_id);
     let closed_event = format!("session-closed-{}", session_id);
     let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
@@ -189,12 +220,11 @@ fn serial_session_thread(
     let zmodem_state_reader = zmodem_state.clone();
     let zmodem_event_name = format!("zmodem-event-{session_id}");
     let zmodem_event_reader = zmodem_event_name.clone();
-    let (zmodem_out_tx, mut zmodem_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
     // Reader thread
     let app_reader = app.clone();
     let sid_reader = session_id.clone();
-    let port_reader = port.clone();
+    let port_writer_reader = port_writer.clone();
     let output_reader = output.clone();
     let recording_mgr_reader = recording_mgr.clone();
 
@@ -205,10 +235,7 @@ fn serial_session_thread(
         let mut buf = [0u8; 4096];
         let mut zmodem_detector = ZmodemDetector::new();
         while reader_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            let result = {
-                let mut p = port_reader.lock().unwrap();
-                p.read(&mut buf)
-            };
+            let result = reader_port.read(&mut buf);
             match result {
                 Ok(0) => break,
                 Ok(n) => {
@@ -222,7 +249,9 @@ fn serial_session_thread(
                             for action in actions {
                                 match action {
                                     ZmodemAction::SendToRemote(data) => {
-                                        let _ = zmodem_out_tx.send(data);
+                                        let mut p = port_writer_reader.lock().unwrap();
+                                        let _ = p.write_all(&data);
+                                        let _ = p.flush();
                                     }
                                     ZmodemAction::EmitEvent(event) => {
                                         let _ = app_reader.emit(&zmodem_event_reader, &event);
@@ -238,24 +267,36 @@ fn serial_session_thread(
                     }
 
                     // ZMODEM: detect header.
-                    if let Some((direction, header_offset)) = zmodem_detector.feed(raw) {
-                        if header_offset > 0 {
-                            let pre = String::from_utf8_lossy(&raw[..header_offset]).to_string();
-                            if !pre.is_empty() {
-                                if let Some(ref recorder) = recording_mgr_reader {
-                                    recorder.write_output(&sid_reader, &pre);
+                    let process_raw = match zmodem_detector.feed(raw) {
+                        ZmodemDetectResult::Detected {
+                            direction,
+                            passthrough,
+                            initial_bytes,
+                        } => {
+                            if !passthrough.is_empty() {
+                                let pre = String::from_utf8_lossy(&passthrough).to_string();
+                                if !pre.is_empty() {
+                                    if let Some(ref recorder) = recording_mgr_reader {
+                                        recorder.write_output(&sid_reader, &pre);
+                                    }
+                                    output_reader.push_owned(pre);
                                 }
-                                output_reader.push_owned(pre);
                             }
+                            let transfer = ZmodemTransfer::new(direction, &initial_bytes);
+                            *zmodem_state_reader.lock().unwrap() = Some(transfer);
+                            let _ = app_reader
+                                .emit(&zmodem_event_reader, &ZmodemEvent::Detected { direction });
+                            continue;
                         }
-                        let transfer = ZmodemTransfer::new(direction, &raw[header_offset..]);
-                        *zmodem_state_reader.lock().unwrap() = Some(transfer);
-                        let _ = app_reader
-                            .emit(&zmodem_event_reader, &ZmodemEvent::Detected { direction });
-                        continue;
-                    }
+                        ZmodemDetectResult::NoMatch { passthrough } => {
+                            if passthrough.is_empty() {
+                                continue;
+                            }
+                            passthrough
+                        }
+                    };
 
-                    let mut text = String::from_utf8_lossy(raw).to_string();
+                    let mut text = String::from_utf8_lossy(&process_raw).to_string();
                     if let Ok(mut proc) = capture_for_reader.lock() {
                         if proc.has_active() {
                             text = proc.process(&text);
@@ -298,12 +339,6 @@ fn serial_session_thread(
 
     // Command loop
     loop {
-        while let Ok(data) = zmodem_out_rx.try_recv() {
-            let mut p = port.lock().unwrap();
-            let _ = p.write_all(&data);
-            let _ = p.flush();
-        }
-
         let cmd = match cmd_rx.blocking_recv() {
             Some(c) => c,
             None => break,
@@ -322,7 +357,7 @@ fn serial_session_thread(
                 if let Some(ref recorder) = recording_mgr {
                     recorder.write_input(&session_id, &data);
                 }
-                let mut p = port.lock().unwrap();
+                let mut p = port_writer.lock().unwrap();
                 let _ = p.write_all(&data);
                 let _ = p.flush();
             }
@@ -334,7 +369,7 @@ fn serial_session_thread(
                 if let Ok(mut proc) = capture_processor.lock() {
                     proc.register(marker_id, result_tx);
                 }
-                let mut p = port.lock().unwrap();
+                let mut p = port_writer.lock().unwrap();
                 let _ = p.write_all(&wrapped_command);
                 let _ = p.flush();
             }
@@ -346,7 +381,7 @@ fn serial_session_thread(
                     for action in actions {
                         match action {
                             ZmodemAction::SendToRemote(data) => {
-                                let mut p = port.lock().unwrap();
+                                let mut p = port_writer.lock().unwrap();
                                 let _ = p.write_all(&data);
                                 let _ = p.flush();
                             }
@@ -367,7 +402,7 @@ fn serial_session_thread(
                     for action in actions {
                         match action {
                             ZmodemAction::SendToRemote(data) => {
-                                let mut p = port.lock().unwrap();
+                                let mut p = port_writer.lock().unwrap();
                                 let _ = p.write_all(&data);
                                 let _ = p.flush();
                             }
@@ -388,7 +423,7 @@ fn serial_session_thread(
                     for action in actions {
                         match action {
                             ZmodemAction::SendToRemote(data) => {
-                                let mut p = port.lock().unwrap();
+                                let mut p = port_writer.lock().unwrap();
                                 let _ = p.write_all(&data);
                                 let _ = p.flush();
                             }
