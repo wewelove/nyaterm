@@ -1,18 +1,9 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import {
-  type IBufferCell,
-  type IBufferLine,
-  type IBufferRange,
-  type ILinkHandler,
-  Terminal,
-} from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MdCellTower, MdClose, MdLogout, MdPause, MdPlayArrow } from "react-icons/md";
 import MultiLinePasteDialog from "@/components/dialog/terminal/MultiLinePasteDialog";
 import { useTerminalAppSettings } from "@/context/AppContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -31,7 +22,6 @@ import { readClipboardText } from "@/lib/clipboard";
 import { detectCredentialPromptKind } from "@/lib/credentialAutofill";
 import { invoke } from "@/lib/invoke";
 import { hexLuminance } from "@/lib/keywordHighlightPresets";
-import { logger } from "@/lib/logger";
 import { openSendCommandPanel } from "@/lib/sendCommandPanelEvents";
 import {
   buildTerminalCommandInput,
@@ -51,484 +41,32 @@ import {
   deleteTerminalInputRange,
   getTrackedSubmissionCommand,
   resyncFromTerminalLine,
-  type TerminalInputState,
 } from "@/lib/terminalInputTracker";
 import { XTERM_PERFORMANCE_CONFIG } from "@/lib/xtermPerformance";
-import type { AiCaptureEvent, SessionType } from "@/types/global";
+import type { AiCaptureEvent } from "@/types/global";
 import ActionLinkMenu from "./ActionLinkMenu";
 import ActionLinkTooltip from "./ActionLinkTooltip";
 import CommandSuggestions from "./CommandSuggestions";
 import CredentialSuggestions from "./CredentialSuggestions";
+import SyncActionOverlay from "./SyncActionOverlay";
 import TerminalContextMenu from "./TerminalContextMenu";
 import TerminalGutter from "./TerminalGutter";
 import TerminalSearchBar from "./TerminalSearchBar";
+import {
+  getInputIndexAtBufferPosition,
+  getMouseBufferPosition,
+  getSelectedInputRange,
+  hasErrorKeyword,
+  type InputSelectionRange,
+  isMultiLineText,
+  isShiftInsertPasteEvent,
+  readCurrentInputLine,
+  readRecentOutput,
+} from "./terminalInputSelection";
+import { createTerminalLinkHandlers } from "./terminalLinkHandlers";
+import type { PerformanceMode, PerformanceOverlayState, XTerminalProps } from "./xterminalTypes";
+import { handleZmodemEvent, type ZmodemEventPayload } from "./zmodemTerminalEvents";
 import "@xterm/xterm/css/xterm.css";
-
-interface SyncOverlayState {
-  peerCount: number;
-  isPaused: boolean;
-  groupColor?: string;
-  groupName?: string;
-  onPauseResume: () => void;
-  onLeaveGroup: () => void;
-  onCloseGroup: () => void;
-}
-
-interface XTerminalProps {
-  sessionId: string;
-  active: boolean;
-  visible?: boolean;
-  sessionType: SessionType;
-  connectionId?: string;
-  onReconnected?: (oldSessionId: string, newSessionId: string) => void;
-  syncPeerSessionIds?: string[];
-  syncOverlay?: SyncOverlayState;
-}
-
-type PerformanceMode = "normal" | "overloaded";
-type PerformanceOverlayState = "overloaded" | "recovered" | null;
-
-/** Read the current cursor line from the terminal buffer up to the cursor. */
-function readCurrentInputLine(terminal: Terminal): string {
-  const buffer = terminal.buffer.active;
-  const y = buffer.baseY + buffer.cursorY;
-  const line = buffer.getLine(y);
-  if (!line) return "";
-  const fullLine = line.translateToString(true, 0, buffer.cursorX);
-  return fullLine;
-}
-
-function readRecentOutput(terminal: Terminal, lineLimit: number) {
-  const buffer = terminal.buffer.active;
-  const total = buffer.length;
-  const start = Math.max(0, total - lineLimit);
-  const lines: string[] = [];
-  for (let y = start; y < total; y += 1) {
-    const line = buffer.getLine(y);
-    if (line) lines.push(line.translateToString(true));
-  }
-  return lines.join("\n").replace(/\s+$/u, "");
-}
-
-function hasErrorKeyword(output: string) {
-  return /\b(error|failed|permission denied|no space left on device|connection refused|segmentation fault|out of memory|cannot allocate memory|command not found|module not found|port already in use)\b/i.test(
-    output,
-  );
-}
-
-function isMultiLineText(text: string): boolean {
-  return /[\r\n]/u.test(text);
-}
-
-function isShiftInsertPasteEvent(e: KeyboardEvent): boolean {
-  return (
-    e.shiftKey &&
-    !e.ctrlKey &&
-    !e.metaKey &&
-    !e.altKey &&
-    (e.code === "Insert" || e.key === "Insert")
-  );
-}
-
-interface LogicalInputLineSnapshot {
-  startY: number;
-  endY: number;
-  text: string;
-  stringIndexToCellOffset: number[];
-}
-
-interface InputCellSpan {
-  startStringIndex: number;
-  startCellOffset: number;
-  endCellOffset: number;
-}
-
-interface InputSelectionRange {
-  start: number;
-  end: number;
-}
-
-interface InputClickPosition {
-  x: number;
-  y: number;
-}
-
-interface XTermCoreWithRenderDimensions {
-  _core?: {
-    _renderService?: {
-      dimensions?: {
-        css?: {
-          cell?: {
-            height: number;
-            width: number;
-          };
-        };
-      };
-    };
-  };
-}
-
-function buildLineStringToCellMap(
-  line: IBufferLine,
-  stringLength: number,
-  maxCols: number,
-  scratchCell: IBufferCell,
-): number[] {
-  const map: number[] = [];
-  let col = 0;
-  let cellEndCol = 0;
-
-  while (col < maxCols && map.length < stringLength) {
-    const cell = line.getCell(col, scratchCell);
-    if (!cell) break;
-
-    const chars = cell.getChars();
-    const width = cell.getWidth();
-    const stride = width || 1;
-
-    if (chars.length === 0) {
-      map.push(col);
-    } else {
-      for (let i = 0; i < chars.length; i += 1) {
-        map.push(col);
-      }
-    }
-
-    cellEndCol = col + stride;
-    col += stride;
-  }
-
-  map.push(cellEndCol);
-  return map;
-}
-
-function readLogicalLineSnapshot(terminal: Terminal): LogicalInputLineSnapshot | null {
-  const buffer = terminal.buffer.active;
-  const cursorY = buffer.baseY + buffer.cursorY;
-  let startY = cursorY;
-  while (startY > 0 && buffer.getLine(startY)?.isWrapped) {
-    startY -= 1;
-  }
-
-  let endY = cursorY;
-  while (endY + 1 < buffer.length && buffer.getLine(endY + 1)?.isWrapped) {
-    endY += 1;
-  }
-
-  const scratchCell = buffer.getNullCell();
-  const parts: string[] = [];
-  const stringIndexToCellOffset: number[] = [];
-  let lastCellOffset = 0;
-
-  for (let y = startY; y <= endY; y += 1) {
-    const line = buffer.getLine(y);
-    if (!line) return null;
-
-    const rowOffset = (y - startY) * terminal.cols;
-    const maxCols = Math.min(line.length, terminal.cols);
-    const text = line.translateToString(false, 0, maxCols);
-    const lineMap = buildLineStringToCellMap(line, text.length, maxCols, scratchCell);
-
-    for (let i = 0; i < text.length; i += 1) {
-      stringIndexToCellOffset.push(rowOffset + (lineMap[i] ?? i));
-    }
-
-    lastCellOffset = rowOffset + (lineMap[text.length] ?? text.length);
-    parts.push(text);
-  }
-
-  stringIndexToCellOffset.push(lastCellOffset);
-  return { startY, endY, text: parts.join(""), stringIndexToCellOffset };
-}
-
-function findTrackedInputCellSpan(
-  snapshot: LogicalInputLineSnapshot,
-  state: TerminalInputState,
-  cursorCellOffset: number,
-): InputCellSpan | null {
-  if (!state.value) return null;
-
-  const { text, stringIndexToCellOffset } = snapshot;
-  let searchFrom = 0;
-  let matchIndex = text.indexOf(state.value, searchFrom);
-  let best: InputCellSpan | null = null;
-
-  while (matchIndex >= 0) {
-    const cursorIndex = matchIndex + state.cursor;
-    const endIndex = matchIndex + state.value.length;
-    const cursorCandidate = stringIndexToCellOffset[cursorIndex];
-    const startCellOffset = stringIndexToCellOffset[matchIndex];
-    const endCellOffset = stringIndexToCellOffset[endIndex];
-
-    if (
-      cursorCandidate === cursorCellOffset &&
-      startCellOffset !== undefined &&
-      endCellOffset !== undefined
-    ) {
-      best = {
-        startStringIndex: matchIndex,
-        startCellOffset,
-        endCellOffset,
-      };
-    }
-
-    searchFrom = matchIndex + 1;
-    matchIndex = text.indexOf(state.value, searchFrom);
-  }
-
-  return best;
-}
-
-function cellOffsetToStringIndex(stringIndexToCellOffset: number[], cellOffset: number): number {
-  for (let i = 0; i < stringIndexToCellOffset.length; i += 1) {
-    if ((stringIndexToCellOffset[i] ?? 0) >= cellOffset) {
-      return i;
-    }
-  }
-  return stringIndexToCellOffset.length - 1;
-}
-
-function selectionPositionToCellOffset(
-  selection: IBufferRange,
-  snapshot: LogicalInputLineSnapshot,
-  cols: number,
-): { start: number; end: number } | null {
-  if (
-    selection.start.y < snapshot.startY ||
-    selection.start.y > snapshot.endY ||
-    selection.end.y < snapshot.startY ||
-    selection.end.y > snapshot.endY
-  ) {
-    return null;
-  }
-
-  const start = (selection.start.y - snapshot.startY) * cols + selection.start.x;
-  const end = (selection.end.y - snapshot.startY) * cols + selection.end.x;
-  if (end <= start) return null;
-  return { start, end };
-}
-
-function getSelectedInputRange(
-  terminal: Terminal,
-  state: TerminalInputState,
-): InputSelectionRange | null {
-  if (terminal.buffer.active.type === "alternate") return null;
-  if (state.desynced || state.multiline || state.lineRewriteRequired) return null;
-
-  const selection = terminal.getSelectionPosition();
-  if (!selection) return null;
-
-  const snapshot = readLogicalLineSnapshot(terminal);
-  if (!snapshot) return null;
-
-  const buffer = terminal.buffer.active;
-  const cursorCellOffset =
-    (buffer.baseY + buffer.cursorY - snapshot.startY) * terminal.cols + buffer.cursorX;
-  const inputSpan = findTrackedInputCellSpan(snapshot, state, cursorCellOffset);
-  if (!inputSpan) return null;
-
-  const selectedCells = selectionPositionToCellOffset(selection, snapshot, terminal.cols);
-  if (!selectedCells) return null;
-  if (
-    selectedCells.start < inputSpan.startCellOffset ||
-    selectedCells.end > inputSpan.endCellOffset
-  ) {
-    return null;
-  }
-
-  const startStringIndex = cellOffsetToStringIndex(
-    snapshot.stringIndexToCellOffset,
-    selectedCells.start,
-  );
-  const endStringIndex = cellOffsetToStringIndex(
-    snapshot.stringIndexToCellOffset,
-    selectedCells.end,
-  );
-  const start = startStringIndex - inputSpan.startStringIndex;
-  const end = endStringIndex - inputSpan.startStringIndex;
-
-  if (start < 0 || end > state.value.length || end <= start) {
-    return null;
-  }
-
-  return { start, end };
-}
-
-function getMouseBufferPosition(terminal: Terminal, event: MouseEvent): InputClickPosition | null {
-  const screenEl = terminal.element?.querySelector(".xterm-screen") as HTMLElement | null;
-  const core = (terminal as Terminal & XTermCoreWithRenderDimensions)._core;
-  const cellWidth = core?._renderService?.dimensions?.css?.cell?.width ?? 0;
-  const cellHeight = core?._renderService?.dimensions?.css?.cell?.height ?? 0;
-  if (!screenEl || cellWidth <= 0 || cellHeight <= 0) return null;
-
-  const rect = screenEl.getBoundingClientRect();
-  const viewportX = Math.floor((event.clientX - rect.left) / cellWidth);
-  const viewportY = Math.floor((event.clientY - rect.top) / cellHeight);
-  if (viewportX < 0 || viewportY < 0 || viewportY >= terminal.rows) return null;
-
-  return {
-    x: Math.min(terminal.cols, viewportX),
-    y: terminal.buffer.active.viewportY + viewportY,
-  };
-}
-
-function getInputIndexAtBufferPosition(
-  terminal: Terminal,
-  state: TerminalInputState,
-  position: InputClickPosition,
-): number | null {
-  if (terminal.buffer.active.type === "alternate") return null;
-  if (state.desynced || state.multiline || state.lineRewriteRequired) return null;
-
-  const snapshot = readLogicalLineSnapshot(terminal);
-  if (!snapshot) return null;
-  if (position.y < snapshot.startY || position.y > snapshot.endY) return null;
-
-  const buffer = terminal.buffer.active;
-  const cursorCellOffset =
-    (buffer.baseY + buffer.cursorY - snapshot.startY) * terminal.cols + buffer.cursorX;
-  const inputSpan = findTrackedInputCellSpan(snapshot, state, cursorCellOffset);
-  if (!inputSpan) return null;
-
-  const clickedCellOffset = (position.y - snapshot.startY) * terminal.cols + position.x;
-  if (
-    clickedCellOffset < inputSpan.startCellOffset ||
-    clickedCellOffset > inputSpan.endCellOffset
-  ) {
-    return null;
-  }
-
-  const stringIndex = cellOffsetToStringIndex(snapshot.stringIndexToCellOffset, clickedCellOffset);
-  const inputIndex = stringIndex - inputSpan.startStringIndex;
-  if (inputIndex < 0 || inputIndex > state.value.length) return null;
-  return inputIndex;
-}
-
-type ZmodemEventPayload =
-  | { type: "detected"; direction: "download" | "upload" }
-  | {
-      type: "progress";
-      fileName: string;
-      bytesTransferred: number;
-      totalSize: number;
-      direction: "download" | "upload";
-    }
-  | { type: "complete"; direction: "download" | "upload"; fileCount: number }
-  | { type: "failed"; reason: string };
-
-async function handleZmodemEvent(
-  terminal: Terminal,
-  sessionId: string,
-  payload: ZmodemEventPayload,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-) {
-  const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-
-  switch (payload.type) {
-    case "detected": {
-      if (payload.direction === "download") {
-        terminal.write(`\r\n\x1b[36m[ZMODEM] ${t("zmodem.selectSaveDir")}\x1b[0m\r\n`);
-        const dir = await openDialog({ directory: true, multiple: false });
-        if (dir) {
-          await invoke("zmodem_accept_download", {
-            sessionId,
-            saveDir: dir,
-          });
-        } else {
-          await invoke("zmodem_cancel", { sessionId });
-          terminal.write(`\r\n\x1b[33m[ZMODEM] ${t("zmodem.cancelled")}\x1b[0m\r\n`);
-        }
-      } else {
-        terminal.write(`\r\n\x1b[36m[ZMODEM] ${t("zmodem.selectFiles")}\x1b[0m\r\n`);
-        const files = await openDialog({ directory: false, multiple: true });
-        if (files && files.length > 0) {
-          const filePaths = Array.isArray(files) ? files.map(String) : [String(files)];
-          await invoke("zmodem_accept_upload", {
-            sessionId,
-            filePaths,
-          });
-        } else {
-          await invoke("zmodem_cancel", { sessionId });
-          terminal.write(`\r\n\x1b[33m[ZMODEM] ${t("zmodem.cancelled")}\x1b[0m\r\n`);
-        }
-      }
-      break;
-    }
-    case "progress": {
-      const percent =
-        payload.totalSize > 0
-          ? Math.round((payload.bytesTransferred / payload.totalSize) * 100)
-          : 0;
-      const msg =
-        payload.direction === "download"
-          ? t("zmodem.downloading", { fileName: payload.fileName, percent })
-          : t("zmodem.uploading", { fileName: payload.fileName, percent });
-      terminal.write(`\r\x1b[36m[ZMODEM] ${msg}\x1b[K`);
-      break;
-    }
-    case "complete": {
-      terminal.write(
-        `\r\n\x1b[32m[ZMODEM] ${t("zmodem.complete", { count: payload.fileCount })}\x1b[0m\r\n`,
-      );
-      break;
-    }
-    case "failed": {
-      terminal.write(
-        `\r\n\x1b[31m[ZMODEM] ${t("zmodem.failed", { reason: payload.reason })}\x1b[0m\r\n`,
-      );
-      break;
-    }
-  }
-}
-
-function SyncActionOverlay({ overlay }: { overlay: SyncOverlayState }) {
-  const { t } = useTranslation();
-  const color = overlay.groupColor ?? "var(--df-primary)";
-
-  return (
-    <div
-      className="absolute right-2 top-1 z-20 flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] shadow-sm"
-      style={{
-        backgroundColor: "color-mix(in srgb, var(--df-bg-panel) 92%, transparent)",
-        border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
-      }}
-    >
-      <MdCellTower className="text-xs mr-0.5" style={{ color }} />
-      <span className="font-medium mr-1" style={{ color }}>
-        {overlay.isPaused ? t("syncGroup.paused") : t("syncGroup.broadcastActive")}
-      </span>
-      <button
-        type="button"
-        className="flex items-center gap-0.5 rounded px-1 py-0.5 transition-colors hover:bg-white/10"
-        style={{ color }}
-        onClick={overlay.onPauseResume}
-        title={overlay.isPaused ? t("syncGroup.resumeSync") : t("syncGroup.pauseSync")}
-      >
-        {overlay.isPaused ? <MdPlayArrow className="text-xs" /> : <MdPause className="text-xs" />}
-        <span>{overlay.isPaused ? t("syncGroup.resumeSync") : t("syncGroup.pauseSync")}</span>
-      </button>
-      <button
-        type="button"
-        className="flex items-center gap-0.5 rounded px-1 py-0.5 transition-colors hover:bg-white/10"
-        style={{ color }}
-        onClick={overlay.onLeaveGroup}
-        title={t("syncGroup.leaveGroup")}
-      >
-        <MdLogout className="text-xs" />
-        <span>{t("syncGroup.leaveGroup")}</span>
-      </button>
-      <button
-        type="button"
-        className="flex items-center gap-0.5 rounded px-1 py-0.5 text-red-400 transition-colors hover:bg-red-500/10"
-        onClick={overlay.onCloseGroup}
-        title={t("syncGroup.closeGroup")}
-      >
-        <MdClose className="text-xs" />
-        <span>{t("syncGroup.closeGroup")}</span>
-      </button>
-    </div>
-  );
-}
 
 /**
  * xterm.js terminal for a session. Handles OSC 133 shell integration (or fallback prompt
@@ -787,127 +325,11 @@ export default function XTerminal({
     });
 
     const fitAddon = new FitAddon();
-    const isMacPlatform = () =>
-      typeof navigator !== "undefined" &&
-      /(Mac|iPhone|iPad|iPod)/i.test(`${navigator.platform} ${navigator.userAgent}`);
-    const modifierLabel = isMacPlatform() ? "Cmd" : "Ctrl";
-    const allowedLinkProtocols = new Set(["http:", "https:", "mailto:"]);
-    const linkPopupDelayMs = 350;
-    let linkPopup: HTMLDivElement | null = null;
-    let linkPopupTimer: number | null = null;
-
-    const clearLinkPopupTimer = () => {
-      if (linkPopupTimer !== null) {
-        window.clearTimeout(linkPopupTimer);
-        linkPopupTimer = null;
-      }
-    };
-
-    const destroyLinkPopup = () => {
-      linkPopup?.remove();
-      linkPopup = null;
-    };
-
-    const removeLinkPopup = () => {
-      clearLinkPopupTimer();
-      destroyLinkPopup();
-    };
-
-    const positionLinkPopup = (popup: HTMLDivElement, clientX: number, clientY: number) => {
-      const terminalEl = terminal.element;
-      if (!terminalEl) return;
-
-      const hostRect = terminalEl.getBoundingClientRect();
-      const margin = 8;
-      const offset = 16;
-
-      let left = clientX - hostRect.left + offset;
-      let top = clientY - hostRect.top + offset;
-
-      if (left + popup.offsetWidth + margin > terminalEl.clientWidth) {
-        left = terminalEl.clientWidth - popup.offsetWidth - margin;
-      }
-
-      if (top + popup.offsetHeight + margin > terminalEl.clientHeight) {
-        top = clientY - hostRect.top - popup.offsetHeight - offset;
-      }
-
-      popup.style.left = `${Math.max(margin, left)}px`;
-      popup.style.top = `${Math.max(margin, top)}px`;
-    };
-
-    const showLinkPopup = (text: string, clientX: number, clientY: number) => {
-      const terminalEl = terminal.element;
-      if (!terminalEl) return;
-
-      destroyLinkPopup();
-
-      const popup = document.createElement("div");
-      popup.className = "xterm-link-popup xterm-hover";
-
-      const urlLine = document.createElement("div");
-      urlLine.className = "xterm-link-popup__url";
-      urlLine.textContent = text;
-      popup.appendChild(urlLine);
-
-      const hintLine = document.createElement("div");
-      hintLine.className = "xterm-link-popup__hint";
-      hintLine.textContent = tRef.current("terminal.linkOpenHint", { modifier: modifierLabel });
-      popup.appendChild(hintLine);
-
-      terminalEl.appendChild(popup);
-      positionLinkPopup(popup, clientX, clientY);
-      linkPopup = popup;
-    };
-
-    const scheduleLinkPopup = (event: MouseEvent, text: string) => {
-      clearLinkPopupTimer();
-      destroyLinkPopup();
-
-      const { clientX, clientY } = event;
-      linkPopupTimer = window.setTimeout(() => {
-        showLinkPopup(text, clientX, clientY);
-        linkPopupTimer = null;
-      }, linkPopupDelayMs);
-    };
-
-    const hasRequiredModifier = (event: MouseEvent) =>
-      isMacPlatform() ? event.metaKey : event.ctrlKey;
-
-    const isAllowedLinkUri = (uri: string) => {
-      try {
-        return allowedLinkProtocols.has(new URL(uri).protocol);
-      } catch {
-        return false;
-      }
-    };
-
-    const handleLinkActivation = (event: MouseEvent, uri: string) => {
-      if (!hasRequiredModifier(event)) return;
-      if (!isAllowedLinkUri(uri)) return;
-
-      removeLinkPopup();
-      openUrl(uri).catch((err: unknown) =>
-        logger.error({
-          domain: "ui.error",
-          event: "terminal.link_open_failed",
-          message: "Failed to open link",
-          error: err,
-        }),
-      );
-    };
-
-    const oscLinkHandler: ILinkHandler = {
-      activate: handleLinkActivation,
-      hover: (event, text) => scheduleLinkPopup(event, text),
-      leave: () => removeLinkPopup(),
-      allowNonHttpProtocols: true,
-    };
-
-    const webLinksAddon = new WebLinksAddon(handleLinkActivation, {
-      hover: (event, text) => scheduleLinkPopup(event, text),
-      leave: () => removeLinkPopup(),
-    });
+    const {
+      oscLinkHandler,
+      webLinksAddon,
+      removePopup: removeLinkPopup,
+    } = createTerminalLinkHandlers(terminal, tRef);
     const searchAddon = new SearchAddon();
 
     terminal.options.linkHandler = oscLinkHandler;
@@ -1048,18 +470,86 @@ export default function XTerminal({
     let lastSelection = "";
     let primaryMouseDown: { x: number; y: number } | null = null;
 
+    const buildMoveInputCursorData = (currentCursor: number, targetCursor: number) => {
+      if (targetCursor === currentCursor) return "";
+      return targetCursor > currentCursor
+        ? "\x1b[C".repeat(targetCursor - currentCursor)
+        : "\x1b[D".repeat(currentCursor - targetCursor);
+    };
+
     const moveInputCursor = (targetCursor: number) => {
       const currentState = inputStateRef.current;
-      if (targetCursor === currentState.cursor) return;
+      const nextCursor = Math.max(0, Math.min(currentState.value.length, targetCursor));
+      const input = buildMoveInputCursorData(currentState.cursor, nextCursor);
+      if (!input) return;
 
-      const input =
-        targetCursor > currentState.cursor
-          ? "\x1b[C".repeat(targetCursor - currentState.cursor)
-          : "\x1b[D".repeat(currentState.cursor - targetCursor);
-
-      inputStateRef.current = { ...currentState, cursor: targetCursor };
+      inputStateRef.current = { ...currentState, cursor: nextCursor };
       syncSuggestionsWithInputState();
       sendRawInput(input, null);
+    };
+
+    const collapseInputSelection = (
+      selectedInputRange: InputSelectionRange,
+      edge: "start" | "end",
+    ) => {
+      const currentState = inputStateRef.current;
+      const targetCursor = edge === "start" ? selectedInputRange.start : selectedInputRange.end;
+      const input = buildMoveInputCursorData(currentState.cursor, targetCursor);
+
+      inputStateRef.current = { ...currentState, cursor: targetCursor };
+      terminal.clearSelection();
+      syncSuggestionsWithInputState();
+      if (input) sendRawInput(input, null);
+    };
+
+    const deleteInputSelection = (selectedInputRange: InputSelectionRange) => {
+      const currentCursor = inputStateRef.current.cursor;
+      const moveToSelectionEnd = buildMoveInputCursorData(currentCursor, selectedInputRange.end);
+      const deleteSelection = "\u007f".repeat(selectedInputRange.end - selectedInputRange.start);
+
+      inputStateRef.current = deleteTerminalInputRange(
+        inputStateRef.current,
+        selectedInputRange.start,
+        selectedInputRange.end,
+      );
+      terminal.clearSelection();
+      syncSuggestionsWithInputState();
+      sendRawInput(`${moveToSelectionEnd}${deleteSelection}`, null);
+    };
+
+    const replaceInputSelection = (selectedInputRange: InputSelectionRange, data: string) => {
+      const currentCursor = inputStateRef.current.cursor;
+      const moveToSelectionEnd = buildMoveInputCursorData(currentCursor, selectedInputRange.end);
+      const deleteSelection = "\u007f".repeat(selectedInputRange.end - selectedInputRange.start);
+      const stateAfterDelete = deleteTerminalInputRange(
+        inputStateRef.current,
+        selectedInputRange.start,
+        selectedInputRange.end,
+      );
+
+      inputStateRef.current = applyTerminalInputData(stateAfterDelete, data);
+      terminal.clearSelection();
+      syncSuggestionsWithInputState();
+      sendRawInput(`${moveToSelectionEnd}${deleteSelection}${data}`, null);
+    };
+
+    const getDirectInputDataFromKeyEvent = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return null;
+      if (e.key === "Dead" || e.key === "Process" || e.key === "Unidentified") return null;
+      if (Array.from(e.key).length !== 1) return null;
+      if (/[\x00-\x1f\x7f]/u.test(e.key)) return null;
+      return e.key;
+    };
+
+    const moveInputCursorAfterSelection = (
+      selectedInputRange: InputSelectionRange,
+      targetCursor: number,
+    ) => {
+      const nextCursor = Math.max(
+        selectedInputRange.start,
+        Math.min(selectedInputRange.end, targetCursor),
+      );
+      moveInputCursor(nextCursor);
     };
 
     terminal.attachCustomKeyEventHandler((e) => {
@@ -1076,27 +566,36 @@ export default function XTerminal({
         return false;
       }
 
+      if (
+        (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const selectedInputRange = getSelectedInputRange(terminal, inputStateRef.current);
+        if (selectedInputRange) {
+          e.preventDefault();
+          collapseInputSelection(selectedInputRange, e.key === "ArrowLeft" ? "start" : "end");
+          return false;
+        }
+      }
+
       if ((e.key === "Backspace" || e.key === "Delete") && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const selectedInputRange = getSelectedInputRange(terminal, inputStateRef.current);
         if (selectedInputRange) {
           e.preventDefault();
-          const currentCursor = inputStateRef.current.cursor;
-          const moveToSelectionEnd =
-            currentCursor < selectedInputRange.end
-              ? "\x1b[C".repeat(selectedInputRange.end - currentCursor)
-              : "\x1b[D".repeat(currentCursor - selectedInputRange.end);
-          const deleteSelection = "\u007f".repeat(
-            selectedInputRange.end - selectedInputRange.start,
-          );
+          deleteInputSelection(selectedInputRange);
+          return false;
+        }
+      }
 
-          inputStateRef.current = deleteTerminalInputRange(
-            inputStateRef.current,
-            selectedInputRange.start,
-            selectedInputRange.end,
-          );
-          terminal.clearSelection();
-          syncSuggestionsWithInputState();
-          sendRawInput(`${moveToSelectionEnd}${deleteSelection}`, null);
+      const directInputData = getDirectInputDataFromKeyEvent(e);
+      if (directInputData) {
+        const selectedInputRange = getSelectedInputRange(terminal, inputStateRef.current);
+        if (selectedInputRange) {
+          e.preventDefault();
+          replaceInputSelection(selectedInputRange, directInputData);
           return false;
         }
       }
@@ -1725,18 +1224,33 @@ export default function XTerminal({
       if (e.button === 0) {
         const down = primaryMouseDown;
         primaryMouseDown = null;
-        if (
+        const isPlainPrimaryMouseUp =
           down &&
           !disconnectedRef.current &&
           !aiCapturingRef.current &&
           !e.ctrlKey &&
           !e.metaKey &&
           !e.altKey &&
-          !e.shiftKey &&
-          Math.abs(e.clientX - down.x) <= 4 &&
-          Math.abs(e.clientY - down.y) <= 4 &&
-          !terminal.hasSelection()
-        ) {
+          !e.shiftKey;
+        const isStationaryMouseUp =
+          !!down && Math.abs(e.clientX - down.x) <= 4 && Math.abs(e.clientY - down.y) <= 4;
+
+        if (isPlainPrimaryMouseUp && terminal.hasSelection()) {
+          const selectedInputRange = getSelectedInputRange(terminal, inputStateRef.current);
+          if (selectedInputRange) {
+            if (e.detail >= 2 || isStationaryMouseUp) {
+              moveInputCursorAfterSelection(selectedInputRange, selectedInputRange.end);
+            } else {
+              const position = getMouseBufferPosition(terminal, e);
+              const targetCursor = position
+                ? getInputIndexAtBufferPosition(terminal, inputStateRef.current, position)
+                : null;
+              if (targetCursor !== null) {
+                moveInputCursorAfterSelection(selectedInputRange, targetCursor);
+              }
+            }
+          }
+        } else if (isPlainPrimaryMouseUp && isStationaryMouseUp) {
           const position = getMouseBufferPosition(terminal, e);
           if (position) {
             const targetCursor = getInputIndexAtBufferPosition(
