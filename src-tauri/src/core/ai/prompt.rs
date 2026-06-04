@@ -1,4 +1,6 @@
 use crate::config::AiSettings;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use super::types::{AiAction, AiChatRequest, CommandObservation};
 
@@ -124,30 +126,57 @@ JSON format for the final answer:
   "answer": "user-facing summary"
 }"#;
 
-fn is_chinese(language: &str) -> bool {
-    let normalized = language.trim().to_ascii_lowercase();
-    normalized == "zh" || normalized.starts_with("zh-")
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+enum PromptLanguage {
+    ZhCn,
+    En,
+}
+
+fn normalize_prompt_locale(language: &str) -> String {
+    let normalized = language.trim().replace('_', "-").to_ascii_lowercase();
+    match normalized.as_str() {
+        "zh" | "zh-cn" | "zh-hans" | "zh-hans-cn" => "zh-cn".to_string(),
+        "en" | "en-us" | "en-gb" => "en".to_string(),
+        _ => normalized,
+    }
+}
+
+fn prompt_language_map() -> &'static HashMap<&'static str, PromptLanguage> {
+    static PROMPT_LANGUAGE_MAP: OnceLock<HashMap<&'static str, PromptLanguage>> =
+        OnceLock::new();
+    PROMPT_LANGUAGE_MAP.get_or_init(|| {
+        HashMap::from([
+            ("zh-cn", PromptLanguage::ZhCn),
+            ("en", PromptLanguage::En),
+        ])
+    })
+}
+
+fn resolve_prompt_language(language: &str) -> PromptLanguage {
+    let normalized = normalize_prompt_locale(language);
+    prompt_language_map()
+        .get(normalized.as_str())
+        .copied()
+        .unwrap_or(PromptLanguage::En)
 }
 
 pub(super) fn system_prompt(language: &str) -> &'static str {
-    if is_chinese(language) {
-        SYSTEM_PROMPT_ZH
-    } else {
-        SYSTEM_PROMPT_EN
+    match resolve_prompt_language(language) {
+        PromptLanguage::ZhCn => SYSTEM_PROMPT_ZH,
+        PromptLanguage::En => SYSTEM_PROMPT_EN,
     }
 }
 
 pub(super) fn agent_system_prompt(language: &str) -> &'static str {
-    if is_chinese(language) {
-        AGENT_SYSTEM_PROMPT_ZH
-    } else {
-        AGENT_SYSTEM_PROMPT_EN
+    match resolve_prompt_language(language) {
+        PromptLanguage::ZhCn => AGENT_SYSTEM_PROMPT_ZH,
+        PromptLanguage::En => AGENT_SYSTEM_PROMPT_EN,
     }
 }
 
 pub(super) fn build_agent_prompt(request: &AiChatRequest, settings: &AiSettings) -> String {
     let ctx = &request.context;
-    if is_chinese(&request.options.language) {
+    if resolve_prompt_language(&request.options.language) == PromptLanguage::ZhCn {
         format!(
             r#"用户任务：
 {user_input}
@@ -230,7 +259,7 @@ pub(super) fn build_observation_message(
     } else {
         obs.output.clone()
     };
-    if is_chinese(language) {
+    if resolve_prompt_language(language) == PromptLanguage::ZhCn {
         format!(
             "命令 `{command}` 执行完成（{status}，耗时 {duration}ms）。\n\n输出：\n{output}\n\n请根据观察结果决定下一步。只返回 JSON 对象。",
             duration = obs.duration_ms,
@@ -245,7 +274,7 @@ pub(super) fn build_observation_message(
 
 pub(super) fn build_prompt(request: &AiChatRequest, settings: &AiSettings) -> String {
     let ctx = &request.context;
-    if is_chinese(&request.options.language) {
+    if resolve_prompt_language(&request.options.language) == PromptLanguage::ZhCn {
         let action = match request.action {
             AiAction::GenerateCommand => "根据自然语言需求生成 1 到 2 条 Shell 命令",
             AiAction::ExplainOutput => "解释最近终端输出并给出下一步建议",
