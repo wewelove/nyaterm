@@ -218,6 +218,93 @@ fn infer_local_ai_execution_profile(shell_name: &str) -> AiExecutionProfile {
     }
 }
 
+struct LocalStartupScript {
+    script: Option<String>,
+    shell_integration_active: bool,
+}
+
+fn build_local_startup_script(shell_name: &str, ready_marker: &str) -> LocalStartupScript {
+    build_local_startup_script_for_platform(
+        shell_name,
+        ready_marker,
+        cfg!(not(target_os = "windows")),
+    )
+}
+
+fn build_local_startup_script_for_platform(
+    shell_name: &str,
+    ready_marker: &str,
+    allow_unix_prelude: bool,
+) -> LocalStartupScript {
+    let shell_kind = ShellKind::from_name(shell_name);
+    let shell_integration_script = osc::injection_script(shell_kind, ready_marker);
+    let shell_integration_active = shell_integration_script.is_some();
+    let backspace_prelude =
+        local_backspace_compat_prelude(shell_name, shell_kind, allow_unix_prelude);
+
+    let script = match (backspace_prelude, shell_integration_script) {
+        (Some(mut prelude), Some(integration)) => {
+            prelude.push_str(&integration);
+            Some(prelude)
+        }
+        (Some(mut prelude), None) => {
+            prelude.push_str(&build_ready_marker_printf(ready_marker));
+            Some(prelude)
+        }
+        (None, integration) => integration,
+    };
+
+    LocalStartupScript {
+        script,
+        shell_integration_active,
+    }
+}
+
+fn local_backspace_compat_prelude(
+    shell_name: &str,
+    shell_kind: ShellKind,
+    allow_unix_prelude: bool,
+) -> Option<String> {
+    if !allow_unix_prelude || is_windows_style_shell(shell_name) {
+        return None;
+    }
+
+    match shell_kind {
+        ShellKind::Bash | ShellKind::Fish | ShellKind::PosixSh => {
+            Some("stty erase '^?' 2>/dev/null || true\n".to_string())
+        }
+        ShellKind::Zsh => Some(
+            concat!(
+                "stty erase '^?' 2>/dev/null || true\n",
+                "bindkey -M emacs '^?' backward-delete-char 2>/dev/null || true\n",
+                "bindkey -M viins '^?' backward-delete-char 2>/dev/null || true\n",
+            )
+            .to_string(),
+        ),
+        ShellKind::Unknown => None,
+    }
+}
+
+fn is_windows_style_shell(shell_name: &str) -> bool {
+    let lower = shell_name.to_ascii_lowercase();
+    let program = lower
+        .rsplit(|ch| ch == '/' || ch == '\\')
+        .next()
+        .unwrap_or(lower.as_str());
+
+    matches!(
+        program,
+        "cmd" | "cmd.exe" | "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe"
+    )
+}
+
+fn build_ready_marker_printf(ready_marker: &str) -> String {
+    let ready_osc = ready_marker
+        .replace('\x1b', "\\033")
+        .replace('\x07', "\\007");
+    format!("printf '{}' 2>/dev/null\n", ready_osc)
+}
+
 fn write_to_pty(writer: &mut dyn Write, data: &[u8]) -> std::io::Result<()> {
     writer.write_all(data)?;
     writer.flush()
@@ -247,8 +334,8 @@ pub async fn create_local_session(
     };
     let ai_execution_profile = infer_local_ai_execution_profile(&shell_name);
     let ready_marker = osc::build_ready_marker(&session_id);
-    let injection_script = osc::injection_script(ShellKind::from_name(&shell_name), &ready_marker);
-    let injection_active = injection_script.is_some();
+    let startup_script = build_local_startup_script(&shell_name, &ready_marker);
+    let injection_active = startup_script.shell_integration_active;
 
     let session_info = SessionInfo {
         id: session_id.clone(),
@@ -283,7 +370,7 @@ pub async fn create_local_session(
             rt_handle,
             cwd,
             config,
-            injection_script,
+            startup_script.script,
             ready_marker,
         );
     });
@@ -299,7 +386,7 @@ fn pty_session_thread(
     rt_handle: tokio::runtime::Handle,
     cwd: SharedCwd,
     config: Option<LocalSessionConfig>,
-    injection_script: Option<String>,
+    startup_script: Option<String>,
     ready_marker: String,
 ) {
     let pty_system = native_pty_system();
@@ -425,11 +512,11 @@ fn pty_session_thread(
     let sid_for_rec_reader = session_id.clone();
     let output_reader = output.clone();
     let manager_reader = manager.clone();
-    let suppress_injected_output = injection_script.is_some();
+    let suppress_startup_output = startup_script.is_some();
     std::thread::spawn(move || {
         let mut raw_buf = [0u8; 4096];
         let mut stripper = OscStripper::new(&ready_marker);
-        let mut suppress_visible = suppress_injected_output;
+        let mut suppress_visible = suppress_startup_output;
         let mut zmodem_detector = ZmodemDetector::new();
         loop {
             match reader.read(&mut raw_buf) {
@@ -550,12 +637,12 @@ fn pty_session_thread(
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
         .map(|s| s.inner().clone());
-    if let Some(script) = injection_script.as_deref() {
+    if let Some(script) = startup_script.as_deref() {
         if let Err(error) = write_to_pty(&mut *writer, script.as_bytes()) {
             tracing::warn!(
                 session_id = %session_id,
                 error = %error,
-                "Failed to inject local PTY shell hooks"
+                "Failed to write local PTY startup script"
             );
         }
     }
@@ -687,7 +774,11 @@ fn pty_session_thread(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_shell_args, resolve_shell_command};
+    use super::{build_local_startup_script_for_platform, parse_shell_args, resolve_shell_command};
+
+    fn ready_marker() -> String {
+        crate::core::ssh::osc::build_ready_marker("session-1")
+    }
 
     #[test]
     fn shell_path_with_spaces_stays_single_program() {
@@ -719,5 +810,81 @@ mod tests {
         let args = parse_shell_args(r#"-Command "echo hi" "C:\Program Files\Tool""#).expect("args");
 
         assert_eq!(args, vec!["-Command", "echo hi", r"C:\Program Files\Tool"]);
+    }
+
+    #[test]
+    fn zsh_startup_sets_del_erase_and_bindkeys_before_ready_marker() {
+        let marker = ready_marker();
+        let startup = build_local_startup_script_for_platform("/bin/zsh", &marker, true);
+        let script = startup.script.expect("startup script");
+
+        assert!(startup.shell_integration_active);
+        assert!(script.contains("stty erase '^?' 2>/dev/null || true"));
+        assert!(script.contains("bindkey -M emacs '^?' backward-delete-char 2>/dev/null || true"));
+        assert!(script.contains("bindkey -M viins '^?' backward-delete-char 2>/dev/null || true"));
+
+        let stty_pos = script.find("stty erase '^?'").expect("stty prelude");
+        let emacs_pos = script.find("bindkey -M emacs").expect("emacs bindkey");
+        let viins_pos = script.find("bindkey -M viins").expect("viins bindkey");
+        let ready_pos = script.find("NyaTermReady:session-1").expect("ready marker");
+
+        assert!(stty_pos < ready_pos);
+        assert!(emacs_pos < ready_pos);
+        assert!(viins_pos < ready_pos);
+    }
+
+    #[test]
+    fn bash_and_fish_startup_set_del_erase_without_zsh_bindkeys() {
+        let marker = ready_marker();
+
+        for shell in ["/bin/bash", "/usr/local/bin/fish"] {
+            let startup = build_local_startup_script_for_platform(shell, &marker, true);
+            let script = startup.script.expect("startup script");
+
+            assert!(startup.shell_integration_active);
+            assert!(script.contains("stty erase '^?' 2>/dev/null || true"));
+            assert!(!script.contains("bindkey -M emacs"));
+            assert!(!script.contains("bindkey -M viins"));
+            assert!(script.contains("NyaTermReady:session-1"));
+        }
+    }
+
+    #[test]
+    fn posix_startup_sets_del_erase_and_ready_marker_without_shell_integration() {
+        let marker = ready_marker();
+        let startup = build_local_startup_script_for_platform("/bin/sh", &marker, true);
+        let script = startup.script.expect("startup script");
+
+        assert!(!startup.shell_integration_active);
+        assert!(script.contains("stty erase '^?' 2>/dev/null || true"));
+        assert!(!script.contains("bindkey"));
+        assert!(script.contains("NyaTermReady:session-1"));
+    }
+
+    #[test]
+    fn unknown_and_windows_style_shells_do_not_get_unix_backspace_prelude() {
+        let marker = ready_marker();
+
+        for shell in ["nu", "powershell.exe", r"C:\Windows\System32\cmd.exe"] {
+            let startup = build_local_startup_script_for_platform(shell, &marker, true);
+
+            assert!(!startup.shell_integration_active);
+            assert!(
+                startup.script.is_none(),
+                "{shell} should not receive a startup script"
+            );
+        }
+    }
+
+    #[test]
+    fn unix_backspace_prelude_is_disabled_on_non_unix_platforms() {
+        let marker = ready_marker();
+        let startup = build_local_startup_script_for_platform("/bin/zsh", &marker, false);
+        let script = startup.script.expect("zsh integration script");
+
+        assert!(startup.shell_integration_active);
+        assert!(!script.contains("stty erase '^?'"));
+        assert!(!script.contains("bindkey -M emacs '^?'"));
+        assert!(script.contains("NyaTermReady:session-1"));
     }
 }
