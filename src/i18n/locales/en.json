@@ -708,6 +708,7 @@
     "label": "Label",
     "labelName": "Label",
     "labelPlaceholder": "e.g. List files",
+    "listMode": "List mode",
     "newCategoryPlaceholder": "New Category...",
     "noCommandsFound": "No commands.",
     "pin": "Pin",
@@ -722,8 +723,10 @@
     "sortByCreated": "Created",
     "sortByName": "By name",
     "sortByUseCount": "Usage",
+    "tileMode": "Tile mode",
     "uncategorized": "Uncat.",
-    "view": "View"
+    "view": "View",
+    "viewMode": "View mode"
   },
   "recording": {
     "current": "Current",
