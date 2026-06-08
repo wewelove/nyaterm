@@ -61,6 +61,7 @@ pub use settings::{
     DiagnosticsLogLevel, DiagnosticsSettings, GeneralSettings, InteractionSettings,
     KeywordHighlightRule, ProxySettings, RiskLevel, SearchEngine, SearchSettings,
     SecuritySettings, TerminalSettings, TransferSettings, TranslationSettings,
+    AI_REQUEST_USER_AGENT_DEFAULT,
 };
 #[allow(unused_imports)]
 pub use tunnel::{load_tunnels, save_tunnels, TunnelConfig, TunnelsConfig};

@@ -4,6 +4,9 @@ use crate::utils::crypto;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+pub const AI_REQUEST_USER_AGENT_DEFAULT: &str =
+    "codex-tui/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color (codex-tui; 0.125.0)";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AiProviderKind {
@@ -131,6 +134,8 @@ pub struct AiSettings {
     pub record_history: bool,
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
+    #[serde(default = "default_request_user_agent")]
+    pub request_user_agent: String,
     #[serde(default = "default_active_profile_id")]
     pub active_profile_id: String,
     #[serde(default = "default_provider_profiles")]
@@ -175,6 +180,10 @@ fn default_context_line_limit() -> u32 {
 
 fn default_timeout_ms() -> u64 {
     60_000
+}
+
+fn default_request_user_agent() -> String {
+    AI_REQUEST_USER_AGENT_DEFAULT.to_string()
 }
 
 fn default_mode() -> AiMode {
@@ -415,6 +424,7 @@ impl Default for AiSettings {
             allow_save_command: true,
             record_history: true,
             timeout_ms: default_timeout_ms(),
+            request_user_agent: default_request_user_agent(),
             active_profile_id: default_active_profile_id(),
             provider_profiles: default_provider_profiles(),
             default_mode: default_mode(),
@@ -488,6 +498,9 @@ pub fn normalize_ai_settings(settings: &mut AiSettings) -> bool {
     let original = serde_json::to_string(settings).unwrap_or_default();
 
     settings.schema_version = 3;
+    if settings.request_user_agent.trim().is_empty() {
+        settings.request_user_agent = default_request_user_agent();
+    }
 
     if settings.provider_credentials.is_empty() {
         settings.provider_credentials = settings
@@ -666,5 +679,15 @@ mod tests {
             AgentCommandExecutionMode::ConfirmEach
         );
         assert_eq!(settings.agent_smart_auto_execute_max_risk, RiskLevel::Low);
+    }
+
+    #[test]
+    fn default_ai_settings_include_request_user_agent() {
+        let settings = AiSettings::default();
+
+        assert_eq!(
+            settings.request_user_agent.as_str(),
+            AI_REQUEST_USER_AGENT_DEFAULT
+        );
     }
 }

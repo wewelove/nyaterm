@@ -14,6 +14,9 @@ export interface BuiltinProviderInfo {
   models: string[];
 }
 
+export const DEFAULT_AI_REQUEST_USER_AGENT =
+  "codex-tui/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color (codex-tui; 0.125.0)";
+
 export const BUILTIN_PROVIDERS: Partial<Record<AIProviderKind, BuiltinProviderInfo>> = {
   openai: {
     label: "OpenAI",
@@ -551,6 +554,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   allow_save_command: true,
   record_history: true,
   timeout_ms: 60000,
+  request_user_agent: DEFAULT_AI_REQUEST_USER_AGENT,
   active_profile_id: "openai",
   provider_profiles: DEFAULT_PROVIDER_PROFILES,
   default_mode: "ask",

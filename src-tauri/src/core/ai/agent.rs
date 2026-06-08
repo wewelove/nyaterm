@@ -804,7 +804,7 @@ pub(super) async fn run_agent_stream(
             return;
         }
 
-        let client = match build_client(&resolved_model) {
+        let client = match build_client(&resolved_model, &settings) {
             Ok(c) => c,
             Err(e) => {
                 emit_agent_error(&app, &stream_id, &session_id, &e.to_string());

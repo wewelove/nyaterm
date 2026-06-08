@@ -329,7 +329,7 @@ pub(super) async fn run_model_stream(
     );
 
     let resolved_model = resolve_request_model(settings, request)?;
-    let client = build_client(&resolved_model)?;
+    let client = build_client(&resolved_model, settings)?;
     let prompt = build_prompt(request, settings);
 
     let mut messages = vec![ChatMessage::system(system_prompt(&request.options.language))];

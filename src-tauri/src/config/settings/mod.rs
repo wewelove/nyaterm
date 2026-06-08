@@ -15,6 +15,7 @@ pub use ai::{
     mask_ai_settings, merge_masked_ai_settings, normalize_ai_settings,
     AgentCommandExecutionMode, AiCustomActionConfig, AiMode, AiModelConfigItem, AiModelSource,
     AiProviderCredential, AiProviderKind, AiProviderProfile, AiSettings, RiskLevel,
+    AI_REQUEST_USER_AGENT_DEFAULT,
 };
 pub use appearance::AppearanceSettings;
 pub use diagnostics::{DiagnosticsLogLevel, DiagnosticsSettings};

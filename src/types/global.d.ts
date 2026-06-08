@@ -622,6 +622,7 @@ export interface AISettings {
   allow_save_command: boolean;
   record_history: boolean;
   timeout_ms: number;
+  request_user_agent: string;
   active_profile_id: string;
   provider_profiles: AIProviderProfile[];
   default_mode: AIMode;

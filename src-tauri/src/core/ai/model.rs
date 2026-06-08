@@ -3,12 +3,13 @@ use std::time::Duration;
 
 use genai::adapter::AdapterKind;
 use genai::resolver::{AuthData, Endpoint, ServiceTargetResolver};
-use genai::{Client, ModelIden};
+use genai::{Client, ModelIden, WebConfig};
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use serde_json::Value;
 
 use crate::config::{
     self, AiModelConfigItem, AiModelSource, AiProviderCredential, AiProviderKind, AiSettings,
-    ai_model_id_for_credential,
+    ai_model_id_for_credential, AI_REQUEST_USER_AGENT_DEFAULT,
 };
 use crate::error::{AppError, AppResult};
 use crate::utils::url::{join_api_base_url, normalize_api_base_url};
@@ -171,7 +172,7 @@ fn validate_model_credential(
     }
 }
 
-pub(super) fn build_client(model: &ResolvedAiModel) -> AppResult<Client> {
+pub(super) fn build_client(model: &ResolvedAiModel, settings: &AiSettings) -> AppResult<Client> {
     tracing::debug!(
         model_name = %model.model_name,
         provider_kind = ?model.provider_kind,
@@ -211,10 +212,34 @@ pub(super) fn build_client(model: &ResolvedAiModel) -> AppResult<Client> {
             Ok(service_target)
         });
 
+    let web_config = WebConfig::default().with_default_headers(ai_request_headers(settings)?);
+
     Ok(Client::builder()
         .with_model_mapper_fn(move |_model| Ok(ModelIden::new(adapter_kind, mapped_model.clone())))
         .with_service_target_resolver(resolver)
+        .with_web_config(web_config)
         .build())
+}
+
+fn effective_request_user_agent(settings: &AiSettings) -> &str {
+    let value = settings.request_user_agent.trim();
+    if value.is_empty() {
+        AI_REQUEST_USER_AGENT_DEFAULT
+    } else {
+        value
+    }
+}
+
+fn ai_request_headers(settings: &AiSettings) -> AppResult<HeaderMap> {
+    let user_agent = effective_request_user_agent(settings);
+    let user_agent_value = HeaderValue::from_str(user_agent).map_err(|error| {
+        AppError::Config(format!(
+            "Invalid AI User-Agent header value: {error}"
+        ))
+    })?;
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, user_agent_value);
+    Ok(headers)
 }
 
 fn adapter_kind(kind: &AiProviderKind) -> AdapterKind {
@@ -262,7 +287,7 @@ pub async fn list_model_names(app: &tauri::AppHandle) -> AppResult<Vec<AiModelDi
             url = base_url,
             "Fetching model list from custom provider"
         );
-        match fetch_openai_compatible_models(&base_url, api_key.as_deref()).await {
+        match fetch_openai_compatible_models(&base_url, api_key.as_deref(), &settings.ai).await {
             Ok(names) => {
                 tracing::info!(
                     credential = label,
@@ -308,9 +333,13 @@ pub async fn list_model_names(app: &tauri::AppHandle) -> AppResult<Vec<AiModelDi
 async fn fetch_openai_compatible_models(
     base_url: &str,
     api_key: Option<&str>,
+    settings: &AiSettings,
 ) -> AppResult<Vec<String>> {
     let url = openai_compatible_models_url(base_url)?;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .default_headers(ai_request_headers(settings)?)
+        .build()
+        .map_err(|e| AppError::Config(format!("Failed to build AI HTTP client: {e}")))?;
     let mut req = client.get(&url);
     if let Some(key) = api_key {
         req = req.bearer_auth(key);
@@ -371,6 +400,46 @@ mod tests {
         assert_eq!(
             openai_compatible_models_url("https://api.example.com/v1?api-version=1").unwrap(),
             "https://api.example.com/v1/models?api-version=1"
+        );
+    }
+
+    #[test]
+    fn ai_request_headers_use_custom_user_agent() {
+        let mut settings = AiSettings::default();
+        settings.request_user_agent = "nyaterm-test/1.0".to_string();
+
+        let headers = ai_request_headers(&settings).unwrap();
+
+        assert_eq!(
+            headers.get(USER_AGENT).and_then(|value| value.to_str().ok()),
+            Some("nyaterm-test/1.0")
+        );
+    }
+
+    #[test]
+    fn ai_request_headers_fall_back_for_blank_user_agent() {
+        let mut settings = AiSettings::default();
+        settings.request_user_agent = "   ".to_string();
+
+        let headers = ai_request_headers(&settings).unwrap();
+
+        assert_eq!(
+            headers.get(USER_AGENT).and_then(|value| value.to_str().ok()),
+            Some(AI_REQUEST_USER_AGENT_DEFAULT)
+        );
+    }
+
+    #[test]
+    fn ai_request_headers_reject_invalid_user_agent() {
+        let mut settings = AiSettings::default();
+        settings.request_user_agent = "bad\r\nvalue".to_string();
+
+        let error = ai_request_headers(&settings).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Invalid AI User-Agent header value")
         );
     }
 }

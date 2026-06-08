@@ -95,6 +95,13 @@ export function AiGeneralTab() {
           />
         </SettingRow>
         <SettingFieldGrid>
+          <SettingInput
+            label={t("ai.requestUserAgent")}
+            desc={t("ai.requestUserAgentDesc")}
+            value={ai.request_user_agent}
+            onChange={(event) => update({ request_user_agent: event.target.value })}
+            fieldClassName="lg:col-span-2"
+          />
           <SettingNumberInput
             label={t("ai.contextLineLimit")}
             min={50}
