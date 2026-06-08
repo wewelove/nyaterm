@@ -5,7 +5,7 @@ use crate::utils::crypto;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-/// Managed SSH private key. PEM content and passphrase are AES-256-GCM encrypted on disk.
+/// Managed SSH private key. Key material, certificates, and passphrases are encrypted on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshKey {
     #[serde(default = "uuid_v4")]
@@ -14,6 +14,9 @@ pub struct SshKey {
     /// Encrypted PEM content on disk.
     #[serde(default)]
     pub key: Option<String>,
+    /// Encrypted OpenSSH user certificate content on disk.
+    #[serde(default)]
+    pub cert: Option<String>,
     /// Encrypted passphrase on disk.
     #[serde(default)]
     pub passphrase: Option<String>,
@@ -21,9 +24,15 @@ pub struct SshKey {
     /// Transient: file path from the UI file picker.
     #[serde(default, skip_serializing)]
     pub key_file_path: Option<String>,
+    /// Transient: certificate file path from the UI file picker.
+    #[serde(default, skip_serializing)]
+    pub cert_file_path: Option<String>,
     /// Transient: true when encrypted key data exists on disk.
     #[serde(default, skip_serializing)]
     pub has_key_data: bool,
+    /// Transient: true when encrypted certificate data exists on disk.
+    #[serde(default, skip_serializing)]
+    pub has_cert_data: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -32,13 +41,18 @@ pub struct KeysConfig {
     pub keys: Vec<SshKey>,
 }
 
+fn apply_key_status_flags(key: &mut SshKey) {
+    key.has_key_data = key.key.is_some();
+    key.has_cert_data = key.cert.is_some();
+}
+
 pub fn load_keys(app: &AppHandle) -> AppResult<KeysConfig> {
     let _ = app;
     let mut config = KeysConfig {
         keys: storage::list_ssh_keys()?,
     };
     for k in &mut config.keys {
-        k.has_key_data = k.key.is_some();
+        apply_key_status_flags(k);
     }
     Ok(config)
 }
@@ -63,4 +77,39 @@ pub fn load_key_by_id(app: &AppHandle, id: &str) -> AppResult<SshKey> {
 
 pub fn decrypt_key_pem(key: &SshKey) -> AppResult<Option<String>> {
     crypto::decrypt_optional(&key.key)
+}
+
+pub fn decrypt_key_cert(key: &SshKey) -> AppResult<Option<String>> {
+    crypto::decrypt_optional(&key.cert)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SshKey, apply_key_status_flags};
+
+    #[test]
+    fn key_status_flags_track_stored_key_and_certificate_data() {
+        let mut key = SshKey {
+            id: "key-1".to_string(),
+            name: "Key 1".to_string(),
+            key: Some("encrypted-key".to_string()),
+            cert: Some("encrypted-cert".to_string()),
+            passphrase: None,
+            key_file_path: None,
+            cert_file_path: None,
+            has_key_data: false,
+            has_cert_data: false,
+        };
+
+        apply_key_status_flags(&mut key);
+
+        assert!(key.has_key_data);
+        assert!(key.has_cert_data);
+
+        key.cert = None;
+        apply_key_status_flags(&mut key);
+
+        assert!(key.has_key_data);
+        assert!(!key.has_cert_data);
+    }
 }

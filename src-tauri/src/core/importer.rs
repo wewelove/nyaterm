@@ -74,6 +74,8 @@ struct NyatermJsonSshKey {
     name: String,
     private_key: String,
     #[serde(default)]
+    certificate: Option<String>,
+    #[serde(default)]
     passphrase: Option<String>,
 }
 
@@ -586,9 +588,12 @@ fn prepare_nyaterm_json_import(file: NyatermJsonImportFile) -> AppResult<Prepare
             id,
             name: required_string(entry.name, "ssh key name", "ssh_keys")?,
             key: Some(crypto::encrypt(&entry.private_key)?),
+            cert: encrypt_optional_secret(entry.certificate)?,
             passphrase: encrypt_optional_secret(entry.passphrase)?,
             key_file_path: None,
+            cert_file_path: None,
             has_key_data: false,
+            has_cert_data: false,
         });
     }
 

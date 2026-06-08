@@ -35,7 +35,9 @@ pub use credential::{
     CredentialsConfig, SavedCredential,
 };
 #[allow(unused_imports)]
-pub use key::{decrypt_key_pem, load_key_by_id, load_keys, save_keys, KeysConfig, SshKey};
+pub use key::{
+    decrypt_key_cert, decrypt_key_pem, load_key_by_id, load_keys, save_keys, KeysConfig, SshKey,
+};
 #[allow(unused_imports)]
 pub use otp::{load_otp_entries, load_otp_entry_by_id, save_otp_entries, OtpConfig, OtpEntry};
 #[allow(unused_imports)]

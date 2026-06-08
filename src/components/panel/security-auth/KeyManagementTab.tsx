@@ -21,6 +21,8 @@ interface KeyManagementTabProps {
 }
 
 interface KeyEditorProps {
+  editCertFileName: string;
+  editHasCertData: boolean;
   editHasKeyData: boolean;
   editKeyFileName: string;
   editName: string;
@@ -30,6 +32,7 @@ interface KeyEditorProps {
   onCancel: () => void;
   onNameChange: (value: string) => void;
   onPassphraseChange: (value: string) => void;
+  onPickCertFile: () => Promise<void>;
   onPickFile: () => Promise<void>;
   onSave: () => void;
   saveDisabled: boolean;
@@ -37,6 +40,8 @@ interface KeyEditorProps {
 }
 
 function KeyEditor({
+  editCertFileName,
+  editHasCertData,
   editHasKeyData,
   editKeyFileName,
   editName,
@@ -46,6 +51,7 @@ function KeyEditor({
   onCancel,
   onNameChange,
   onPassphraseChange,
+  onPickCertFile,
   onPickFile,
   onSave,
   saveDisabled,
@@ -81,6 +87,27 @@ function KeyEditor({
           <MdFolderOpen className="text-base" />
         </Button>
       </div>
+      <div className="flex items-center w-full rounded-md border overflow-hidden bg-transparent">
+        <div
+          className={`flex-1 truncate px-3 py-2 text-xs ${editCertFileName || (isEditing && editHasCertData) ? "text-foreground" : "text-muted-foreground opacity-50"}`}
+        >
+          {editCertFileName ||
+            (isEditing && editHasCertData
+              ? t("settings.certFileLoaded")
+              : t("settings.selectCertFile"))}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-auto rounded-none border-l px-3 py-2"
+          onClick={() => {
+            void onPickCertFile();
+          }}
+        >
+          <MdFolderOpen className="text-base" />
+        </Button>
+      </div>
       <Input
         type="password"
         placeholder={passphraseLoading ? t("common.loading") : t("settings.passphrase")}
@@ -106,9 +133,12 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
   const [keys, setKeys] = useState<SshKey[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editCertFilePath, setEditCertFilePath] = useState("");
+  const [editCertFileName, setEditCertFileName] = useState("");
   const [editKeyFilePath, setEditKeyFilePath] = useState("");
   const [editKeyFileName, setEditKeyFileName] = useState("");
   const [editPassphrase, setEditPassphrase] = useState("");
+  const [editHasCertData, setEditHasCertData] = useState(false);
   const [editHasKeyData, setEditHasKeyData] = useState(false);
   const [passphraseLoading, setPassphraseLoading] = useState(false);
   const [isNew, setIsNew] = useState(false);
@@ -133,9 +163,12 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
     editRequestRef.current += 1;
     setEditingId(null);
     setEditName("");
+    setEditCertFilePath("");
+    setEditCertFileName("");
     setEditKeyFilePath("");
     setEditKeyFileName("");
     setEditPassphrase("");
+    setEditHasCertData(false);
     setEditHasKeyData(false);
     setPassphraseLoading(false);
     setIsNew(false);
@@ -151,9 +184,12 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
     const requestId = ++editRequestRef.current;
     setEditingId(key.id);
     setEditName(key.name);
+    setEditCertFilePath("");
+    setEditCertFileName("");
     setEditKeyFilePath("");
     setEditKeyFileName("");
     setEditPassphrase("");
+    setEditHasCertData(key.has_cert_data || false);
     setEditHasKeyData(key.has_key_data || false);
     setPassphraseLoading(true);
     setIsNew(false);
@@ -180,6 +216,7 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
         key: {
           id: isNew ? "" : editingId,
           name: editName.trim(),
+          cert_file_path: editCertFilePath || undefined,
           key_file_path: editKeyFilePath || undefined,
           passphrase: editPassphrase || undefined,
         },
@@ -215,6 +252,19 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
     }
   };
 
+  const handlePickCertFile = async () => {
+    const selected = await openFileDialog({
+      multiple: false,
+      title: t("settings.selectCertFileTitle"),
+    });
+    if (selected) {
+      setEditCertFilePath(selected);
+      const parts = selected.replace(/\\/g, "/").split("/");
+      setEditCertFileName(parts[parts.length - 1]);
+      setEditHasCertData(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -235,6 +285,8 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
           {/* Inline form for new key */}
           {isNew && editingId === "__new__" && (
             <KeyEditor
+              editCertFileName={editCertFileName}
+              editHasCertData={editHasCertData}
               editHasKeyData={editHasKeyData}
               editKeyFileName={editKeyFileName}
               editName={editName}
@@ -244,6 +296,7 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
               onCancel={resetEdit}
               onNameChange={setEditName}
               onPassphraseChange={setEditPassphrase}
+              onPickCertFile={handlePickCertFile}
               onPickFile={handlePickFile}
               onSave={handleSave}
               saveDisabled={passphraseLoading || !editName.trim() || !editKeyFilePath}
@@ -256,6 +309,8 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
             <div key={key.id}>
               {editingId === key.id && !isNew ? (
                 <KeyEditor
+                  editCertFileName={editCertFileName}
+                  editHasCertData={editHasCertData}
                   editHasKeyData={editHasKeyData}
                   editKeyFileName={editKeyFileName}
                   editName={editName}
@@ -265,6 +320,7 @@ export function KeyManagementTab({ onCountChange }: KeyManagementTabProps) {
                   onCancel={resetEdit}
                   onNameChange={setEditName}
                   onPassphraseChange={setEditPassphrase}
+                  onPickCertFile={handlePickCertFile}
                   onPickFile={handlePickFile}
                   onSave={handleSave}
                   saveDisabled={passphraseLoading || !editName.trim()}

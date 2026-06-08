@@ -46,6 +46,8 @@ pub enum SshAuth {
     #[serde(rename = "key")]
     Key {
         key_data: String,
+        #[serde(default)]
+        cert_data: Option<String>,
         passphrase: Option<String>,
     },
 }
@@ -235,6 +237,7 @@ fn preferred_algorithms() -> Preferred {
             hash: Some(HashAlg::Sha256),
         },
         Algorithm::Rsa { hash: None },
+        Algorithm::Dsa,
     ]);
 
     preferred.cipher = Cow::Owned(vec![
@@ -506,6 +509,7 @@ pub(super) fn build_client_config(app: &AppHandle) -> client::Config {
 #[cfg(test)]
 mod tests {
     use super::{check_known_host_entry, preferred_algorithms, KnownHostCheck};
+    use russh::keys::Algorithm;
     use russh::{cipher, kex, mac};
 
     #[test]
@@ -540,6 +544,8 @@ example.com ssh-rsa AAAARSA
         assert!(preferred.kex.contains(&kex::DH_GEX_SHA1));
         assert!(preferred.kex.contains(&kex::DH_G1_SHA1));
         assert!(preferred.mac.contains(&mac::HMAC_SHA1));
+        assert!(preferred.key.contains(&Algorithm::Dsa));
+        assert_eq!(preferred.key.last(), Some(&Algorithm::Dsa));
     }
 }
 

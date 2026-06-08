@@ -174,8 +174,10 @@ fn resolve_auth(app: &AppHandle, conn: &crate::config::SavedConnection) -> AppRe
             let ssh_key = crate::config::load_key_by_id(app, key_id)?;
             let key_data = crate::config::decrypt_key_pem(&ssh_key)?
                 .ok_or_else(|| AppError::Auth("No key data stored".to_string()))?;
+            let cert_data = crate::config::decrypt_key_cert(&ssh_key)?;
             Ok(SshAuth::Key {
                 key_data,
+                cert_data,
                 passphrase: ssh_key.passphrase,
             })
         }
@@ -357,6 +359,7 @@ pub(super) async fn authenticate_handle(
         }
         SshAuth::Key {
             key_data,
+            cert_data,
             passphrase,
         } => {
             let key = russh::keys::decode_secret_key(key_data, passphrase.as_deref())?;
@@ -366,6 +369,12 @@ pub(super) async fn authenticate_handle(
                 .ok()
                 .flatten()
                 .flatten();
+            let cert = cert_data
+                .as_deref()
+                .map(russh::keys::Certificate::from_openssh)
+                .transpose()
+                .map_err(|error| AppError::Auth(format!("Invalid OpenSSH certificate: {error}")))?;
+            let cert_algorithm = cert.as_ref().map(|cert| cert.algorithm().to_string());
 
             log_structured(
                 StructuredLogLevel::Info,
@@ -380,18 +389,27 @@ pub(super) async fn authenticate_handle(
                     "username": config.username,
                     "auth_mode": "publickey",
                     "key_algorithm": key.algorithm().to_string(),
+                    "certificate": cert.is_some(),
+                    "certificate_algorithm": cert_algorithm,
                     "rsa_hash": format!("{hash_alg:?}"),
                 })),
                 None,
             );
 
-            let authenticated = handle
-                .authenticate_publickey(
-                    &config.username,
-                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
-                )
-                .await
-                .map_err(|error| AppError::Auth(format!("Key auth failed: {}", error)))?;
+            let authenticated = if let Some(cert) = cert {
+                handle
+                    .authenticate_openssh_cert(&config.username, Arc::new(key), cert)
+                    .await
+                    .map_err(|error| AppError::Auth(format!("Certificate auth failed: {error}")))?
+            } else {
+                handle
+                    .authenticate_publickey(
+                        &config.username,
+                        russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
+                    )
+                    .await
+                    .map_err(|error| AppError::Auth(format!("Key auth failed: {error}")))?
+            };
 
             try_keyboard_interactive_after_partial(
                 handle,

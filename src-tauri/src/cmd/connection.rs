@@ -423,6 +423,7 @@ pub fn get_ssh_keys(app: tauri::AppHandle) -> AppResult<Vec<SshKey>> {
     let mut cfg = config::load_keys(&app)?;
     for k in &mut cfg.keys {
         k.key = None;
+        k.cert = None;
         k.passphrase = None;
     }
     Ok(cfg.keys)
@@ -450,6 +451,15 @@ pub fn save_ssh_key(app: tauri::AppHandle, mut key: SshKey) -> AppResult<String>
             Some(crypto::encrypt(&content)?)
         }
         _ => existing.and_then(|e| e.key.clone()),
+    };
+
+    key.cert = match key.cert_file_path.as_deref() {
+        Some(path) if !path.is_empty() => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| AppError::Config(format!("failed to read certificate file: {e}")))?;
+            Some(crypto::encrypt(&content)?)
+        }
+        _ => existing.and_then(|e| e.cert.clone()),
     };
 
     key.passphrase = match key.passphrase.as_deref() {

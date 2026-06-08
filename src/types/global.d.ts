@@ -98,7 +98,7 @@ export interface SshConfig {
 export type SshAuth =
   | { type: "none" }
   | { type: "password"; password: string }
-  | { type: "key"; key_data: string; passphrase?: string };
+  | { type: "key"; key_data: string; cert_data?: string | null; passphrase?: string };
 
 /** Group for organizing saved connections. Groups form a tree via parent_id. */
 export interface Group {
@@ -112,10 +112,16 @@ export interface Group {
 export interface SshKey {
   id: string;
   name: string;
+  /** Encrypted certificate content is never returned to the UI. */
+  cert?: string;
   /** True when encrypted key data exists in local storage. */
   has_key_data?: boolean;
+  /** True when encrypted certificate data exists in local storage. */
+  has_cert_data?: boolean;
   /** Transient: file path from the UI file picker. */
   key_file_path?: string;
+  /** Transient: certificate file path from the UI file picker. */
+  cert_file_path?: string;
   /** Passphrase for this key (only sent when creating/updating). */
   passphrase?: string;
 }
