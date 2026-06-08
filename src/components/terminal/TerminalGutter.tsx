@@ -6,6 +6,7 @@ interface TerminalGutterProps {
   terminalRef: RefObject<Terminal | null>;
   showLineNumbers: boolean;
   showTimestamps: boolean;
+  showTimestampMilliseconds: boolean;
   lineTimestamps: Map<number, number>;
   sessionId?: string;
   suspended?: boolean;
@@ -26,12 +27,17 @@ interface GutterLayout {
   cellWidth: number;
 }
 
-function formatTimestamp(ms: number): string {
+function formatTimestamp(ms: number, includeMilliseconds: boolean): string {
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
-  return `[${hh}:${mm}:${ss}]`;
+  if (!includeMilliseconds) {
+    return `[${hh}:${mm}:${ss}]`;
+  }
+
+  const mmm = String(d.getMilliseconds()).padStart(3, "0");
+  return `[${hh}:${mm}:${ss}.${mmm}]`;
 }
 
 interface XTermCoreWithRenderDimensions {
@@ -53,6 +59,7 @@ export default function TerminalGutter({
   terminalRef,
   showLineNumbers,
   showTimestamps,
+  showTimestampMilliseconds,
   lineTimestamps,
   sessionId,
   suspended = false,
@@ -123,7 +130,10 @@ export default function TerminalGutter({
 
       nextLines.push({
         key: bufferLine,
-        timestamp: showTimestamps && hasRenderedRow && !isWrapped && ts ? formatTimestamp(ts) : "",
+        timestamp:
+          showTimestamps && hasRenderedRow && !isWrapped && ts
+            ? formatTimestamp(ts, showTimestampMilliseconds)
+            : "",
         lineNumber: showLineNumbers && hasRenderedRow && !isWrapped ? String(bufferLine + 1) : "",
       });
     }
@@ -136,7 +146,14 @@ export default function TerminalGutter({
       fontSize,
       cellWidth,
     });
-  }, [suspended, terminalRef, lineTimestamps, showLineNumbers, showTimestamps]);
+  }, [
+    suspended,
+    terminalRef,
+    lineTimestamps,
+    showLineNumbers,
+    showTimestamps,
+    showTimestampMilliseconds,
+  ]);
 
   const scheduleUpdate = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -230,7 +247,8 @@ export default function TerminalGutter({
   const lineNumWidth = showLineNumbers
     ? Math.max(Math.ceil(layout.cellWidth * String(maxVisibleLineNumber).length) + 2, 24)
     : 0;
-  const tsWidth = showTimestamps ? Math.ceil(layout.cellWidth * "[00:00:00]".length) + 2 : 0;
+  const timestampTemplate = showTimestampMilliseconds ? "[00:00:00.000]" : "[00:00:00]";
+  const tsWidth = showTimestamps ? Math.ceil(layout.cellWidth * timestampTemplate.length) + 2 : 0;
   const columnGap = showLineNumbers && showTimestamps ? 8 : 0;
   const innerRightPadding = 8;
   const separatorGap = 10;

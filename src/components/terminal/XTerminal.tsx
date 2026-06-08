@@ -113,6 +113,7 @@ export default function XTerminal({
   const terminalTransparencyEnabled = isTerminalTransparencyEnabled(appearance);
   const showLineNumbers = terminalSettings.show_line_numbers;
   const showTimestamps = terminalSettings.show_timestamps;
+  const showTimestampMilliseconds = terminalSettings.show_timestamp_milliseconds ?? false;
   const showGutter = showLineNumbers || showTimestamps;
   const commandSuggestionsEnabled = interaction.command_suggestions_enabled;
   const commandSuggestionMinChars = interaction.command_suggestion_min_chars;
@@ -1602,6 +1603,7 @@ export default function XTerminal({
           terminalRef={terminalRef}
           showLineNumbers={showLineNumbers}
           showTimestamps={showTimestamps}
+          showTimestampMilliseconds={showTimestampMilliseconds}
           lineTimestamps={lineTimestampsRef.current}
           sessionId={sessionId}
           suspended={performanceMode === "overloaded"}

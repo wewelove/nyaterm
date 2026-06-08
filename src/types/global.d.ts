@@ -532,6 +532,7 @@ export interface TerminalSettings {
   action_links_matchers: ActionLinksMatcherSettings;
   show_line_numbers: boolean;
   show_timestamps: boolean;
+  show_timestamp_milliseconds: boolean;
   show_multi_line_paste_dialog: boolean;
 }
 

@@ -141,6 +141,22 @@ export function TerminalTab() {
           />
         </SettingRow>
 
+        {appSettings.terminal.show_timestamps && (
+          <SettingRow
+            label={t("settings.showTimestampMilliseconds")}
+            desc={t("settings.showTimestampMillisecondsDesc")}
+          >
+            <SettingSwitch
+              checked={appSettings.terminal.show_timestamp_milliseconds ?? false}
+              onChange={(v) =>
+                updateAppSettings({
+                  terminal: { ...appSettings.terminal, show_timestamp_milliseconds: v },
+                })
+              }
+            />
+          </SettingRow>
+        )}
+
         <SettingRow
           label={t("terminal.showMultiLinePasteDialog")}
           desc={t("terminal.showMultiLinePasteDialogDesc")}
