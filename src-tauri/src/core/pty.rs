@@ -13,7 +13,7 @@ use super::zmodem::{
 use crate::config::AiExecutionProfile;
 use crate::core::SessionOutputCoalescer;
 use crate::core::capture::OutputCaptureProcessor;
-use crate::core::ssh::osc::{self, OscStripper, ShellKind};
+use crate::core::ssh::osc::{OscStripper, build_ready_marker};
 use crate::error::AppResult;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
@@ -292,89 +292,23 @@ struct LocalStartupScript {
     shell_integration_active: bool,
 }
 
-fn build_local_startup_script(shell_name: &str, ready_marker: &str) -> LocalStartupScript {
+fn build_local_startup_script(_shell_name: &str, _ready_marker: &str) -> LocalStartupScript {
     build_local_startup_script_for_platform(
-        shell_name,
-        ready_marker,
+        _shell_name,
+        _ready_marker,
         cfg!(not(target_os = "windows")),
     )
 }
 
 fn build_local_startup_script_for_platform(
-    shell_name: &str,
-    ready_marker: &str,
-    allow_unix_prelude: bool,
+    _shell_name: &str,
+    _ready_marker: &str,
+    _allow_unix_prelude: bool,
 ) -> LocalStartupScript {
-    let shell_kind = ShellKind::from_name(shell_name);
-    let shell_integration_script = osc::injection_script(shell_kind, ready_marker);
-    let shell_integration_active = shell_integration_script.is_some();
-    let backspace_prelude =
-        local_backspace_compat_prelude(shell_name, shell_kind, allow_unix_prelude);
-
-    let script = match (backspace_prelude, shell_integration_script) {
-        (Some(mut prelude), Some(integration)) => {
-            prelude.push_str(&integration);
-            Some(prelude)
-        }
-        (Some(mut prelude), None) => {
-            prelude.push_str(&build_ready_marker_printf(ready_marker));
-            Some(prelude)
-        }
-        (None, integration) => integration,
-    };
-
     LocalStartupScript {
-        script,
-        shell_integration_active,
+        script: None,
+        shell_integration_active: false,
     }
-}
-
-fn local_backspace_compat_prelude(
-    shell_name: &str,
-    shell_kind: ShellKind,
-    allow_unix_prelude: bool,
-) -> Option<String> {
-    if !allow_unix_prelude || is_windows_style_shell(shell_name) {
-        return None;
-    }
-
-    match shell_kind {
-        ShellKind::Bash => Some(
-            concat!(
-                "stty erase '^?' 2>/dev/null || true\n",
-                "if [ -z \"${NYATERM_BASHRC_SOURCED:-}\" ] && [ -r \"$HOME/.bashrc\" ]; then\n",
-                "  export NYATERM_BASHRC_SOURCED=1\n",
-                "  . \"$HOME/.bashrc\"\n",
-                "fi\n",
-            )
-            .to_string(),
-        ),
-        ShellKind::Fish | ShellKind::PosixSh => {
-            Some("stty erase '^?' 2>/dev/null || true\n".to_string())
-        }
-        ShellKind::Zsh => Some("stty erase '^?' 2>/dev/null || true\n".to_string()),
-        ShellKind::Unknown => None,
-    }
-}
-
-fn is_windows_style_shell(shell_name: &str) -> bool {
-    let lower = shell_name.to_ascii_lowercase();
-    let program = lower
-        .rsplit(|ch| ch == '/' || ch == '\\')
-        .next()
-        .unwrap_or(lower.as_str());
-
-    matches!(
-        program,
-        "cmd" | "cmd.exe" | "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe"
-    )
-}
-
-fn build_ready_marker_printf(ready_marker: &str) -> String {
-    let ready_osc = ready_marker
-        .replace('\x1b', "\\033")
-        .replace('\x07', "\\007");
-    format!("printf '{}' 2>/dev/null\n", ready_osc)
 }
 
 fn should_emit_visible_output(suppress_visible: &mut bool, ready: bool) -> bool {
@@ -419,7 +353,7 @@ pub async fn create_local_session(
         _ => platform_default_shell(),
     };
     let ai_execution_profile = infer_local_ai_execution_profile(&shell_name);
-    let ready_marker = osc::build_ready_marker(&session_id);
+    let ready_marker = build_ready_marker(&session_id);
     let startup_script = build_local_startup_script(&shell_name, &ready_marker);
     let injection_active = startup_script.shell_integration_active;
 
@@ -875,7 +809,7 @@ mod tests {
     use portable_pty::CommandBuilder;
 
     fn ready_marker() -> String {
-        crate::core::ssh::osc::build_ready_marker("session-1")
+        build_ready_marker("session-1")
     }
 
     #[test]
@@ -987,68 +921,22 @@ mod tests {
     }
 
     #[test]
-    fn zsh_startup_sets_del_erase_without_overriding_bindkeys() {
-        let marker = ready_marker();
-        let startup = build_local_startup_script_for_platform("/bin/zsh", &marker, true);
-        let script = startup.script.expect("startup script");
-
-        assert!(startup.shell_integration_active);
-        assert!(script.contains("stty erase '^?' 2>/dev/null || true"));
-        assert!(!script.contains("bindkey"));
-
-        let stty_pos = script.find("stty erase '^?'").expect("stty prelude");
-        let ready_pos = script.find("NyaTermReady:session-1").expect("ready marker");
-
-        assert!(stty_pos < ready_pos);
-    }
-
-    #[test]
-    fn bash_and_fish_startup_set_del_erase_without_zsh_bindkeys() {
+    fn local_startup_does_not_inject_supported_unix_shells() {
         let marker = ready_marker();
 
-        for shell in ["/bin/bash", "/usr/local/bin/fish"] {
+        for shell in ["/bin/bash", "/bin/zsh", "/usr/local/bin/fish", "/bin/sh"] {
             let startup = build_local_startup_script_for_platform(shell, &marker, true);
-            let script = startup.script.expect("startup script");
 
-            assert!(startup.shell_integration_active);
-            assert!(script.contains("stty erase '^?' 2>/dev/null || true"));
-            assert!(!script.contains("bindkey -M emacs"));
-            assert!(!script.contains("bindkey -M viins"));
-            assert!(script.contains("NyaTermReady:session-1"));
+            assert!(!startup.shell_integration_active);
+            assert!(
+                startup.script.is_none(),
+                "{shell} should not receive a startup script"
+            );
         }
     }
 
     #[test]
-    fn bash_startup_sources_user_bashrc_before_prompt_hook() {
-        let marker = ready_marker();
-        let startup = build_local_startup_script_for_platform("/bin/bash", &marker, true);
-        let script = startup.script.expect("startup script");
-
-        assert!(script.contains("NYATERM_BASHRC_SOURCED"));
-        assert!(script.contains(". \"$HOME/.bashrc\""));
-
-        let stty_pos = script.find("stty erase '^?'").expect("stty prelude");
-        let bashrc_pos = script.find(". \"$HOME/.bashrc\"").expect("bashrc source");
-        let prompt_hook_pos = script.find("PROMPT_COMMAND").expect("prompt hook");
-
-        assert!(stty_pos < bashrc_pos);
-        assert!(bashrc_pos < prompt_hook_pos);
-    }
-
-    #[test]
-    fn posix_startup_sets_del_erase_and_ready_marker_without_shell_integration() {
-        let marker = ready_marker();
-        let startup = build_local_startup_script_for_platform("/bin/sh", &marker, true);
-        let script = startup.script.expect("startup script");
-
-        assert!(!startup.shell_integration_active);
-        assert!(script.contains("stty erase '^?' 2>/dev/null || true"));
-        assert!(!script.contains("bindkey"));
-        assert!(script.contains("NyaTermReady:session-1"));
-    }
-
-    #[test]
-    fn unknown_and_windows_style_shells_do_not_get_unix_backspace_prelude() {
+    fn local_startup_does_not_inject_unknown_or_windows_style_shells() {
         let marker = ready_marker();
 
         for shell in ["nu", "powershell.exe", r"C:\Windows\System32\cmd.exe"] {
@@ -1063,14 +951,11 @@ mod tests {
     }
 
     #[test]
-    fn unix_backspace_prelude_is_disabled_on_non_unix_platforms() {
+    fn local_startup_does_not_inject_when_unix_prelude_is_disabled() {
         let marker = ready_marker();
         let startup = build_local_startup_script_for_platform("/bin/zsh", &marker, false);
-        let script = startup.script.expect("zsh integration script");
 
-        assert!(startup.shell_integration_active);
-        assert!(!script.contains("stty erase '^?'"));
-        assert!(!script.contains("bindkey -M emacs '^?'"));
-        assert!(script.contains("NyaTermReady:session-1"));
+        assert!(!startup.shell_integration_active);
+        assert!(startup.script.is_none());
     }
 }
