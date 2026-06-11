@@ -1206,6 +1206,8 @@
     "proxyHost": "主机",
     "proxyPort": "端口",
     "proxyProtocol": "协议",
+    "recordingAutoStart": "自动录制新会话",
+    "recordingAutoStartDesc": "每次会话启动成功后自动开始写入录制文件。录制文件会持续增长，直到会话结束或手动停止。",
     "recordingIncludeIoLabels": "显示 INPUT/OUTPUT 标识",
     "recordingIncludeIoLabelsDesc": "在录制文件和保存的会话文本中包含 INPUT 与 OUTPUT 标识。",
     "recordingIncludeTimestamps": "显示时间戳",
