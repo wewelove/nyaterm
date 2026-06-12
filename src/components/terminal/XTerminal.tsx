@@ -89,6 +89,7 @@ export default function XTerminal({
   sessionType,
   connectionId,
   onReconnected,
+  onDisconnectedCloseRequested,
   syncPeerSessionIds,
   syncOverlay,
 }: XTerminalProps) {
@@ -133,6 +134,7 @@ export default function XTerminal({
   const sessionTypeRef = useRef(sessionType);
   const connectionIdRef = useRef(connectionId);
   const onReconnectedRef = useRef(onReconnected);
+  const onDisconnectedCloseRequestedRef = useRef(onDisconnectedCloseRequested);
   const sessionIdRef = useRef(sessionId);
   const syncPeerSessionIdsRef = useRef(syncPeerSessionIds);
   const visibleRef = useRef(visible);
@@ -160,6 +162,10 @@ export default function XTerminal({
   useEffect(() => {
     onReconnectedRef.current = onReconnected;
   }, [onReconnected]);
+
+  useEffect(() => {
+    onDisconnectedCloseRequestedRef.current = onDisconnectedCloseRequested;
+  }, [onDisconnectedCloseRequested]);
 
   useEffect(() => {
     syncPeerSessionIdsRef.current = syncPeerSessionIds;
@@ -642,6 +648,19 @@ export default function XTerminal({
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
       const kb = terminalAppSettingsRef.current.keybindings;
+
+      if (
+        disconnectedRef.current &&
+        e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.code === "KeyD"
+      ) {
+        e.preventDefault();
+        onDisconnectedCloseRequestedRef.current?.();
+        return false;
+      }
 
       if (isShiftInsertPasteEvent(e)) {
         e.preventDefault();
@@ -1511,7 +1530,7 @@ export default function XTerminal({
 
   // Re-fit and focus when tab becomes active
   useEffect(() => {
-    if (active && visible && fitAddonRef.current && terminalRef.current) {
+    if (active && visible && terminalReady && fitAddonRef.current && terminalRef.current) {
       requestAnimationFrame(() => {
         fitAddonRef.current?.fit();
         const terminal = terminalRef.current;
@@ -1521,7 +1540,7 @@ export default function XTerminal({
         terminal.focus();
       });
     }
-  }, [active, visible]);
+  }, [active, sessionId, terminalReady, visible]);
 
   useEffect(() => {
     const handleRefresh = () => {

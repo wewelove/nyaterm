@@ -912,6 +912,24 @@ function App() {
     [closeTabs, closeWorkspaceTabSessions, persistWorkspaceNow, t],
   );
 
+  const handleCloseDisconnectedPane = useCallback(
+    async (tabId: string, paneId: string) => {
+      const tab = tabs.find((item) => item.id === tabId);
+      const pane = tab ? findSessionPaneById(tab.root, paneId) : null;
+      if (!tab || !pane) return;
+
+      const closed = await closePaneBackendSession(pane);
+      if (!closed) {
+        toast.error(t("tabCtx.closeFailed"));
+        return;
+      }
+
+      closePane(tab.id, pane.id);
+      await persistWorkspaceNow(t("tabCtx.closeFailed"));
+    },
+    [closePane, closePaneBackendSession, persistWorkspaceNow, t, tabs],
+  );
+
   const handleSessionClick = useCallback(
     (sessionId: string) => {
       const tab = findTabBySessionId(tabs, sessionId);
@@ -1814,7 +1832,7 @@ function App() {
   const handleLeftResize = useCallback(
     (delta: number) => {
       updateUi((prev) => ({
-        left_width: Math.max(160, Math.min(480, (prev.left_width || 256) + delta)),
+        left_width: Math.max(160, Math.min(720, (prev.left_width || 256) + delta)),
       }));
     },
     [updateUi],
@@ -1823,7 +1841,7 @@ function App() {
   const handleRightResize = useCallback(
     (delta: number) => {
       updateUi((prev) => ({
-        right_width: Math.max(200, Math.min(480, (prev.right_width || 288) - delta)),
+        right_width: Math.max(200, Math.min(720, (prev.right_width || 288) - delta)),
       }));
     },
     [updateUi],
@@ -1832,7 +1850,7 @@ function App() {
   const handleQuickCmdResize = useCallback(
     (delta: number) => {
       updateUi((prev) => ({
-        quick_cmd_height: Math.max(36, Math.min(300, (prev.quick_cmd_height || 180) - delta)),
+        quick_cmd_height: Math.max(36, Math.min(520, (prev.quick_cmd_height || 180) - delta)),
       }));
     },
     [updateUi],
@@ -1841,7 +1859,7 @@ function App() {
   const handleSerialSendResize = useCallback(
     (delta: number) => {
       updateUi((prev) => ({
-        serial_send_height: Math.max(60, Math.min(300, (prev.serial_send_height || 180) - delta)),
+        serial_send_height: Math.max(60, Math.min(520, (prev.serial_send_height || 180) - delta)),
       }));
     },
     [updateUi],
@@ -1980,7 +1998,7 @@ function App() {
   const handleTransferResize = useCallback(
     (delta: number) => {
       updateUi((prev) => ({
-        transfer_height: Math.max(60, Math.min(400, (prev.transfer_height || 180) - delta)),
+        transfer_height: Math.max(60, Math.min(600, (prev.transfer_height || 180) - delta)),
       }));
     },
     [updateUi],
@@ -2111,6 +2129,7 @@ function App() {
           onUpdateWindowSplitRatio: handleUpdateWindowSplitRatio,
           onReconnectPane: handleReconnectPane,
           onReconnected: handleReconnected,
+          onDisconnectedCloseRequested: handleCloseDisconnectedPane,
         }}
         tabsCount={tabs.length}
         emptyWorkspace={{

@@ -37,6 +37,7 @@ interface TabWindowsWorkspaceProps {
   onUpdateWindowSplitRatio: (splitId: string, ratio: number) => void;
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
+  onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
 }
 
 function SplitWindow({
@@ -66,6 +67,7 @@ function SplitWindow({
   onUpdateWindowSplitRatio,
   onReconnectPane,
   onReconnected,
+  onDisconnectedCloseRequested,
 }: {
   split: TerminalWindowSplit;
 } & Omit<TabWindowsWorkspaceProps, "layout">) {
@@ -116,6 +118,7 @@ function SplitWindow({
           onUpdateWindowSplitRatio={onUpdateWindowSplitRatio}
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
+          onDisconnectedCloseRequested={onDisconnectedCloseRequested}
         />
       </div>
       <ResizeHandle direction={isHorizontal ? "vertical" : "horizontal"} onResize={handleResize} />
@@ -147,6 +150,7 @@ function SplitWindow({
           onUpdateWindowSplitRatio={onUpdateWindowSplitRatio}
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
+          onDisconnectedCloseRequested={onDisconnectedCloseRequested}
         />
       </div>
     </div>
@@ -179,6 +183,7 @@ function LeafWindow({
   onUpdatePaneSplitRatio,
   onReconnectPane,
   onReconnected,
+  onDisconnectedCloseRequested,
 }: {
   leaf: TerminalWindowLeaf;
 } & Omit<TabWindowsWorkspaceProps, "layout" | "onUpdateWindowSplitRatio">) {
@@ -247,6 +252,7 @@ function LeafWindow({
             onUpdateSplitRatio={(splitId, ratio) => onUpdatePaneSplitRatio(tab.id, splitId, ratio)}
             onReconnectPane={onReconnectPane}
             onReconnected={onReconnected}
+            onDisconnectedCloseRequested={onDisconnectedCloseRequested}
           />
         ))}
       </div>
@@ -281,6 +287,7 @@ function WindowNodeView({
   onUpdateWindowSplitRatio,
   onReconnectPane,
   onReconnected,
+  onDisconnectedCloseRequested,
 }: {
   node: TerminalWindowNode;
 } & Omit<TabWindowsWorkspaceProps, "layout">) {
@@ -313,6 +320,7 @@ function WindowNodeView({
         onUpdateWindowSplitRatio={onUpdateWindowSplitRatio}
         onReconnectPane={onReconnectPane}
         onReconnected={onReconnected}
+        onDisconnectedCloseRequested={onDisconnectedCloseRequested}
       />
     );
   }
@@ -344,6 +352,7 @@ function WindowNodeView({
       onUpdatePaneSplitRatio={onUpdatePaneSplitRatio}
       onReconnectPane={onReconnectPane}
       onReconnected={onReconnected}
+      onDisconnectedCloseRequested={onDisconnectedCloseRequested}
     />
   );
 }

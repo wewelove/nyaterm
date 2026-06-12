@@ -23,6 +23,7 @@ interface PaneWorkspaceProps {
   onUpdateSplitRatio: (splitId: string, ratio: number) => void;
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
+  onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
 }
 
 function SplitView({
@@ -33,6 +34,7 @@ function SplitView({
   onUpdateSplitRatio,
   onReconnectPane,
   onReconnected,
+  onDisconnectedCloseRequested,
 }: {
   split: SplitPane;
   tab: Tab;
@@ -41,6 +43,7 @@ function SplitView({
   onUpdateSplitRatio: (splitId: string, ratio: number) => void;
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
+  onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isHorizontalSplit = split.direction === "horizontal";
@@ -73,6 +76,7 @@ function SplitView({
           onUpdateSplitRatio={onUpdateSplitRatio}
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
+          onDisconnectedCloseRequested={onDisconnectedCloseRequested}
         />
       </div>
       <ResizeHandle
@@ -92,6 +96,7 @@ function SplitView({
           onUpdateSplitRatio={onUpdateSplitRatio}
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
+          onDisconnectedCloseRequested={onDisconnectedCloseRequested}
         />
       </div>
     </div>
@@ -107,6 +112,7 @@ function PaneNodeView({
   onUpdateSplitRatio,
   onReconnectPane,
   onReconnected,
+  onDisconnectedCloseRequested,
 }: {
   node: PaneNode;
   tab: Tab;
@@ -116,6 +122,7 @@ function PaneNodeView({
   onUpdateSplitRatio: (splitId: string, ratio: number) => void;
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
+  onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const { syncGroups, broadcastToAll } = useApp();
@@ -141,6 +148,7 @@ function PaneNodeView({
         onUpdateSplitRatio={onUpdateSplitRatio}
         onReconnectPane={onReconnectPane}
         onReconnected={onReconnected}
+        onDisconnectedCloseRequested={onDisconnectedCloseRequested}
       />
     );
   }
@@ -252,6 +260,9 @@ function PaneNodeView({
           sessionType={node.type}
           connectionId={node.connectionId}
           onReconnected={onReconnected}
+          onDisconnectedCloseRequested={() =>
+            void onDisconnectedCloseRequested?.(tab.id, node.id)
+          }
           syncGroups={syncGroups}
           broadcastToAll={broadcastToAll}
         />
@@ -267,6 +278,7 @@ function PaneXTerminal({
   sessionType,
   connectionId,
   onReconnected,
+  onDisconnectedCloseRequested,
   syncGroups,
   broadcastToAll,
 }: {
@@ -276,6 +288,7 @@ function PaneXTerminal({
   sessionType: import("@/types/global").SessionType;
   connectionId?: string;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
+  onDisconnectedCloseRequested?: () => void;
   syncGroups: import("@/types/global").SyncGroup[];
   broadcastToAll: boolean;
 }) {
@@ -367,6 +380,7 @@ function PaneXTerminal({
       sessionType={sessionType}
       connectionId={connectionId}
       onReconnected={onReconnected}
+      onDisconnectedCloseRequested={onDisconnectedCloseRequested}
       syncPeerSessionIds={syncPeerSessionIds}
       syncOverlay={syncOverlay}
     />
@@ -380,6 +394,7 @@ function PaneWorkspace({
   onUpdateSplitRatio,
   onReconnectPane,
   onReconnected,
+  onDisconnectedCloseRequested,
 }: PaneWorkspaceProps) {
   return (
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
@@ -392,6 +407,7 @@ function PaneWorkspace({
         onUpdateSplitRatio={onUpdateSplitRatio}
         onReconnectPane={onReconnectPane}
         onReconnected={onReconnected}
+        onDisconnectedCloseRequested={onDisconnectedCloseRequested}
       />
     </div>
   );

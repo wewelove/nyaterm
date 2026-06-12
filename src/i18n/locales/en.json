@@ -1221,6 +1221,8 @@
     "proxyHost": "Host",
     "proxyPort": "Port",
     "proxyProtocol": "Protocol",
+    "recordingAutoStart": "Auto-record new sessions",
+    "recordingAutoStartDesc": "Automatically start writing a recording file after each session starts. Recording files keep growing until the session ends or recording is stopped manually.",
     "recordingIncludeIoLabels": "Show INPUT/OUTPUT labels",
     "recordingIncludeIoLabelsDesc": "Include INPUT and OUTPUT markers in recording and saved session text files.",
     "recordingIncludeTimestamps": "Show Timestamps",
