@@ -166,6 +166,11 @@ NyaTerm supports session recording, which is useful for:
 - Sharing a reproducible path with teammates
 - Capturing terminal examples with visible timing
 
+In **Settings → Transfer**, you can also tune recording behavior:
+
+- **Auto-start recording**: begin recording as soon as a session opens, so you never forget to start it for sessions you always want captured
+- **Include timestamps**: write timestamps into the saved transcript, which helps with auditing or correlating output with wall-clock time
+
 If you are preparing screenshots or demos, a good combination is:
 
 - Line numbers / timestamp gutter

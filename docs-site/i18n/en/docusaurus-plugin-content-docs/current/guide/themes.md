@@ -15,6 +15,8 @@ In **Settings → Appearance**, you can configure these separately:
 
 If you just want a quick theme switch, you can also use **View → Theme** from the top menu.
 
+NyaTerm ships a built-in high-contrast theme named **Nya High Contrast**, which is well suited for accessibility, bright environments, or screen sharing where stronger contrast helps readability. You can select it like any other UI theme from **Settings → Appearance** or the **View → Theme** top menu.
+
 ## Background image
 
 In **Settings → Appearance**, the main window can now use a local wallpaper. The controls are easiest to follow by their exact UI names:

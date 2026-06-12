@@ -10,6 +10,286 @@ export type ChangelogRelease = {
 
 const changelogReleasesEn: ChangelogRelease[] = [
   {
+    version: '[1.1.6] - 2026-06-12',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**session:** Add a searchable session quick switcher to jump between saved connections and local sessions from the keyboard or mouse, including a shortcut entry for creating a new SSH session.',
+          '**recording:** Add an auto-start recording option that begins recording automatically when a session opens.',
+          '**terminal:** Serialize terminal text so reconnecting sessions restore their previous on-screen output.',
+          '**terminal:** Allow disconnected panes to be closed.',
+          '**terminal:** Add a command to delete individual command history entries.',
+          '**file-explorer:** Enhance file attribute management in the Properties dialog.',
+          '**clipboard:** Implement asynchronous clipboard reading with a timeout.',
+          '**action-links:** Support RAR archives in the archive action-link matcher.',
+          '**ai:** Enhance model management with manual model addition and credential grouping.',
+          '**transfer:** Implement background transfer concurrency adjustment.',
+          '**stats:** Enhance `SYSINFO_SCRIPT` for improved system information gathering.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**quick-commands:** Introduce a sorting mode and update view mode defaults.',
+          '**sftp:** Enhance directory and symlink handling in the SFTP backend.',
+          '**password-management:** Enhance unlock logic and footer visibility in the password panel.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**connection:** Improve the password management editing flow.',
+          '**macos:** Support drag reordering of connections on macOS.',
+          '**file-explorer:** Reset horizontal scroll position and improve file item interaction.',
+          '**terminal:** Streamline right-click paste in the terminal context menu.',
+          '**ssh:** Reorganize imports and adjust preferred algorithms.',
+        ],
+      },
+      {
+        title: 'Performance',
+        items: ['Compress portable snapshots before encryption.'],
+      },
+      {
+        title: 'Documentation',
+        items: ['**README:** Add Arch Linux installation instructions.'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.5] - 2026-06-09',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**terminal:** Add multiplexed SSH session support so a single connection can power multiple terminals.',
+          '**ai:** Introduce a dedicated AI Assistant panel and related components.',
+          '**ai:** Add command risk levels for execution control.',
+          '**ai:** Add request User-Agent configuration with sensible default handling.',
+          '**cloud-sync:** Add a Gitee snippet cloud sync provider.',
+          '**terminal:** Enhance multi-line paste handling with a dedicated dialog and input state management.',
+          '**terminal:** Implement local backspace handling in terminal input.',
+          '**terminal:** Add support for timestamp milliseconds in the terminal display.',
+          '**quick-commands:** Add a compact view mode and a view mode toggle, plus a confirmation dialog for command deletion.',
+          '**file-explorer:** Implement a favorites feature for directories.',
+          '**key-management:** Add certificate file handling in the key editor.',
+          '**search:** Improve search engine management with dynamic key generation.',
+          '**local-terminal:** Add shell arguments support and file selection for the shell path.',
+          '**pty:** Add a local startup script for shell integration, with output suppression during startup.',
+          '**themes:** Add the Nya High Contrast theme and refresh the color palette.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**app:** Update the window title to reflect the active tab name.',
+          '**window:** Implement owner window label handling for child windows and expand window capability patterns.',
+          '**ssh:** Enhance prompt-injection handling and OSC processing.',
+          '**ssh:** Enhance password prompt handling in keyboard-interactive authentication.',
+          '**ai:** Make AI output follow the app language via locale-based prompt selection.',
+          '**credential-management:** Improve regex validation and prompt handling.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**deps:** Update xterm dependencies to beta versions.',
+          '**macos:** Normalize the packaged macOS PTY environment.',
+          '**terminal:** Initialize disconnect and reconnect states in XTerminal.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.1.4] - 2026-06-03',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**ssh:** Implement post-login command support in the SSH form and new session page.',
+          '**ssh:** Add a required-field indicator for the password field in the SSH form.',
+          '**saved-connections:** Enhance search with expanded group management.',
+          '**serial:** Enhance serial session handling with improved error logging and Zmodem detection.',
+          '**panel:** Enhance the send-command panel with hex data handling and refactored state management.',
+          '**recording:** Add a timestamp inclusion option for recordings.',
+          '**terminal:** Enhance the terminal gutter with dynamic cell dimensions and layout adjustments, and improve the overall input experience.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**zmodem:** Improve Zmodem event handling and detection logic.',
+          '**terminal:** Unify cursor position handling for command and credential suggestions.',
+          '**terminal:** Improve multi-line paste dialog focus handling.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: ['**header:** Respect the minimize-to-tray setting when closing the window.'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.3] - 2026-06-02',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**terminal:** Implement a multi-line paste dialog and enhance paste handling.',
+          '**terminal:** Enhance input handling with logical line snapshots and selection range tracking.',
+          '**terminal:** Implement credential prompt detection and input handling.',
+          '**panel:** Enhance the send-command panel with shell command functionality.',
+          '**recording:** Implement session recording, including start/stop, transcript saving, and memory limit settings.',
+          '**file-explorer:** Add session-scoped directory history in the path bar.',
+          '**import:** Support importing sessions from NyaTerm JSON format in the import dialog.',
+          '**security:** Enhance master password management with improved validation and UI updates.',
+          '**quick-commands:** Add dialogs for deleting and renaming quick command categories.',
+          '**docs-site:** Add offline local search.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**cloud-sync:** Implement operation timeouts and enhance error handling for storage operations.',
+          '**cloud-sync:** Add WebDAV Digest authentication support.',
+          '**cloud-sync:** Implement an automatic retry mechanism for cloud sync operations.',
+          '**backup:** Update the backup file extension from `.dgfy` to `.nya`.',
+          '**header:** Rename the menu label from `New SSH Connection` to `New Session`.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**settings:** Ensure the settings window closes after saving by managing saving state.',
+          '**app:** Improve `safeRecordingName` normalization to allow a wider range of valid characters.',
+          '**docs-site:** Improve navbar responsiveness and the floating search box.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.1.2] - 2026-05-30',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**window-state:** Implement main window state management to persist window size and position.',
+          '**quick-commands:** Add support for importing Xshell quick buttons.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: ['**app:** Centralize child window size and position handling.'],
+      },
+      {
+        title: 'Documentation',
+        items: ['Add a contributors section and star history chart to the README.'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.1] - 2026-05-29',
+    sections: [
+      {
+        title: 'Fixed',
+        items: ['Remove unused child window preload logic and background color handling.'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.0] - 2026-05-29',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**serial:** Implement a baud rate picker for selecting and validating serial baud rates.',
+          '**file-transfer:** Add download functionality and enhance transfer management with enqueued downloads.',
+          '**file-transfer:** Add a `queued` status and improve transfer UI interactions.',
+          '**file-explorer:** Auto-sync the current working directory based on the active connection.',
+          '**transfer:** Implement concurrency clamping and rename download/upload thread settings to concurrent tasks.',
+          '**errors:** Add new authentication failure messages and enhance validation in the new session page.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**file-explorer:** Add a refreshed FileExplorer component and dialogs for file operations, including path bar and toolbar.',
+          '**ui:** Standardize dialog footers with `ActionButton` and `ActionFooter`, and move the Toaster into the main layout.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**modal:** Prevent the modal overlay from remaining after a child window closes.',
+          '**child-windows:** Reduce startup flicker with window preloading.',
+          '**build-release:** Correct the package name for Ubuntu ARM installation.',
+        ],
+      },
+      {
+        title: 'Performance',
+        items: ['**sftp:** Enhance the SFTP backend with configurable client settings and performance logging.'],
+      },
+    ],
+  },
+  {
+    version: '[1.0.9] - 2026-05-27',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**ssh:** Introduce a `none` authentication mode in the SSH form for enhanced connection options.',
+          '**runtime:** Implement portable mode support and add a Windows portable zip release.',
+          '**quick-commands:** Add an import dialog for quick commands supporting WindTerm and NyaTerm formats.',
+          '**terminal:** Add disconnect session functionality.',
+          '**file-explorer:** Implement inline renaming for file entries.',
+          '**file-transfer:** Enhance progress tracking and add a clear-all action.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**file-transfer:** Update transfer row status icons and simplify status handling.',
+          '**dialogs:** Improve responsive width handling and Markdown rendering in the update dialog.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          '**session-input:** Fix a quick command issue caused by newline conversion.',
+          '**telnet:** Integrate the recording manager for session input/output handling.',
+          '**shortcuts:** Validate and support custom tab switching keybindings.',
+          '**saved-connections:** Update the empty state to check both saved connections and groups.',
+          '**workflows:** Update the Ubuntu version from 24.04 to 22.04 in the release workflow.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.8] - 2026-05-24',
+    sections: [
+      {
+        title: 'Added',
+        items: [
+          '**quick-commands:** Implement sorting and usage tracking for quick commands.',
+          '**readme:** Add a GitHub downloads badge.',
+        ],
+      },
+      {
+        title: 'Changed',
+        items: [
+          '**settings:** Update app settings management and introduce UI settings saving.',
+          '**storage:** Restructure the storage module and migrate to typed settings documents.',
+          '**security:** Update master password handling in the security tab.',
+          '**scrollbar:** Hide scrollbar buttons and improve scrollbar appearance.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: ['**errors:** Improve error handling in the new session and quick command pages.'],
+      },
+    ],
+  },
+  {
     version: '[1.0.7] - 2026-05-21',
     sections: [
       {
@@ -1005,6 +1285,286 @@ const changelogReleasesEn: ChangelogRelease[] = [
 ];
 
 const changelogReleasesZhCN: ChangelogRelease[] = [
+  {
+    version: '[1.1.6] - 2026-06-12',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**session:** 新增可搜索的会话快速切换器，可通过键盘或鼠标在已保存连接和本地会话之间跳转，并提供新建 SSH 会话的快捷入口。',
+          '**recording:** 新增自动开始录制选项，会话打开时自动开始录制。',
+          '**terminal:** 序列化终端文本，使重连的会话能够恢复之前的屏幕输出。',
+          '**terminal:** 支持关闭已断开连接的窗格。',
+          '**terminal:** 新增删除单条命令历史记录的功能。',
+          '**file-explorer:** 增强属性对话框中的文件属性管理。',
+          '**clipboard:** 实现带超时的异步剪贴板读取。',
+          '**action-links:** 在压缩包动作链接匹配器中支持 RAR 文件。',
+          '**ai:** 增强模型管理，支持手动添加模型和凭据分组。',
+          '**transfer:** 实现后台传输并发数的动态调整。',
+          '**stats:** 增强 `SYSINFO_SCRIPT`，改进系统信息采集。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**quick-commands:** 引入排序模式并更新视图模式默认值。',
+          '**sftp:** 增强 SFTP 后端的目录和符号链接处理。',
+          '**password-management:** 增强密码面板的解锁逻辑和底栏可见性。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**connection:** 改进密码管理的编辑流程。',
+          '**macos:** 支持在 macOS 上拖拽重新排序连接。',
+          '**file-explorer:** 重置水平滚动位置并改进文件项交互。',
+          '**terminal:** 优化终端上下文菜单中的右键粘贴功能。',
+          '**ssh:** 重组导入并调整首选算法。',
+        ],
+      },
+      {
+        title: '性能',
+        items: ['在加密前压缩便携快照。'],
+      },
+      {
+        title: '文档',
+        items: ['**README:** 新增 NyaTerm 的 Arch Linux 安装说明。'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.5] - 2026-06-09',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**terminal:** 新增多路复用 SSH 会话支持，单个连接即可承载多个终端。',
+          '**ai:** 引入独立的 AI Assistant 面板及相关组件。',
+          '**ai:** 新增命令风险等级，用于控制命令执行。',
+          '**ai:** 新增请求 User-Agent 配置及默认值处理。',
+          '**cloud-sync:** 新增 Gitee 代码片段云同步提供商。',
+          '**terminal:** 增强多行粘贴处理，加入专用对话框和输入状态管理。',
+          '**terminal:** 实现终端输入中的本地退格处理。',
+          '**terminal:** 在终端显示中支持时间戳毫秒。',
+          '**quick-commands:** 新增紧凑视图模式和视图模式切换，并加入命令删除确认对话框。',
+          '**file-explorer:** 为目录实现收藏夹功能。',
+          '**key-management:** 在密钥编辑器中支持证书文件处理。',
+          '**search:** 改进搜索引擎管理，支持动态生成键值。',
+          '**local-terminal:** 新增 shell 参数支持和 shell 路径的文件选择。',
+          '**pty:** 新增用于 shell 集成的本地启动脚本，并在启动期间抑制输出。',
+          '**themes:** 新增 Nya High Contrast 主题并刷新调色板。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**app:** 根据当前活动标签页更新窗口标题。',
+          '**window:** 为子窗口实现 owner window label 处理，并扩展窗口能力匹配模式。',
+          '**ssh:** 增强提示注入处理和 OSC 处理。',
+          '**ssh:** 增强键盘交互认证中的密码提示处理。',
+          '**ai:** 通过基于语言环境的提示词选择，使 AI 输出跟随应用语言。',
+          '**credential-management:** 改进正则校验和提示处理。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**deps:** 将 xterm 依赖更新到 beta 版本。',
+          '**macos:** 规范化打包后的 macOS PTY 环境。',
+          '**terminal:** 初始化 XTerminal 中的断开和重连状态。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.1.4] - 2026-06-03',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**ssh:** 在 SSH 表单和新建会话页中实现登录后命令支持。',
+          '**ssh:** 为 SSH 表单中的密码字段新增必填标识。',
+          '**saved-connections:** 增强搜索功能，扩展分组管理能力。',
+          '**serial:** 增强串口会话处理，改进错误日志并支持 Zmodem 检测。',
+          '**panel:** 增强发送命令面板，加入十六进制数据处理并重构状态管理。',
+          '**recording:** 为录制新增包含时间戳的选项。',
+          '**terminal:** 增强终端行号槽，支持动态单元格尺寸和布局调整，并改进整体输入体验。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**zmodem:** 改进 Zmodem 事件处理和检测逻辑。',
+          '**terminal:** 统一命令建议和凭据建议的光标位置处理。',
+          '**terminal:** 改进多行粘贴对话框的焦点处理。',
+        ],
+      },
+      {
+        title: '修复',
+        items: ['**header:** 关闭窗口时遵循最小化到托盘的设置。'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.3] - 2026-06-02',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**terminal:** 实现多行粘贴对话框并增强粘贴处理。',
+          '**terminal:** 增强输入处理，加入逻辑行快照和选区范围跟踪。',
+          '**terminal:** 实现凭据提示检测和输入处理。',
+          '**panel:** 增强发送命令面板的 shell 命令功能。',
+          '**recording:** 实现会话录制，包括开始/停止、保存转录文本和内存限制设置。',
+          '**file-explorer:** 在路径栏中新增按会话维度的目录历史。',
+          '**import:** 在导入对话框中支持从 NyaTerm JSON 格式导入会话。',
+          '**security:** 增强主密码管理，改进校验和界面。',
+          '**quick-commands:** 新增用于删除和重命名快捷命令分类的对话框。',
+          '**docs-site:** 新增离线本地搜索。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**cloud-sync:** 实现云同步操作超时，并增强存储操作的错误处理。',
+          '**cloud-sync:** 新增 WebDAV Digest 认证支持。',
+          '**cloud-sync:** 为云同步操作实现自动重试机制。',
+          '**backup:** 将备份文件扩展名从 `.dgfy` 更新为 `.nya`。',
+          '**header:** 将菜单标签从 `New SSH Connection` 重命名为 `New Session`。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**settings:** 通过管理保存状态，确保保存后正确关闭设置窗口。',
+          '**app:** 改进 `safeRecordingName` 的规范化逻辑，允许更广泛的合法字符。',
+          '**docs-site:** 改进导航栏响应式表现和浮动搜索框。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.1.2] - 2026-05-30',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**window-state:** 实现主窗口状态管理，持久化窗口尺寸和位置。',
+          '**quick-commands:** 支持导入 Xshell 快捷按钮。',
+        ],
+      },
+      {
+        title: '变更',
+        items: ['**app:** 集中处理子窗口的尺寸和位置。'],
+      },
+      {
+        title: '文档',
+        items: ['在 README 中新增贡献者章节和 star 历史图表。'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.1] - 2026-05-29',
+    sections: [
+      {
+        title: '修复',
+        items: ['移除未使用的子窗口预加载逻辑和背景色处理。'],
+      },
+    ],
+  },
+  {
+    version: '[1.1.0] - 2026-05-29',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**serial:** 实现波特率选择器，用于选择和校验串口波特率。',
+          '**file-transfer:** 新增下载功能，并通过入队下载增强传输管理。',
+          '**file-transfer:** 新增 `queued` 状态并改进传输界面交互。',
+          '**file-explorer:** 根据当前活动连接自动同步当前工作目录。',
+          '**transfer:** 实现并发数限制，并将下载/上传线程设置重命名为并发任务数。',
+          '**errors:** 在新建会话页中新增认证失败提示并增强校验。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**file-explorer:** 新增刷新后的 FileExplorer 组件及文件操作对话框，包括路径栏和工具栏。',
+          '**ui:** 使用 `ActionButton` 和 `ActionFooter` 统一对话框底栏，并将 Toaster 移入主布局。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**modal:** 防止子窗口关闭后模态遮罩层残留。',
+          '**child-windows:** 通过窗口预加载减少启动闪烁。',
+          '**build-release:** 修正 Ubuntu ARM 安装的包名。',
+        ],
+      },
+      {
+        title: '性能',
+        items: ['**sftp:** 增强 SFTP 后端，支持可配置的客户端设置和性能日志。'],
+      },
+    ],
+  },
+  {
+    version: '[1.0.9] - 2026-05-27',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**ssh:** 在 SSH 表单中引入 `none` 认证模式，丰富连接选项。',
+          '**runtime:** 实现便携模式支持，并新增 Windows 便携版 zip 发布。',
+          '**quick-commands:** 新增快捷命令导入对话框，支持 WindTerm 和 NyaTerm 格式。',
+          '**terminal:** 新增断开会话功能。',
+          '**file-explorer:** 为文件项实现内联重命名。',
+          '**file-transfer:** 增强进度跟踪并新增清空全部操作。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**file-transfer:** 更新传输行状态图标并简化状态处理。',
+          '**dialogs:** 改进对话框的响应式宽度处理和更新对话框的 Markdown 渲染。',
+        ],
+      },
+      {
+        title: '修复',
+        items: [
+          '**session-input:** 修复由换行转换导致的快捷命令问题。',
+          '**telnet:** 集成录制管理器以处理会话输入/输出。',
+          '**shortcuts:** 校验并支持自定义标签切换快捷键。',
+          '**saved-connections:** 更新空状态判断，同时检查已保存连接和分组。',
+          '**workflows:** 将发布工作流中的 Ubuntu 版本从 24.04 更新为 22.04。',
+        ],
+      },
+    ],
+  },
+  {
+    version: '[1.0.8] - 2026-05-24',
+    sections: [
+      {
+        title: '新增',
+        items: [
+          '**quick-commands:** 为快捷命令实现排序和使用次数跟踪。',
+          '**readme:** 新增 GitHub 下载量徽章。',
+        ],
+      },
+      {
+        title: '变更',
+        items: [
+          '**settings:** 更新应用设置管理并引入 UI 设置保存。',
+          '**storage:** 重构存储模块并迁移到类型化设置文档。',
+          '**security:** 更新安全标签页中的主密码处理。',
+          '**scrollbar:** 隐藏滚动条按钮并改进滚动条外观。',
+        ],
+      },
+      {
+        title: '修复',
+        items: ['**errors:** 改进新建会话页和快捷命令页的错误处理。'],
+      },
+    ],
+  },
   {
     version: '[1.0.7] - 2026-05-21',
     sections: [

@@ -4,6 +4,223 @@ All notable changes to this project will be documented in this file.
 
 This changelog is inferred from release bump commits in git history (for example `chore: bump version to vX.Y.Z`) and grouped by Conventional Commit type.
 
+## [1.1.6] - 2026-06-12
+
+### Added
+
+- **session:** Add a searchable session quick switcher to jump between saved connections and local sessions from the keyboard or mouse, including a shortcut entry for creating a new SSH session.
+- **recording:** Add an auto-start recording option that begins recording automatically when a session opens.
+- **terminal:** Serialize terminal text so reconnecting sessions restore their previous on-screen output.
+- **terminal:** Allow disconnected panes to be closed.
+- **terminal:** Add a command to delete individual command history entries.
+- **file-explorer:** Enhance file attribute management in the Properties dialog.
+- **clipboard:** Implement asynchronous clipboard reading with a timeout.
+- **action-links:** Support RAR archives in the archive action-link matcher.
+- **ai:** Enhance model management with manual model addition and credential grouping.
+- **transfer:** Implement background transfer concurrency adjustment.
+- **session:** Implement session creation request ID handling.
+- **stats:** Enhance `SYSINFO_SCRIPT` for improved system information gathering.
+
+### Changed
+
+- **quick-commands:** Introduce a sorting mode and update view mode defaults.
+- **sftp:** Enhance directory and symlink handling in the SFTP backend.
+- **password-management:** Enhance unlock logic and footer visibility in the password panel.
+
+### Fixed
+
+- **connection:** Improve the password management editing flow.
+- **macos:** Support drag reordering of connections on macOS.
+- **file-explorer:** Reset horizontal scroll position and improve file item interaction.
+- **terminal:** Streamline right-click paste in the terminal context menu.
+- **ssh:** Reorganize imports and adjust preferred algorithms.
+
+### Performance
+
+- Compress portable snapshots before encryption.
+
+### Documentation
+
+- **README:** Add Arch Linux installation instructions.
+
+## [1.1.5] - 2026-06-09
+
+### Added
+
+- **terminal:** Add multiplexed SSH session support so a single connection can power multiple terminals.
+- **ai:** Introduce a dedicated AI Assistant panel and related components.
+- **ai:** Add command risk levels for execution control.
+- **ai:** Add request User-Agent configuration with sensible default handling.
+- **cloud-sync:** Add a Gitee snippet cloud sync provider.
+- **terminal:** Enhance multi-line paste handling with a dedicated dialog and input state management.
+- **terminal:** Implement local backspace handling in terminal input.
+- **terminal:** Add new icons to the tab context menu.
+- **terminal:** Add support for timestamp milliseconds in the terminal display.
+- **quick-commands:** Add a compact view mode and a view mode toggle, plus a confirmation dialog for command deletion.
+- **file-explorer:** Implement a favorites feature for directories.
+- **key-management:** Add certificate file handling in the key editor.
+- **search:** Improve search engine management with dynamic key generation.
+- **local-terminal:** Add shell arguments support and file selection for the shell path.
+- **pty:** Add a local startup script for shell integration, with output suppression during startup.
+- **themes:** Add the Nya High Contrast theme and refresh the color palette.
+
+### Changed
+
+- **app:** Update the window title to reflect the active tab name.
+- **window:** Implement owner window label handling for child windows and expand window capability patterns.
+- **ssh:** Enhance prompt-injection handling and OSC processing.
+- **ssh:** Enhance password prompt handling in keyboard-interactive authentication.
+- **ai:** Make AI output follow the app language via locale-based prompt selection.
+- **api:** Enhance URL handling and normalization utilities.
+- **credential-management:** Improve regex validation and prompt handling.
+
+### Fixed
+
+- **deps:** Update xterm dependencies to beta versions.
+- **macos:** Normalize the packaged macOS PTY environment.
+- **terminal:** Initialize disconnect and reconnect states in XTerminal.
+
+## [1.1.4] - 2026-06-03
+
+### Added
+
+- **ssh:** Implement post-login command support in the SSH form and new session page.
+- **ssh:** Add a required-field indicator for the password field in the SSH form.
+- **saved-connections:** Enhance search with expanded group management.
+- **serial:** Enhance serial session handling with improved error logging and Zmodem detection.
+- **panel:** Enhance the send-command panel with hex data handling and refactored state management.
+- **recording:** Add a timestamp inclusion option for recordings.
+- **terminal:** Enhance the terminal gutter with dynamic cell dimensions and layout adjustments, and improve the overall input experience.
+
+### Changed
+
+- **zmodem:** Improve Zmodem event handling and detection logic.
+- **terminal:** Unify cursor position handling for command and credential suggestions.
+- **terminal:** Improve multi-line paste dialog focus handling.
+
+### Fixed
+
+- **header:** Respect the minimize-to-tray setting when closing the window.
+
+## [1.1.3] - 2026-06-02
+
+### Added
+
+- **terminal:** Implement a multi-line paste dialog and enhance paste handling.
+- **terminal:** Enhance input handling with logical line snapshots and selection range tracking.
+- **terminal:** Implement credential prompt detection and input handling.
+- **panel:** Enhance the send-command panel with shell command functionality.
+- **recording:** Implement session recording, including start/stop, transcript saving, and memory limit settings.
+- **file-explorer:** Add session-scoped directory history in the path bar.
+- **import:** Support importing sessions from NyaTerm JSON format in the import dialog.
+- **security:** Enhance master password management with improved validation and UI updates.
+- **quick-commands:** Add dialogs for deleting and renaming quick command categories.
+- **storage:** Add password hydration for connections within a transaction.
+- **docs-site:** Add offline local search.
+
+### Changed
+
+- **cloud-sync:** Implement operation timeouts and enhance error handling for storage operations.
+- **cloud-sync:** Add WebDAV Digest authentication support.
+- **cloud-sync:** Implement an automatic retry mechanism for cloud sync operations.
+- **backup:** Update the backup file extension from `.dgfy` to `.nya`.
+- **header:** Rename the menu label from `New SSH Connection` to `New Session`.
+
+### Fixed
+
+- **settings:** Ensure the settings window closes after saving by managing saving state.
+- **app:** Improve `safeRecordingName` normalization to allow a wider range of valid characters.
+- **docs-site:** Improve navbar responsiveness and the floating search box.
+
+## [1.1.2] - 2026-05-30
+
+### Added
+
+- **window-state:** Implement main window state management to persist window size and position.
+- **quick-commands:** Add support for importing Xshell quick buttons.
+
+### Changed
+
+- **app:** Centralize child window size and position handling.
+
+### Documentation
+
+- Add a contributors section and star history chart to the README.
+
+## [1.1.1] - 2026-05-29
+
+### Fixed
+
+- Remove unused child window preload logic and background color handling.
+
+## [1.1.0] - 2026-05-29
+
+### Added
+
+- **serial:** Implement a baud rate picker for selecting and validating serial baud rates.
+- **file-transfer:** Add download functionality and enhance transfer management with enqueued downloads.
+- **file-transfer:** Add a `queued` status and improve transfer UI interactions.
+- **file-explorer:** Auto-sync the current working directory based on the active connection.
+- **transfer:** Implement concurrency clamping and rename download/upload thread settings to concurrent tasks.
+- **errors:** Add new authentication failure messages and enhance validation in the new session page.
+
+### Changed
+
+- **file-explorer:** Add a refreshed FileExplorer component and dialogs for file operations, including path bar and toolbar.
+- **ui:** Standardize dialog footers with `ActionButton` and `ActionFooter`, and move the Toaster into the main layout.
+
+### Fixed
+
+- **modal:** Prevent the modal overlay from remaining after a child window closes.
+- **child-windows:** Reduce startup flicker with window preloading.
+- **build-release:** Correct the package name for Ubuntu ARM installation.
+
+### Performance
+
+- **sftp:** Enhance the SFTP backend with configurable client settings and performance logging.
+
+## [1.0.9] - 2026-05-27
+
+### Added
+
+- **ssh:** Introduce a `none` authentication mode in the SSH form for enhanced connection options.
+- **runtime:** Implement portable mode support and add a Windows portable zip release.
+- **quick-commands:** Add an import dialog for quick commands supporting WindTerm and NyaTerm formats.
+- **terminal:** Add disconnect session functionality.
+- **file-explorer:** Implement inline renaming for file entries.
+- **file-transfer:** Enhance progress tracking and add a clear-all action.
+
+### Changed
+
+- **file-transfer:** Update transfer row status icons and simplify status handling.
+- **dialogs:** Improve responsive width handling and Markdown rendering in the update dialog.
+
+### Fixed
+
+- **session-input:** Fix a quick command issue caused by newline conversion.
+- **telnet:** Integrate the recording manager for session input/output handling.
+- **shortcuts:** Validate and support custom tab switching keybindings.
+- **saved-connections:** Update the empty state to check both saved connections and groups.
+- **workflows:** Update the Ubuntu version from 24.04 to 22.04 in the release workflow.
+
+## [1.0.8] - 2026-05-24
+
+### Added
+
+- **quick-commands:** Implement sorting and usage tracking for quick commands.
+- **readme:** Add a GitHub downloads badge.
+
+### Changed
+
+- **settings:** Update app settings management and introduce UI settings saving.
+- **storage:** Restructure the storage module and migrate to typed settings documents.
+- **security:** Update master password handling in the security tab.
+- **scrollbar:** Hide scrollbar buttons and improve scrollbar appearance.
+
+### Fixed
+
+- **errors:** Improve error handling in the new session and quick command pages.
+
 ## [1.0.7] - 2026-05-21
 
 ### Changed

@@ -33,12 +33,15 @@ In the **New Session** window, switch to the **SSH** tab and fill in these field
 
 ### Authentication methods
 
-NyaTerm supports two common SSH authentication methods:
+NyaTerm supports three SSH authentication methods:
 
 - **Password**
 - **Private key**
+- **No authentication (none)**
 
 You can select saved passwords or saved keys instead of re-entering them every time.
+
+**No authentication (none)** is for hosts that complete authentication by other means (for example some jump-host or gateway flows, or servers that accept an empty auth). Only use it when the target host genuinely requires no SSH-level credential.
 
 #### Password authentication
 
@@ -88,6 +91,28 @@ Typical cases include:
 - Connecting through a bastion host
 - Reaching internal production hosts
 - Multi-hop SSH login chains
+
+### Post-login command
+
+You can configure a command that NyaTerm runs automatically once the SSH session is established and the shell is ready.
+
+Common uses:
+
+- Switching to a fixed working directory (`cd`)
+- Activating an environment (for example tmux/screen, conda)
+- Running a fixed setup command on connect
+
+The command is sent as terminal input after login, so it behaves exactly like typing the command yourself.
+
+### Multiplexed SSH sessions
+
+NyaTerm can multiplex multiple terminal sessions over a single SSH connection. Opening additional terminals to the same host reuses the existing authenticated connection instead of re-authenticating each time.
+
+Benefits:
+
+- New terminals open faster
+- Fewer auth prompts / OTP entries
+- Lighter load on the server
 
 ### OTP binding
 

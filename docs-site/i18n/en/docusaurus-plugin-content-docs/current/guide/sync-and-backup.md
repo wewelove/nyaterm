@@ -11,10 +11,11 @@ It helps to think of it as two related but different workflows:
 - **Sync** — push the current device's portable configuration snapshot to the cloud, or pull the latest snapshot back from the cloud
 - **Backup** — save the current state as a recoverable encrypted backup snapshot, either manually or on a schedule
 
-NyaTerm currently supports two remote storage provider types:
+NyaTerm currently supports three remote storage provider types:
 
 - **WebDAV**
 - **S3-compatible** storage
+- **Gitee Snippet**
 
 ## Prerequisite: set a master password first
 
@@ -85,6 +86,8 @@ This is a good fit when:
 - you already have a NAS, private cloud, or WebDAV gateway
 - you want to reuse existing document or object-storage infrastructure
 
+WebDAV authentication supports both **Basic** and **Digest** auth, and NyaTerm switches to Digest when the server requires it, improving compatibility with NAS / gateways that mandate Digest.
+
 ### S3-compatible storage
 
 When the provider is **S3-compatible**, you will typically configure:
@@ -102,6 +105,20 @@ This is a good fit when:
 
 - you already use object storage for operational assets
 - you want NyaTerm config and backups to live in the same storage ecosystem
+
+### Gitee Snippet
+
+When the provider is **Gitee Snippet**, NyaTerm stores the encrypted portable snapshot as a Gitee code snippet (a Gitee snippet, similar to a Gist). This is a convenient option for users in regions where Gitee is fast and who would rather not run their own WebDAV or S3.
+
+You will typically configure:
+
+- **Gitee Personal Access Token** (with snippet / gist permission)
+- **Snippet Identifier / Description** (optional, to help you recognize the snapshot on Gitee)
+
+This is a good fit when:
+
+- you have no NAS, private cloud, or object storage, but want the snapshot stored somewhere with fast regional access
+- you want one Gitee account to cover cross-device sync without maintaining a separate storage service
 
 ### Validation rules
 

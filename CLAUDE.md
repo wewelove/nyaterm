@@ -39,7 +39,7 @@ Example single-test command:
 
 - This is a Tauri 2 desktop app: React/TypeScript frontend in `src/`, Rust backend in `src-tauri/src/`, and IPC between them via Tauri commands/events.
 - The frontend should call Rust through the typed wrapper in `src/lib/invoke.ts`, not raw scattered `invoke()` calls where a shared wrapper already exists.
-- Tauri commands are registered centrally in `src-tauri/src/lib.rs` and grouped by concern under `src-tauri/src/cmd/` (`session`, `sftp`, `connection`, `settings`, `watcher`, `translate`, `stats`, `tunnel`, `proxy`, `otp`, `importer`).
+- Tauri commands are registered centrally in `src-tauri/src/lib.rs` and grouped by concern under `src-tauri/src/cmd/` (`session`, `sftp`, `connection`, `credential`, `settings`, `watcher`, `translate`, `stats`, `tunnel`, `proxy`, `otp`, `importer`, plus `app`, `backup`, `clipboard`, `cloud_sync`, `log`, and `ai`).
 
 ### Window model
 - `src/main.tsx` decides between two boot paths:
@@ -70,8 +70,10 @@ Example single-test command:
   - `TunnelManager`
   - `RecordingManager`
   - `PendingAuthManager`
+  - `HostKeyVerifyManager`
   - `QuickCommandsStore`
   - `CloudSyncManager`
+  - `AgentApprovalManager` (gates AI agent command execution)
 - Tauri commands are registered centrally in `src-tauri/src/lib.rs`; newer backend capability areas now include app, backup, clipboard, cloud sync, logging, and AI in addition to sessions/SFTP/settings/importers.
 - `src-tauri/src/core/session.rs` contains `SessionManager`, which is the central registry for active sessions, command routing, command history, fuzzy history search, and session lifecycle events.
 - Session implementations live under `src-tauri/src/core/`:
@@ -84,12 +86,12 @@ Example single-test command:
   - `importer.rs` for Xshell / MobaXterm / WindTerm import
   - `cloud_sync.rs` for sync/backup runtime and conflict events
   - `portable_snapshot.rs` for defining what sync/backup payloads include
-  - `ai.rs` for provider calls, streaming responses, structured command cards, and audit/history storage
+  - `ai/` for provider calls, streaming responses, structured command cards, agent execution/approval, prompt redaction, and audit/history storage
 - Backend session I/O is event-driven. The Rust side emits session-specific and app-wide events such as `terminal-output-{id}`, `cwd-changed-{id}`, `session-closed-{id}`, `sessions-changed`, `connections-changed`, `command-history-changed`, `transfer-event`, `otp-request`, `cloud-sync-status-changed`, `cloud-sync-history-changed`, and `cloud-sync-conflict`.
 
 ### SSH / auth / transfer details
 - SSH logic is split across `src-tauri/src/core/ssh/`:
-  - `client.rs` handles russh client setup, keepalive config, proxy-aware connection setup, and TOFU-style `known_hosts` verification
+  - `client.rs` handles russh client setup, keepalive config, proxy-aware connection setup, and TOFU-style `known_hosts` verification (host-key prompts are coordinated through `HostKeyVerifyManager`)
   - `auth.rs` handles saved auth loading plus keyboard-interactive / OTP flows through `PendingAuthManager` and the `otp-request` event
   - `io.rs` streams terminal output and emits CWD updates
   - `sftp.rs` implements remote file operations and emits transfer progress events consumed by `TransferContext`

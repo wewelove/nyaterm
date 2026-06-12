@@ -38,6 +38,14 @@ This makes NyaTerm a good fit for separating:
 - Different projects
 - Different task phases
 
+## Session quick switcher
+
+When you have many tabs and connections open, the session quick switcher is the fastest way to navigate. It is a command-palette-style searchable dialog that you open via its keyboard shortcut or activity-bar entry.
+
+- Search across saved connections and local sessions by name
+- Open or switch to a session with the keyboard or mouse
+- Use the built-in shortcut to create a new SSH session right from the dialog
+
 ## Split panes
 
 Right-click a tab to split the current session into:
