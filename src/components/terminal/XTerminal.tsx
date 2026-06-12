@@ -70,6 +70,20 @@ import "@xterm/xterm/css/xterm.css";
 
 const BACKSPACE_INPUT = "\x7f";
 
+function serializeTerminalText(terminal: Terminal): string {
+  const buffer = terminal.buffer.active;
+  const lastLine = Math.min(buffer.length - 1, buffer.baseY + buffer.cursorY);
+  if (lastLine < 0) return "";
+
+  const lines: string[] = [];
+  for (let lineIndex = 0; lineIndex <= lastLine; lineIndex += 1) {
+    const line = buffer.getLine(lineIndex);
+    lines.push(line?.translateToString(true) ?? "");
+  }
+
+  return lines.join("\r\n");
+}
+
 function isLocalBackspaceEvent(event: KeyboardEvent, sessionType: SessionType): boolean {
   if (sessionType !== "Local" || event.ctrlKey || event.metaKey || event.altKey) {
     return false;
@@ -128,6 +142,7 @@ export default function XTerminal({
   const executeActionCommandRef = useRef<((command: string) => void) | null>(null);
   const disconnectedRef = useRef(false);
   const reconnectingRef = useRef(false);
+  const preservedReconnectContentRef = useRef<string | null>(null);
   const outputWriteQueueRef = useRef(Promise.resolve());
   const outputWriteInFlightRef = useRef(false);
   const lineTimestampsRef = useRef<Map<number, number>>(new Map());
@@ -368,6 +383,11 @@ export default function XTerminal({
     credentialPromptInputUntilRef.current = 0;
     shellIntegrationRef.current.enabled = false;
     shellIntegrationRef.current.commandRunning = false;
+    const preservedReconnectContent = preservedReconnectContentRef.current;
+    preservedReconnectContentRef.current = null;
+    if (preservedReconnectContent) {
+      terminal.write(preservedReconnectContent);
+    }
     const isTerminalAlive = () => !disposed && terminalRef.current === terminal;
     const syncSuggestionsWithInputState = () => {
       if (canShowCommandSuggestions()) {
@@ -1183,6 +1203,7 @@ export default function XTerminal({
           terminal.write(`\r\n\x1b[36m[${tRef.current("terminal.reconnecting")}]\x1b[0m\r\n`);
           createReconnectedSession()
             .then((newSessionId) => {
+              preservedReconnectContentRef.current = serializeTerminalText(terminal);
               disconnectedRef.current = false;
               reconnectingRef.current = false;
               onReconnectedRef.current?.(sessionIdRef.current, newSessionId);

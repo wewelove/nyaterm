@@ -3,7 +3,7 @@ use super::transfer::*;
 use super::util::*;
 use crate::core::ssh::SshConnectionHandles;
 use crate::error::{AppError, AppResult};
-use crate::observability::{log_event, StructuredLog, StructuredLogLevel};
+use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
 use russh::ChannelMsg;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -762,9 +762,51 @@ impl RemoteFs for ScpEnhancedBackend {
         Ok(())
     }
 
-    async fn chmod(&self, path: &str, mode: &str) -> AppResult<()> {
-        self.exec_ok(&format!("chmod {} -- {}", sh_quote(mode), sh_quote(path)))
+    async fn update_attrs(&self, path: &str, update: &RemoteFileAttributeUpdate) -> AppResult<()> {
+        let flag = if update.recursive { "-R " } else { "" };
+        if let Some(mode) = update
+            .mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            let _ = parse_octal_mode(mode)?;
+            self.exec_ok(&format!(
+                "chmod {}{} -- {}",
+                flag,
+                sh_quote(mode),
+                sh_quote(path)
+            ))
             .await?;
+        }
+        if let Some(owner) = update
+            .owner
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            self.exec_ok(&format!(
+                "chown {}{} -- {}",
+                flag,
+                sh_quote(owner),
+                sh_quote(path)
+            ))
+            .await?;
+        }
+        if let Some(group) = update
+            .group
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            self.exec_ok(&format!(
+                "chgrp {}{} -- {}",
+                flag,
+                sh_quote(group),
+                sh_quote(path)
+            ))
+            .await?;
+        }
         Ok(())
     }
 

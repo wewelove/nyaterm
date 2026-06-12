@@ -7,13 +7,16 @@ use super::transfer::*;
 use super::util::*;
 use crate::core::ssh::{SshConnectionHandles, SshRawHandle};
 use crate::error::{AppError, AppResult};
-use crate::observability::{log_event, StructuredLog, StructuredLogLevel};
+use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
+use russh::ChannelMsg;
 use russh_sftp::client::{Config as SftpClientConfig, SftpSession};
 use russh_sftp::protocol::{FileAttributes, FileType};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
+use tokio::sync::RwLock;
 
 const SFTP_MIN_REQUEST_KIB: usize = 64;
 const SFTP_MAX_REQUEST_KIB: usize = 256;
@@ -58,11 +61,7 @@ fn transfer_task_concurrency(value: u32) -> usize {
 
 fn background_transfer_task_concurrency(value: u32) -> usize {
     let configured = transfer_task_concurrency(value);
-    if configured > 1 {
-        configured - 1
-    } else {
-        1
-    }
+    if configured > 1 { configured - 1 } else { 1 }
 }
 
 fn log_transfer_performance(
@@ -104,11 +103,29 @@ fn log_transfer_performance(
 #[derive(Clone)]
 pub(crate) struct SftpBackend {
     ssh_handle: Arc<SshConnectionHandles>,
+    identity_cache: Arc<RwLock<RemoteIdentityCache>>,
+}
+
+#[derive(Default)]
+struct RemoteIdentityCache {
+    users_by_uid: HashMap<u32, String>,
+    groups_by_gid: HashMap<u32, String>,
+    uids_by_user: HashMap<String, u32>,
+    gids_by_group: HashMap<String, u32>,
+}
+
+struct ExecResult {
+    exit_code: u32,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
 }
 
 impl SftpBackend {
     pub(crate) fn new(ssh_handle: Arc<SshConnectionHandles>) -> Self {
-        Self { ssh_handle }
+        Self {
+            ssh_handle,
+            identity_cache: Arc::new(RwLock::new(RemoteIdentityCache::default())),
+        }
     }
 
     /// Attempt to open a throwaway SFTP session to verify subsystem availability.
@@ -149,6 +166,236 @@ impl SftpBackend {
     ) -> AppResult<SftpSession> {
         Self::open_sftp_raw(self.ssh_handle.target_handle(), config).await
     }
+
+    async fn exec(&self, command: &str) -> AppResult<ExecResult> {
+        let handle_mtx = self.ssh_handle.target_handle();
+        let mut channel = {
+            let handle = handle_mtx.lock().await;
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::Channel(format!("Failed to open exec channel: {}", e)))?
+        };
+
+        channel.exec(true, command.as_bytes()).await?;
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code: Option<u32> = None;
+
+        loop {
+            match channel.wait().await {
+                Some(ChannelMsg::Data { data }) => {
+                    stdout.extend_from_slice(&data);
+                }
+                Some(ChannelMsg::ExtendedData { data, ext }) => {
+                    if ext == 1 {
+                        stderr.extend_from_slice(&data);
+                    }
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    exit_code = Some(exit_status);
+                }
+                Some(ChannelMsg::Eof) | None => {
+                    if exit_code.is_none() {
+                        if let Some(ChannelMsg::ExitStatus { exit_status }) = channel.wait().await {
+                            exit_code = Some(exit_status);
+                        }
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ExecResult {
+            exit_code: exit_code.unwrap_or(255),
+            stdout,
+            stderr,
+        })
+    }
+
+    async fn exec_ok(&self, command: &str) -> AppResult<Vec<u8>> {
+        let result = self.exec(command).await?;
+        if result.exit_code != 0 {
+            let msg = String::from_utf8_lossy(&result.stderr);
+            return Err(AppError::Channel(format!(
+                "Remote command failed (exit {}): {}",
+                result.exit_code,
+                msg.trim()
+            )));
+        }
+        Ok(result.stdout)
+    }
+
+    async fn resolve_uid_names(&self, uids: HashSet<u32>) -> HashMap<u32, String> {
+        let missing: Vec<u32> = {
+            let cache = self.identity_cache.read().await;
+            uids.iter()
+                .copied()
+                .filter(|uid| !cache.users_by_uid.contains_key(uid))
+                .collect()
+        };
+        if missing.is_empty() {
+            let cache = self.identity_cache.read().await;
+            return uids
+                .into_iter()
+                .filter_map(|uid| cache.users_by_uid.get(&uid).map(|name| (uid, name.clone())))
+                .collect();
+        }
+
+        let id_list = missing
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let command = format!(
+            "ids={}; for id in $ids; do name=$(getent passwd \"$id\" 2>/dev/null | cut -d: -f1); if [ -z \"$name\" ] && [ -r /etc/passwd ]; then name=$(awk -F: -v id=\"$id\" '$3==id {{print $1; exit}}' /etc/passwd 2>/dev/null); fi; if [ -n \"$name\" ]; then printf '%s:%s\\n' \"$id\" \"$name\"; fi; done",
+            sh_quote(&id_list)
+        );
+
+        let mut resolved = HashMap::new();
+        if let Ok(output) = self.exec_ok(&command).await {
+            for line in String::from_utf8_lossy(&output).lines() {
+                if let Some((id, name)) = line.split_once(':') {
+                    if let Ok(uid) = id.parse::<u32>() {
+                        let trimmed = name.trim();
+                        if !trimmed.is_empty() {
+                            resolved.insert(uid, trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut cache = self.identity_cache.write().await;
+        for (uid, name) in &resolved {
+            cache.users_by_uid.insert(*uid, name.clone());
+            cache.uids_by_user.insert(name.clone(), *uid);
+        }
+        uids.into_iter()
+            .filter_map(|uid| cache.users_by_uid.get(&uid).map(|name| (uid, name.clone())))
+            .collect()
+    }
+
+    async fn resolve_gid_names(&self, gids: HashSet<u32>) -> HashMap<u32, String> {
+        let missing: Vec<u32> = {
+            let cache = self.identity_cache.read().await;
+            gids.iter()
+                .copied()
+                .filter(|gid| !cache.groups_by_gid.contains_key(gid))
+                .collect()
+        };
+        if missing.is_empty() {
+            let cache = self.identity_cache.read().await;
+            return gids
+                .into_iter()
+                .filter_map(|gid| {
+                    cache
+                        .groups_by_gid
+                        .get(&gid)
+                        .map(|name| (gid, name.clone()))
+                })
+                .collect();
+        }
+
+        let id_list = missing
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let command = format!(
+            "ids={}; for id in $ids; do name=$(getent group \"$id\" 2>/dev/null | cut -d: -f1); if [ -z \"$name\" ] && [ -r /etc/group ]; then name=$(awk -F: -v id=\"$id\" '$3==id {{print $1; exit}}' /etc/group 2>/dev/null); fi; if [ -n \"$name\" ]; then printf '%s:%s\\n' \"$id\" \"$name\"; fi; done",
+            sh_quote(&id_list)
+        );
+
+        let mut resolved = HashMap::new();
+        if let Ok(output) = self.exec_ok(&command).await {
+            for line in String::from_utf8_lossy(&output).lines() {
+                if let Some((id, name)) = line.split_once(':') {
+                    if let Ok(gid) = id.parse::<u32>() {
+                        let trimmed = name.trim();
+                        if !trimmed.is_empty() {
+                            resolved.insert(gid, trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut cache = self.identity_cache.write().await;
+        for (gid, name) in &resolved {
+            cache.groups_by_gid.insert(*gid, name.clone());
+            cache.gids_by_group.insert(name.clone(), *gid);
+        }
+        gids.into_iter()
+            .filter_map(|gid| {
+                cache
+                    .groups_by_gid
+                    .get(&gid)
+                    .map(|name| (gid, name.clone()))
+            })
+            .collect()
+    }
+
+    async fn resolve_user_to_uid(&self, owner: &str) -> AppResult<u32> {
+        if let Ok(uid) = owner.parse::<u32>() {
+            return Ok(uid);
+        }
+        if let Some(uid) = self
+            .identity_cache
+            .read()
+            .await
+            .uids_by_user
+            .get(owner)
+            .copied()
+        {
+            return Ok(uid);
+        }
+        let command = format!(
+            "name={}; id=$(getent passwd \"$name\" 2>/dev/null | cut -d: -f3); if [ -z \"$id\" ] && [ -r /etc/passwd ]; then id=$(awk -F: -v name=\"$name\" '$1==name {{print $3; exit}}' /etc/passwd 2>/dev/null); fi; [ -n \"$id\" ] && printf '%s\\n' \"$id\"",
+            sh_quote(owner)
+        );
+        let output = self.exec_ok(&command).await?;
+        let text = String::from_utf8_lossy(&output);
+        let uid = text
+            .trim()
+            .parse::<u32>()
+            .map_err(|_| AppError::Channel(format!("Failed to resolve remote user '{}'", owner)))?;
+        let mut cache = self.identity_cache.write().await;
+        cache.uids_by_user.insert(owner.to_string(), uid);
+        cache.users_by_uid.insert(uid, owner.to_string());
+        Ok(uid)
+    }
+
+    async fn resolve_group_to_gid(&self, group: &str) -> AppResult<u32> {
+        if let Ok(gid) = group.parse::<u32>() {
+            return Ok(gid);
+        }
+        if let Some(gid) = self
+            .identity_cache
+            .read()
+            .await
+            .gids_by_group
+            .get(group)
+            .copied()
+        {
+            return Ok(gid);
+        }
+        let command = format!(
+            "name={}; id=$(getent group \"$name\" 2>/dev/null | cut -d: -f3); if [ -z \"$id\" ] && [ -r /etc/group ]; then id=$(awk -F: -v name=\"$name\" '$1==name {{print $3; exit}}' /etc/group 2>/dev/null); fi; [ -n \"$id\" ] && printf '%s\\n' \"$id\"",
+            sh_quote(group)
+        );
+        let output = self.exec_ok(&command).await?;
+        let text = String::from_utf8_lossy(&output);
+        let gid = text.trim().parse::<u32>().map_err(|_| {
+            AppError::Channel(format!("Failed to resolve remote group '{}'", group))
+        })?;
+        let mut cache = self.identity_cache.write().await;
+        cache.gids_by_group.insert(group.to_string(), gid);
+        cache.groups_by_gid.insert(gid, group.to_string());
+        Ok(gid)
+    }
 }
 
 fn sftp_attrs_is_dir(attrs: &FileAttributes) -> bool {
@@ -163,8 +410,24 @@ fn sftp_attrs_is_symlink(attrs: &FileAttributes) -> bool {
     })
 }
 
+fn normalize_remote_dir_path(path: &str) -> &str {
+    if path == "/" {
+        "/"
+    } else {
+        path.trim_end_matches('/')
+    }
+}
+
+fn join_remote_child(parent: &str, name: &str) -> String {
+    if parent == "/" {
+        format!("/{name}")
+    } else {
+        format!("{parent}/{name}")
+    }
+}
+
 async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> AppResult<()> {
-    let path = path.trim_end_matches('/');
+    let path = normalize_remote_dir_path(path);
     let dir = sftp.read_dir(path).await?;
     let mut errors: Vec<String> = Vec::new();
 
@@ -173,7 +436,7 @@ async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> AppResult<()> {
         if name == "." || name == ".." {
             continue;
         }
-        let child = format!("{}/{}", path, name);
+        let child = join_remote_child(path, &name);
         let file_type = entry.file_type();
 
         if file_type == FileType::Dir {
@@ -272,6 +535,103 @@ async fn apply_remote_mode(sftp: &SftpSession, path: &str, requested_mode: u32) 
     );
 
     Ok(())
+}
+
+async fn apply_remote_attrs(
+    sftp: &SftpSession,
+    path: &str,
+    mode: Option<u32>,
+    uid: Option<u32>,
+    gid: Option<u32>,
+) -> AppResult<()> {
+    let original_attrs = sftp.symlink_metadata(path).await?;
+    let mut attrs = FileAttributes::empty();
+    if let Some(mode) = mode {
+        let type_bits = original_attrs.permissions.unwrap_or(0) & SFTP_FILE_TYPE_MASK;
+        attrs.permissions = Some(type_bits | (mode & POSIX_MODE_MASK));
+    }
+    if uid.is_some() || gid.is_some() {
+        let effective_uid = uid.or(original_attrs.uid);
+        let effective_gid = gid.or(original_attrs.gid);
+        match (effective_uid, effective_gid) {
+            (Some(effective_uid), Some(effective_gid)) => {
+                attrs.uid = Some(effective_uid);
+                attrs.gid = Some(effective_gid);
+            }
+            _ => {
+                return Err(AppError::Channel(
+                    "Cannot update SFTP ownership because the server did not provide the current UID/GID; set both owner and group."
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    if attrs.permissions.is_none() && attrs.uid.is_none() && attrs.gid.is_none() {
+        return Ok(());
+    }
+
+    sftp.set_metadata(path, attrs).await.map_err(|error| {
+        tracing::warn!(
+            remote_path = path,
+            requested_mode = ?mode,
+            requested_uid = ?uid,
+            requested_gid = ?gid,
+            error = %error,
+            "Failed to update remote file attributes"
+        );
+        AppError::from(error)
+    })?;
+
+    Ok(())
+}
+
+async fn apply_remote_attrs_recursive(
+    sftp: &SftpSession,
+    path: &str,
+    mode: Option<u32>,
+    uid: Option<u32>,
+    gid: Option<u32>,
+) -> AppResult<()> {
+    let path = normalize_remote_dir_path(path);
+    let meta = sftp.symlink_metadata(path).await?;
+    let is_dir = sftp_attrs_is_dir(&meta);
+    let is_symlink = sftp_attrs_is_symlink(&meta);
+
+    apply_remote_attrs(sftp, path, mode, uid, gid).await?;
+
+    if !is_dir || is_symlink {
+        return Ok(());
+    }
+
+    let dir = sftp.read_dir(path).await?;
+    let mut errors: Vec<String> = Vec::new();
+    for entry in dir {
+        let name = entry.file_name();
+        if name == "." || name == ".." {
+            continue;
+        }
+        let child = join_remote_child(path, &name);
+        let attrs = entry.metadata();
+        if sftp_attrs_is_dir(&attrs) && !sftp_attrs_is_symlink(&attrs) {
+            if let Err(error) =
+                Box::pin(apply_remote_attrs_recursive(sftp, &child, mode, uid, gid)).await
+            {
+                errors.push(error.to_string());
+            }
+        } else if let Err(error) = apply_remote_attrs(sftp, &child, mode, uid, gid).await {
+            errors.push(format!("'{}': {}", child, error));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Channel(format!(
+            "{} item(s) could not be updated:\n{}",
+            errors.len(),
+            errors.join("\n")
+        )))
+    }
 }
 
 async fn apply_remote_mode_after_create(
@@ -702,7 +1062,9 @@ impl RemoteFs for SftpBackend {
         let sftp = self.open_sftp().await?;
         let dir = sftp.read_dir(path).await?;
 
-        let mut entries = Vec::new();
+        let mut pending = Vec::new();
+        let mut uid_set = HashSet::new();
+        let mut gid_set = HashSet::new();
         for entry in dir {
             let name = entry.file_name();
             if name == "." || name == ".." {
@@ -710,7 +1072,7 @@ impl RemoteFs for SftpBackend {
             }
             let file_type = entry.file_type();
             let is_symlink = file_type == FileType::Symlink;
-            let full_path = format!("{}/{}", path.trim_end_matches('/'), name);
+            let full_path = join_remote_child(normalize_remote_dir_path(path), &name);
             let is_symlink_to_dir = is_symlink
                 && sftp
                     .metadata(&full_path)
@@ -733,19 +1095,52 @@ impl RemoteFs for SftpBackend {
             let permissions = permissions_to_string(perms, type_char);
             let mtime = u64::from(attrs.mtime.unwrap_or(0));
 
-            entries.push(FileEntry {
-                name,
-                is_dir,
-                is_symlink,
-                size,
-                permissions,
-                owner: owner_or_id(&attrs.user, attrs.uid),
-                group: group_or_id(&attrs.group, attrs.gid),
-                mtime,
-            });
+            if attrs
+                .user
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                if let Some(uid) = attrs.uid {
+                    uid_set.insert(uid);
+                }
+            }
+            if attrs
+                .group
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                if let Some(gid) = attrs.gid {
+                    gid_set.insert(gid);
+                }
+            }
+
+            pending.push((name, is_dir, is_symlink, size, permissions, attrs, mtime));
         }
 
         let _ = sftp.close().await;
+        let user_names = self.resolve_uid_names(uid_set).await;
+        let group_names = self.resolve_gid_names(gid_set).await;
+        let entries = pending
+            .into_iter()
+            .map(
+                |(name, is_dir, is_symlink, size, permissions, attrs, mtime)| FileEntry {
+                    name,
+                    is_dir,
+                    is_symlink,
+                    size,
+                    permissions,
+                    owner: attrs
+                        .uid
+                        .and_then(|uid| user_names.get(&uid).cloned())
+                        .unwrap_or_else(|| owner_or_id(&attrs.user, attrs.uid)),
+                    group: attrs
+                        .gid
+                        .and_then(|gid| group_names.get(&gid).cloned())
+                        .unwrap_or_else(|| group_or_id(&attrs.group, attrs.gid)),
+                    mtime,
+                },
+            )
+            .collect();
         Ok(entries)
     }
 
@@ -772,6 +1167,24 @@ impl RemoteFs for SftpBackend {
         };
         let permissions = permissions_to_string(perms, type_char);
         let name = path.split('/').last().unwrap_or(path).to_string();
+        let owner = if let Some(uid) = attrs.uid {
+            self.resolve_uid_names(HashSet::from([uid]))
+                .await
+                .get(&uid)
+                .cloned()
+                .unwrap_or_else(|| owner_or_id(&attrs.user, attrs.uid))
+        } else {
+            owner_or_id(&attrs.user, attrs.uid)
+        };
+        let group = if let Some(gid) = attrs.gid {
+            self.resolve_gid_names(HashSet::from([gid]))
+                .await
+                .get(&gid)
+                .cloned()
+                .unwrap_or_else(|| group_or_id(&attrs.group, attrs.gid))
+        } else {
+            group_or_id(&attrs.group, attrs.gid)
+        };
 
         Ok(FileProperties {
             name,
@@ -779,8 +1192,8 @@ impl RemoteFs for SftpBackend {
             is_symlink,
             size: attrs.size.unwrap_or(0),
             permissions,
-            owner: owner_or_id(&attrs.user, attrs.uid),
-            group: group_or_id(&attrs.group, attrs.gid),
+            owner,
+            group,
             uid: attrs.uid.map_or_else(String::new, |v| v.to_string()),
             gid: attrs.gid.map_or_else(String::new, |v| v.to_string()),
             mtime: u64::from(attrs.mtime.unwrap_or(0)),
@@ -838,10 +1251,44 @@ impl RemoteFs for SftpBackend {
         Ok(())
     }
 
-    async fn chmod(&self, path: &str, mode: &str) -> AppResult<()> {
-        let mode_u32 = parse_octal_mode(mode)?;
+    async fn update_attrs(&self, path: &str, update: &RemoteFileAttributeUpdate) -> AppResult<()> {
+        let mode = update
+            .mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(parse_octal_mode)
+            .transpose()?
+            .map(|value| value & POSIX_MODE_MASK);
+        let uid = match update
+            .owner
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            Some(owner) => Some(self.resolve_user_to_uid(owner).await?),
+            None => None,
+        };
+        let gid = match update
+            .group
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            Some(group) => Some(self.resolve_group_to_gid(group).await?),
+            None => None,
+        };
+
+        if mode.is_none() && uid.is_none() && gid.is_none() {
+            return Ok(());
+        }
+
         let sftp = self.open_sftp().await?;
-        apply_remote_mode(&sftp, path, mode_u32).await?;
+        if update.recursive {
+            apply_remote_attrs_recursive(&sftp, path, mode, uid, gid).await?;
+        } else {
+            apply_remote_attrs(&sftp, path, mode, uid, gid).await?;
+        }
         let _ = sftp.close().await;
         Ok(())
     }

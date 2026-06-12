@@ -1,6 +1,6 @@
 //! Unified `RemoteFs` trait that all remote file system backends implement.
 
-use super::util::{FileEntry, FileProperties, RemoteTextFile};
+use super::util::{FileEntry, FileProperties, RemoteFileAttributeUpdate, RemoteTextFile};
 use crate::error::AppResult;
 
 /// Common interface for remote file system operations.
@@ -19,7 +19,7 @@ pub(crate) trait RemoteFs: Send + Sync {
     async fn rename(&self, old_path: &str, new_path: &str) -> AppResult<()>;
     async fn create_file(&self, path: &str, mode: Option<String>) -> AppResult<()>;
     async fn create_symlink(&self, link_path: &str, target_path: &str) -> AppResult<()>;
-    async fn chmod(&self, path: &str, mode: &str) -> AppResult<()>;
+    async fn update_attrs(&self, path: &str, update: &RemoteFileAttributeUpdate) -> AppResult<()>;
     async fn read_file_text(&self, path: &str, max_bytes: u64) -> AppResult<RemoteTextFile>;
 
     async fn download_file(

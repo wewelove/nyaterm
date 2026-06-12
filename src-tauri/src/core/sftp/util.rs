@@ -1,7 +1,7 @@
 //! Shared helpers for remote file system backends: path quoting, permission
 //! formatting, and common type definitions.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) const SFTP_FILE_TYPE_MASK: u32 = 0o170000;
 pub(crate) const POSIX_MODE_MASK: u32 = 0o7777;
@@ -32,6 +32,15 @@ pub struct FileProperties {
     pub gid: String,
     pub mtime: u64,
     pub atime: u64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RemoteFileAttributeUpdate {
+    pub mode: Option<String>,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+    #[serde(default)]
+    pub recursive: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

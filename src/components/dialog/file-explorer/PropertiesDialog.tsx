@@ -36,6 +36,7 @@ interface FileProperties {
 interface PropertiesDialogProps {
   data: PropertiesDialogData;
   onClose: () => void;
+  onSuccess?: () => Promise<unknown> | unknown;
 }
 
 function formatSize(bytes: number): string {
@@ -93,15 +94,20 @@ function parsePermissionsToOctal(perms: string): string {
   return `${special}${u}${g}${o}`;
 }
 
-export default function PropertiesDialog({ data, onClose }: PropertiesDialogProps) {
+export default function PropertiesDialog({ data, onClose, onSuccess }: PropertiesDialogProps) {
   const { t } = useTranslation();
   const [properties, setProperties] = useState<FileProperties | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [octal, setOctal] = useState<string>("0644");
+  const [ownerInput, setOwnerInput] = useState("");
+  const [groupInput, setGroupInput] = useState("");
+  const [recursive, setRecursive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const initialOctal = properties ? parsePermissionsToOctal(properties.permissions) : "0644";
+  const initialOwner = properties?.owner || properties?.uid || "";
+  const initialGroup = properties?.group || properties?.gid || "";
 
   useEffect(() => {
     let isMounted = true;
@@ -114,6 +120,9 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
         if (isMounted) {
           setProperties(props);
           setOctal(parsePermissionsToOctal(props.permissions));
+          setOwnerInput(props.owner || props.uid || "");
+          setGroupInput(props.group || props.gid || "");
+          setRecursive(false);
         }
       })
       .catch((e) => {
@@ -128,17 +137,36 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
   }, [data.sessionId, data.fullPath]);
 
   const handleSave = async () => {
-    if (octal === initialOctal) {
+    if (!properties) return;
+
+    const nextOwner = ownerInput.trim();
+    const nextGroup = groupInput.trim();
+    if (!nextOwner || !nextGroup) {
+      toast.error(t("fileExplorer.ownerGroupRequired"));
+      return;
+    }
+
+    const update = {
+      mode: octal !== initialOctal ? octal : null,
+      owner: nextOwner !== initialOwner ? nextOwner : null,
+      group: nextGroup !== initialGroup ? nextGroup : null,
+      recursive: data.is_dir && recursive,
+    };
+
+    if (!update.mode && !update.owner && !update.group) {
       onClose();
       return;
     }
+
     setIsSaving(true);
     try {
-      await invoke("chmod_remote_file", {
+      await invoke("update_remote_file_attributes", {
         sessionId: data.sessionId,
         path: data.fullPath,
-        mode: octal,
+        update,
       });
+      toast.success(t("fileExplorer.propertiesSaved"));
+      await onSuccess?.();
       onClose();
     } catch (e) {
       toast.error(String(e));
@@ -180,7 +208,7 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
 
   return (
     <Dialog open onOpenChange={(v) => !v && !isSaving && onClose()}>
-      <DialogContent className="w-[min(420px,calc(100vw-2rem))] sm:max-w-[420px] p-0 gap-0">
+      <DialogContent className="w-[min(460px,calc(100vw-2rem))] sm:max-w-[460px] p-0 gap-0">
         <DialogHeader className="pl-5 pr-12 py-3 border-b">
           <DialogTitle className="text-sm flex items-center gap-2 min-w-0">
             {data.is_dir ? (
@@ -271,6 +299,37 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                       <span className="min-w-0 break-words">{row.value}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div className="border-t" />
+
+              {/* Ownership */}
+              <div>
+                <h3 className="text-xs font-semibold mb-3 tracking-wider uppercase text-muted-foreground">
+                  {t("fileExplorer.ownership")}
+                </h3>
+                <div className="space-y-3 text-xs">
+                  <label className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
+                    <span className="text-muted-foreground">{t("fileExplorer.owner")}:</span>
+                    <Input
+                      className="h-8 text-xs"
+                      value={ownerInput}
+                      placeholder={properties.uid || t("fileExplorer.owner")}
+                      disabled={isSaving}
+                      onChange={(e) => setOwnerInput(e.target.value)}
+                    />
+                  </label>
+                  <label className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
+                    <span className="text-muted-foreground">{t("fileExplorer.group")}:</span>
+                    <Input
+                      className="h-8 text-xs"
+                      value={groupInput}
+                      placeholder={properties.gid || t("fileExplorer.group")}
+                      disabled={isSaving}
+                      onChange={(e) => setGroupInput(e.target.value)}
+                    />
+                  </label>
                 </div>
               </div>
 
@@ -374,6 +433,20 @@ export default function PropertiesDialog({ data, onClose }: PropertiesDialogProp
                     />
                   </div>
                 </div>
+
+                {data.is_dir && (
+                  <label className="mt-4 flex items-start gap-2 text-xs">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={recursive}
+                      disabled={isSaving}
+                      onCheckedChange={(checked) => setRecursive(checked === true)}
+                    />
+                    <span className="leading-5 text-muted-foreground">
+                      {t("fileExplorer.applyRecursively")}
+                    </span>
+                  </label>
+                )}
               </div>
             </>
           ) : null}
