@@ -1,5 +1,5 @@
-use crate::core::sftp;
 use crate::core::SessionManager;
+use crate::core::sftp;
 use crate::error::AppResult;
 use std::sync::Arc;
 
@@ -136,6 +136,16 @@ pub async fn chmod_remote_file(
     mode: String,
 ) -> AppResult<()> {
     sftp::chmod_remote_file(state.inner().clone(), &session_id, &path, &mode).await
+}
+
+#[tauri::command]
+pub async fn update_remote_file_attributes(
+    state: tauri::State<'_, Arc<SessionManager>>,
+    session_id: String,
+    path: String,
+    update: sftp::RemoteFileAttributeUpdate,
+) -> AppResult<()> {
+    sftp::update_remote_file_attributes(state.inner().clone(), &session_id, &path, update).await
 }
 
 #[tauri::command]

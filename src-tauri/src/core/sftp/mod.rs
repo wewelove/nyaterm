@@ -18,15 +18,15 @@ use scp_normal::ScpNormalBackend;
 use sftp_backend::SftpBackend;
 use traits::RemoteFs;
 
-use crate::core::ssh::SshConnectionHandles;
 use crate::core::SessionManager;
+use crate::core::ssh::SshConnectionHandles;
 use crate::error::{AppError, AppResult};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub(crate) use transfer::{active_transfer_count, transfer_target_directory};
 pub use transfer::{cancel_transfer, pause_transfer, resume_transfer};
-pub use util::{FileEntry, FileProperties, RemoteTextFile};
+pub use util::{FileEntry, FileProperties, RemoteFileAttributeUpdate, RemoteTextFile};
 
 /// Orchestrator that lazily initialises the best available remote file system
 /// backend and delegates all operations through it.
@@ -468,19 +468,42 @@ pub async fn chmod_remote_file(
     path: &str,
     mode: &str,
 ) -> AppResult<()> {
+    update_remote_file_attributes(
+        manager,
+        session_id,
+        path,
+        RemoteFileAttributeUpdate {
+            mode: Some(mode.to_string()),
+            owner: None,
+            group: None,
+            recursive: false,
+        },
+    )
+    .await
+}
+
+pub async fn update_remote_file_attributes(
+    manager: Arc<SessionManager>,
+    session_id: &str,
+    path: &str,
+    update: RemoteFileAttributeUpdate,
+) -> AppResult<()> {
     let auto_fs = get_or_create_auto_fs(&manager, session_id).await?;
     let guard = auto_fs.backend().await?;
     let fs = guard.as_ref().unwrap();
-    fs.chmod(path, mode).await?;
+    fs.update_attrs(path, &update).await?;
 
     tracing::debug!(
         target: "user_action",
         action = "update",
-        entity = "remote_permissions",
+        entity = "remote_attributes",
         session_id = %session_id,
         remote_path = path,
-        requested_mode = mode,
-        "User changed remote permissions"
+        requested_mode = ?update.mode,
+        requested_owner = ?update.owner,
+        requested_group = ?update.group,
+        recursive = update.recursive,
+        "User changed remote file attributes"
     );
 
     Ok(())

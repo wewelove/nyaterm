@@ -88,7 +88,11 @@ export function FileExplorerDialogs({
       )}
 
       {propertiesDialogData && (
-        <PropertiesDialog data={propertiesDialogData} onClose={onPropertiesClose} />
+        <PropertiesDialog
+          data={propertiesDialogData}
+          onClose={onPropertiesClose}
+          onSuccess={onRefresh}
+        />
       )}
 
       {newSymlinkDialogData && (
