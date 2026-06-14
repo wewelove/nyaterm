@@ -2,7 +2,8 @@ use super::client::{SshHandle, SshHandler, SshPostLoginConfig};
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::ssh::osc::{self, OscStripper, ShellKind};
 use crate::core::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemEvent, ZmodemTransfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
+    ZmodemTransfer, start_zmodem_transfer,
 };
 use crate::core::{
     RecordingManager, SessionCommand, SessionManager, SessionOutputCoalescer, SharedCwd,
@@ -376,9 +377,15 @@ pub(super) async fn ssh_io_loop(
                             if transfer.is_done() {
                                 zmodem_transfer = None;
                             }
+                        } else {
+                            tracing::warn!(
+                                session_id = %session_id,
+                                "Received ZmodemAcceptUpload without an active transfer"
+                            );
                         }
                     }
                     Some(SessionCommand::ZmodemCancel) => {
+                        manager.clear_pending_zmodem_upload(&session_id).await;
                         if let Some(ref mut transfer) = zmodem_transfer {
                             let actions = transfer.cancel();
                             handle_zmodem_actions(&app, &zmodem_event_name, &mut channel, actions).await;
@@ -406,8 +413,9 @@ pub(super) async fn ssh_io_loop(
                         }
 
                         // ZMODEM: detect header in raw bytes before lossy UTF-8 conversion.
-                        if phase == IoPhase::Normal {
-                            match zmodem_detector.feed(data) {
+                        // Detection must run in every phase so an early `rz` is not missed
+                        // while shell-integration output is still being suppressed.
+                        match zmodem_detector.feed(data) {
                                 ZmodemDetectResult::Detected { direction, passthrough, initial_bytes } => {
                                     // Forward any pre-header bytes to the terminal.
                                     if !passthrough.is_empty() {
@@ -416,8 +424,21 @@ pub(super) async fn ssh_io_loop(
                                             output.push_owned(pre);
                                         }
                                     }
-                                    let transfer = ZmodemTransfer::new(direction, &initial_bytes);
+                                    let prepared_upload = if direction == ZmodemDirection::Upload {
+                                        manager.take_pending_zmodem_upload(&session_id).await
+                                    } else {
+                                        None
+                                    };
+                                    let (transfer, bootstrap_actions) =
+                                        start_zmodem_transfer(direction, &initial_bytes, prepared_upload);
                                     zmodem_transfer = Some(transfer);
+                                    handle_zmodem_actions(
+                                        &app,
+                                        &zmodem_event_name,
+                                        &mut channel,
+                                        bootstrap_actions,
+                                    )
+                                    .await;
                                     let _ = app.emit(&zmodem_event_name, &ZmodemEvent::Detected { direction });
                                     tracing::info!(
                                         session_id = %session_id,
@@ -454,29 +475,6 @@ pub(super) async fn ssh_io_loop(
                                     continue;
                                 }
                             }
-                        }
-
-                        let text = String::from_utf8_lossy(data).to_string();
-                        let mut result = stripper.push(&text);
-
-                        if capture_processor.has_active() {
-                            result.visible = capture_processor.process(&result.visible);
-                        }
-
-                        handle_osc_result(
-                            &app,
-                            &output,
-                            &cwd_event,
-                            &cwd,
-                            &recording_mgr,
-                            &session_id,
-                            &manager,
-                            &mut channel,
-                            &mut pending_script,
-                            &mut inject_deadline,
-                            &mut phase,
-                            &result,
-                        ).await;
                     }
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
                         let text = String::from_utf8_lossy(data).to_string();

@@ -1,5 +1,13 @@
 import { downloadDir } from "@tauri-apps/api/path";
-import { type ElementType, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ElementType,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   MdBlock,
@@ -16,6 +24,7 @@ import {
   MdUpload,
 } from "react-icons/md";
 import { toast } from "sonner";
+import DeleteTransferDialog from "@/components/dialog/file-explorer/DeleteTransferDialog";
 import PanelHeader from "@/components/layout/PanelHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -88,6 +97,8 @@ function HeaderActionButton({
 
 function TransferRow({
   item,
+  selected,
+  onSelect,
   onPause,
   onResume,
   onRetry,
@@ -96,11 +107,13 @@ function TransferRow({
   onOpenTargetDirectory,
 }: {
   item: TransferItem;
+  selected: boolean;
+  onSelect: (id: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onRetry: (item: TransferItem) => void;
   onCancel: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (item: TransferItem) => void;
   onOpenTargetDirectory: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -156,9 +169,21 @@ function TransferRow({
       <ContextMenuTrigger asChild>
         <div
           className="rounded transition-colors px-2 py-1.5"
-          style={{ backgroundColor: "var(--df-bg-panel)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--df-bg-hover)")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--df-bg-panel)")}
+          style={{
+            backgroundColor: selected ? "var(--df-bg-hover)" : "var(--df-bg-panel)",
+            outline: selected ? "1px solid var(--df-primary)" : undefined,
+          }}
+          onMouseDown={() => onSelect(item.id)}
+          onMouseEnter={(e) => {
+            if (!selected) {
+              e.currentTarget.style.backgroundColor = "var(--df-bg-hover)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!selected) {
+              e.currentTarget.style.backgroundColor = "var(--df-bg-panel)";
+            }
+          }}
           title={item.error || `${item.fileName} — ${statusText}`}
         >
           <div className="flex items-center gap-2">
@@ -276,11 +301,7 @@ function TransferRow({
           </>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem
-          variant="destructive"
-          onClick={() => onDelete(item.id)}
-          disabled={!canDelete}
-        >
+        <ContextMenuItem variant="destructive" onClick={() => onDelete(item)} disabled={!canDelete}>
           <MdDelete className="mr-2 text-[0.875rem]" />
           {t("fileTransfer.delete")}
         </ContextMenuItem>
@@ -302,6 +323,9 @@ export default function FileTransfer({ activeSessionId }: FileTransferProps) {
   } = useTransfer();
   const { appSettings } = useApp();
   const [resolvedDownloadDir, setResolvedDownloadDir] = useState("");
+  const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
+  const [pendingDeleteTransfer, setPendingDeleteTransfer] = useState<TransferItem | null>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     downloadDir()
@@ -328,6 +352,92 @@ export default function FileTransfer({ activeSessionId }: FileTransferProps) {
       return b.timestamp - a.timestamp;
     });
   }, [activeSessionId, transfers]);
+
+  useEffect(() => {
+    setSelectedTransferId(null);
+    setPendingDeleteTransfer(null);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (
+      selectedTransferId &&
+      !visibleTransfers.some((transfer) => transfer.id === selectedTransferId)
+    ) {
+      setSelectedTransferId(null);
+    }
+  }, [selectedTransferId, visibleTransfers]);
+
+  const selectedTransfer = useMemo(
+    () => visibleTransfers.find((transfer) => transfer.id === selectedTransferId) ?? null,
+    [selectedTransferId, visibleTransfers],
+  );
+
+  const canDeleteTransfer = useCallback((transfer: TransferItem) => {
+    const canCancel =
+      transfer.status === "queued" ||
+      transfer.status === "transferring" ||
+      transfer.status === "paused";
+    return !canCancel || transfer.status === "queued" || transfer.queueState === "pending";
+  }, []);
+
+  const requestDeleteTransfer = useCallback(
+    (transfer: TransferItem) => {
+      if (!canDeleteTransfer(transfer)) return;
+      setSelectedTransferId(transfer.id);
+      setPendingDeleteTransfer(transfer);
+    },
+    [canDeleteTransfer],
+  );
+
+  const handleConfirmDeleteTransfer = useCallback(() => {
+    if (!pendingDeleteTransfer) return;
+    removeTransfer(pendingDeleteTransfer.id);
+    setPendingDeleteTransfer(null);
+    setSelectedTransferId(null);
+  }, [pendingDeleteTransfer, removeTransfer]);
+
+  const handleListKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (pendingDeleteTransfer) return;
+
+      if (
+        event.key !== "Delete" ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+
+      const transfer = selectedTransfer ?? visibleTransfers[0];
+      if (!transfer || !canDeleteTransfer(transfer)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      requestDeleteTransfer(transfer);
+    },
+    [
+      canDeleteTransfer,
+      pendingDeleteTransfer,
+      requestDeleteTransfer,
+      selectedTransfer,
+      visibleTransfers,
+    ],
+  );
 
   const hasRunning = visibleTransfers.some(
     (transfer) => transfer.status === "transferring" || transfer.status === "queued",
@@ -449,7 +559,17 @@ export default function FileTransfer({ activeSessionId }: FileTransferProps) {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-1 text-sm terminal-scroll">
+      <div
+        ref={listContainerRef}
+        className="flex-1 overflow-y-auto p-1 text-sm terminal-scroll outline-none"
+        tabIndex={activeSessionId ? 0 : -1}
+        onMouseDown={() => {
+          if (activeSessionId) {
+            listContainerRef.current?.focus();
+          }
+        }}
+        onKeyDown={handleListKeyDown}
+      >
         {!activeSessionId ? (
           <div className="text-center py-8 text-xs" style={{ color: "var(--df-text-dimmed)" }}>
             <MdFolderOff className="text-xl block mx-auto mb-2" />
@@ -466,17 +586,25 @@ export default function FileTransfer({ activeSessionId }: FileTransferProps) {
               <TransferRow
                 key={item.id}
                 item={item}
+                selected={selectedTransferId === item.id}
+                onSelect={setSelectedTransferId}
                 onPause={(id) => void pauseTransfer(id)}
                 onResume={(id) => void resumeTransfer(id)}
                 onRetry={(transfer) => void retryTransfer(transfer)}
                 onCancel={(id) => void cancelTransfer(id)}
-                onDelete={removeTransfer}
+                onDelete={requestDeleteTransfer}
                 onOpenTargetDirectory={(id) => void handleOpenTargetDirectory(id)}
               />
             ))}
           </div>
         )}
       </div>
+
+      <DeleteTransferDialog
+        transfer={pendingDeleteTransfer}
+        onCancel={() => setPendingDeleteTransfer(null)}
+        onConfirm={handleConfirmDeleteTransfer}
+      />
 
       {displayPath && (
         <Tooltip>

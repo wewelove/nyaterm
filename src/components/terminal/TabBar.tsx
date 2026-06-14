@@ -6,19 +6,23 @@ import {
   useMemo,
   useRef,
   useState,
+  type WheelEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
   MdAdd,
   MdCellTower,
+  MdChevronLeft,
+  MdChevronRight,
   MdClose,
+  MdContentCopy,
   MdDns,
   MdErrorOutline,
   MdFolder,
   MdHistory,
   MdTerminal,
 } from "react-icons/md";
-import { RiExpandDiagonalLine } from "react-icons/ri";
+import { toast } from "sonner";
 import { getActiveGroupForSession, isSessionPausedInGroup } from "@/lib/syncInputGroups";
 import { getActivePane, getTabDisplayName } from "@/lib/workspaceTabs";
 import type { Group, PaneSplitDirection, SavedConnection, Tab } from "@/types/global";
@@ -70,64 +74,49 @@ interface ConnectionGroupNode {
   totalCount: number;
 }
 
-const TAB_WIDTH_FALLBACK = 220;
-const TAB_OVERFLOW_TRIGGER_WIDTH = 36;
+const TAB_STRIP_SCROLL_DURATION_MS = 180;
+const TAB_STRIP_SCROLL_PADDING = 12;
 
-function areStringArraysEqual(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function easeOutCubic(progress: number): number {
+  return 1 - (1 - progress) ** 3;
 }
 
-function computeVisibleTabIds(
-  tabs: Tab[],
-  tabWidths: Map<string, number>,
-  availableWidth: number,
-  activeTabId: string | null,
-) {
-  if (tabs.length === 0) return [];
-  if (availableWidth <= 0) {
-    return [tabs.find((tab) => tab.id === activeTabId)?.id ?? tabs[0].id];
+function clampTabStripScrollLeft(strip: HTMLElement, value: number): number {
+  const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+  return Math.max(0, Math.min(maxScrollLeft, value));
+}
+
+function animateTabStripScroll(
+  strip: HTMLElement,
+  targetScrollLeft: number,
+  onComplete?: () => void,
+): () => void {
+  const startScrollLeft = strip.scrollLeft;
+  const clampedTarget = clampTabStripScrollLeft(strip, targetScrollLeft);
+  const distance = clampedTarget - startScrollLeft;
+
+  if (Math.abs(distance) < 0.5) {
+    strip.scrollLeft = clampedTarget;
+    onComplete?.();
+    return () => {};
   }
 
-  const widths = tabs.map((tab) => Math.ceil(tabWidths.get(tab.id) ?? TAB_WIDTH_FALLBACK));
-  const totalWidth = widths.reduce((sum, width) => sum + width, 0);
-  if (totalWidth <= availableWidth) return tabs.map((tab) => tab.id);
+  const startTime = performance.now();
+  let rafId = 0;
 
-  const selectedIndexes: number[] = [];
-  let usedWidth = 0;
-
-  for (let index = tabs.length - 1; index >= 0; index -= 1) {
-    const width = widths[index];
-    if (usedWidth + width > availableWidth) break;
-    selectedIndexes.push(index);
-    usedWidth += width;
-  }
-
-  const activeIndex = activeTabId ? tabs.findIndex((tab) => tab.id === activeTabId) : -1;
-  const activeWidth = activeIndex >= 0 ? widths[activeIndex] : 0;
-  if (activeIndex >= 0 && !selectedIndexes.includes(activeIndex)) {
-    while (selectedIndexes.length > 0 && usedWidth + activeWidth > availableWidth) {
-      const leftmostSelectedIndex = Math.min(...selectedIndexes);
-      selectedIndexes.splice(selectedIndexes.indexOf(leftmostSelectedIndex), 1);
-      usedWidth -= widths[leftmostSelectedIndex];
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - startTime) / TAB_STRIP_SCROLL_DURATION_MS);
+    strip.scrollLeft = startScrollLeft + distance * easeOutCubic(progress);
+    if (progress < 1) {
+      rafId = requestAnimationFrame(step);
+      return;
     }
+    strip.scrollLeft = clampedTarget;
+    onComplete?.();
+  };
 
-    if (activeWidth <= availableWidth || selectedIndexes.length === 0) {
-      selectedIndexes.push(activeIndex);
-      usedWidth += activeWidth;
-    }
-  }
-
-  for (let index = tabs.length - 1; index >= 0; index -= 1) {
-    if (selectedIndexes.includes(index)) continue;
-    const width = widths[index];
-    if (usedWidth + width <= availableWidth) {
-      selectedIndexes.push(index);
-      usedWidth += width;
-    }
-  }
-
-  const selectedSet = new Set(selectedIndexes);
-  return tabs.filter((_, index) => selectedSet.has(index)).map((tab) => tab.id);
+  rafId = requestAnimationFrame(step);
+  return () => cancelAnimationFrame(rafId);
 }
 
 function compareSortOrder(left: { sort_order?: number }, right: { sort_order?: number }) {
@@ -197,14 +186,16 @@ function TabBar({
   const { appSettings, savedConnections, savedGroups, syncGroups, broadcastToAll } = useApp();
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
-  const [overflowTooltipOpen, setOverflowTooltipOpen] = useState(false);
-  const [suppressOverflowTooltip, setSuppressOverflowTooltip] = useState(false);
   const tabStripRef = useRef<HTMLDivElement | null>(null);
-  const tabMeasureRefs = useRef(new Map<string, HTMLDivElement>());
   const tabButtonRefs = useRef(new Map<string, HTMLDivElement>());
   const draggedTabIdRef = useRef<string | null>(null);
-  const [visibleTabIds, setVisibleTabIds] = useState<string[]>(() => tabs.map((tab) => tab.id));
+  const tabStripAnimatingRef = useRef(false);
+  const tabStripScrollAnimationRef = useRef<(() => void) | null>(null);
+  const [tabStripScroll, setTabStripScroll] = useState({
+    canScrollLeft: false,
+    canScrollRight: false,
+    hasOverflow: false,
+  });
 
   const groupsById = useMemo(
     () => new Map(savedGroups.map((group) => [group.id, group])),
@@ -283,55 +274,162 @@ function TabBar({
       .slice(0, 10);
   }, [appSettings.ui.recent_connection_ids, savedConnections]);
 
-  const updateVisibleTabs = useCallback(() => {
+  const updateTabStripScrollState = useCallback(() => {
     const strip = tabStripRef.current;
     if (!strip) return;
 
-    const tabWidths = new Map<string, number>();
-    for (const tab of tabs) {
-      const measuredWidth = tabMeasureRefs.current.get(tab.id)?.offsetWidth;
-      if (measuredWidth) tabWidths.set(tab.id, measuredWidth);
+    const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    const nextState = {
+      canScrollLeft: strip.scrollLeft > 1,
+      canScrollRight: strip.scrollLeft < maxScrollLeft - 1,
+      hasOverflow: maxScrollLeft > 1,
+    };
+
+    setTabStripScroll((current) =>
+      current.canScrollLeft === nextState.canScrollLeft &&
+      current.canScrollRight === nextState.canScrollRight &&
+      current.hasOverflow === nextState.hasOverflow
+        ? current
+        : nextState,
+    );
+  }, []);
+
+  const runTabStripScrollAnimation = useCallback(
+    (targetScrollLeft: number) => {
+      const strip = tabStripRef.current;
+      if (!strip) return;
+
+      tabStripScrollAnimationRef.current?.();
+      tabStripAnimatingRef.current = true;
+      tabStripScrollAnimationRef.current = animateTabStripScroll(strip, targetScrollLeft, () => {
+        tabStripScrollAnimationRef.current = null;
+        tabStripAnimatingRef.current = false;
+        updateTabStripScrollState();
+      });
+    },
+    [updateTabStripScrollState],
+  );
+
+  const getTabStripStepTarget = useCallback((direction: -1 | 1): number | null => {
+    const strip = tabStripRef.current;
+    if (!strip) return null;
+
+    const pageWidth = strip.clientWidth;
+    const targetScrollLeft =
+      direction === 1 ? strip.scrollLeft + pageWidth : strip.scrollLeft - pageWidth;
+    const clampedTarget = clampTabStripScrollLeft(strip, targetScrollLeft);
+
+    if (Math.abs(clampedTarget - strip.scrollLeft) < 1) return null;
+    return clampedTarget;
+  }, []);
+
+  const scrollTabStripPage = useCallback(
+    (direction: -1 | 1) => {
+      if (tabStripAnimatingRef.current) return;
+      const targetScrollLeft = getTabStripStepTarget(direction);
+      if (targetScrollLeft === null) return;
+      runTabStripScrollAnimation(targetScrollLeft);
+    },
+    [getTabStripStepTarget, runTabStripScrollAnimation],
+  );
+
+  const getActiveTabScrollTarget = useCallback((): number | null => {
+    if (!activeTabId) return null;
+
+    const strip = tabStripRef.current;
+    const tabElement = tabButtonRefs.current.get(activeTabId);
+    if (!strip || !tabElement) return null;
+
+    const scrollLeft = strip.scrollLeft;
+    const viewportRight = scrollLeft + strip.clientWidth;
+    const padding = TAB_STRIP_SCROLL_PADDING;
+    const tabLeft = tabElement.offsetLeft;
+    const tabRight = tabLeft + tabElement.offsetWidth;
+
+    if (tabLeft >= scrollLeft + padding && tabRight <= viewportRight - padding) {
+      return null;
     }
 
-    const totalTabWidth = tabs.reduce(
-      (sum, tab) => sum + Math.ceil(tabWidths.get(tab.id) ?? TAB_WIDTH_FALLBACK),
-      0,
-    );
-    const hasOverflowTrigger = visibleTabIds.length < tabs.length;
-    const availableWithoutOverflowTrigger =
-      strip.clientWidth + (hasOverflowTrigger ? TAB_OVERFLOW_TRIGGER_WIDTH : 0);
-    const availableWidth =
-      totalTabWidth <= availableWithoutOverflowTrigger
-        ? availableWithoutOverflowTrigger
-        : Math.max(0, availableWithoutOverflowTrigger - TAB_OVERFLOW_TRIGGER_WIDTH);
+    if (tabLeft < scrollLeft + padding) {
+      return clampTabStripScrollLeft(strip, tabLeft - padding);
+    }
 
-    const nextVisibleTabIds = computeVisibleTabIds(tabs, tabWidths, availableWidth, activeTabId);
+    return clampTabStripScrollLeft(strip, tabRight - strip.clientWidth + padding);
+  }, [activeTabId]);
 
-    setVisibleTabIds((current) =>
-      areStringArraysEqual(current, nextVisibleTabIds) ? current : nextVisibleTabIds,
-    );
-  }, [activeTabId, tabs, visibleTabIds.length]);
+  const scrollActiveTabIntoView = useCallback(
+    (smooth: boolean) => {
+      const targetScrollLeft = getActiveTabScrollTarget();
+      if (targetScrollLeft === null) return;
+
+      if (smooth) {
+        runTabStripScrollAnimation(targetScrollLeft);
+        return;
+      }
+
+      const strip = tabStripRef.current;
+      if (!strip) return;
+      strip.scrollLeft = targetScrollLeft;
+      updateTabStripScrollState();
+    },
+    [getActiveTabScrollTarget, runTabStripScrollAnimation, updateTabStripScrollState],
+  );
+
+  const handleTabStripScroll = useCallback(() => {
+    if (tabStripAnimatingRef.current) return;
+    updateTabStripScrollState();
+  }, [updateTabStripScrollState]);
 
   useLayoutEffect(() => {
-    updateVisibleTabs();
+    updateTabStripScrollState();
+  }, [tabs, updateTabStripScrollState]);
 
+  useLayoutEffect(() => {
     const strip = tabStripRef.current;
     if (!strip) return;
 
-    const observer = new ResizeObserver(() => updateVisibleTabs());
+    const observer = new ResizeObserver(() => {
+      updateTabStripScrollState();
+      scrollActiveTabIntoView(false);
+    });
     observer.observe(strip);
 
     return () => observer.disconnect();
-  }, [updateVisibleTabs]);
+  }, [scrollActiveTabIntoView, tabs, updateTabStripScrollState]);
 
-  const visibleTabIdSet = useMemo(() => new Set(visibleTabIds), [visibleTabIds]);
-  const visibleTabs = useMemo(
-    () => tabs.filter((tab) => visibleTabIdSet.has(tab.id)),
-    [tabs, visibleTabIdSet],
+  useLayoutEffect(() => {
+    scrollActiveTabIntoView(true);
+  }, [activeTabId, scrollActiveTabIntoView]);
+
+  useLayoutEffect(
+    () => () => {
+      tabStripScrollAnimationRef.current?.();
+      tabStripScrollAnimationRef.current = null;
+      tabStripAnimatingRef.current = false;
+    },
+    [],
   );
-  const overflowTabs = useMemo(
-    () => tabs.filter((tab) => !visibleTabIdSet.has(tab.id)),
-    [tabs, visibleTabIdSet],
+
+  const handleTabStripWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const strip = tabStripRef.current;
+      if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      // Wheel: continuous proportional scroll (natural for trackpad / mouse wheel).
+      tabStripScrollAnimationRef.current?.();
+      tabStripScrollAnimationRef.current = null;
+      tabStripAnimatingRef.current = false;
+
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (Math.abs(delta) < 0.5) return;
+
+      strip.scrollLeft = clampTabStripScrollLeft(strip, strip.scrollLeft + delta);
+      updateTabStripScrollState();
+    },
+    [updateTabStripScrollState],
   );
 
   const getInsertionIndex = useCallback((event: DragEvent<HTMLDivElement>, index: number) => {
@@ -345,14 +443,6 @@ function TabBar({
     setDropIndex(null);
   }, []);
 
-  const setMeasureTabRef = useCallback((tabId: string, element: HTMLDivElement | null) => {
-    if (element) {
-      tabMeasureRefs.current.set(tabId, element);
-    } else {
-      tabMeasureRefs.current.delete(tabId);
-    }
-  }, []);
-
   const setVisibleTabRef = useCallback((tabId: string, element: HTMLDivElement | null) => {
     if (element) {
       tabButtonRefs.current.set(tabId, element);
@@ -363,7 +453,7 @@ function TabBar({
 
   const getInsertionIndexFromClientX = useCallback(
     (clientX: number) => {
-      for (const tab of visibleTabs) {
+      for (const tab of tabs) {
         const element = tabButtonRefs.current.get(tab.id);
         if (!element) continue;
         const rect = element.getBoundingClientRect();
@@ -374,7 +464,7 @@ function TabBar({
       }
       return tabs.length;
     },
-    [tabs, visibleTabs],
+    [tabs],
   );
 
   const handleDropAtIndex = useCallback(
@@ -535,7 +625,7 @@ function TabBar({
     return <MdDns className="text-sm shrink-0 text-emerald-500/70" />;
   };
 
-  const renderTabItem = (tab: Tab, index: number, measureOnly = false) => {
+  const renderTabItem = (tab: Tab, index: number) => {
     const isActive = activeTabId === tab.id;
     const isFocused = focusedTabId === tab.id;
     const showUnreadIndicator = !isFocused && unreadTabIds?.has(tab.id);
@@ -544,12 +634,7 @@ function TabBar({
 
     const tabButton = (
       <div
-        ref={
-          measureOnly
-            ? (element) => setMeasureTabRef(tab.id, element)
-            : (element) => setVisibleTabRef(tab.id, element)
-        }
-        draggable={!measureOnly}
+        draggable
         className={`group relative flex items-center gap-2 border-r pl-3 pr-2 text-xs transition-[color,background-color,opacity] duration-200 ${
           isActive ? "font-semibold" : "font-medium df-hover"
         } ${draggedTabId === tab.id ? "opacity-60" : ""}`}
@@ -564,34 +649,22 @@ function TabBar({
               : "transparent",
           color: isActive ? "var(--df-text)" : "var(--df-text-muted)",
         }}
-        onClick={measureOnly ? undefined : () => onTabChange(tab.id)}
-        onContextMenu={measureOnly ? undefined : () => onTabChange(tab.id)}
-        onDragStart={measureOnly ? undefined : (event) => handleDragStart(event, tab.id)}
-        onDragEnd={
-          measureOnly
-            ? undefined
-            : (event) => {
-                handleDragEnd(event);
-              }
-        }
-        onDragOver={
-          measureOnly
-            ? undefined
-            : (event) => {
-                if (!draggedTabId && !event.dataTransfer.types.includes("application/nyaterm-tab"))
-                  return;
-                event.preventDefault();
-                setDropIndex(getInsertionIndex(event, index));
-              }
-        }
-        onDrop={
-          measureOnly
-            ? undefined
-            : (event) => {
-                event.preventDefault();
-                handleDropAtIndex(getInsertionIndex(event, index), event);
-              }
-        }
+        onClick={() => onTabChange(tab.id)}
+        onContextMenu={() => onTabChange(tab.id)}
+        onDragStart={(event) => handleDragStart(event, tab.id)}
+        onDragEnd={(event) => {
+          handleDragEnd(event);
+        }}
+        onDragOver={(event) => {
+          if (!draggedTabId && !event.dataTransfer.types.includes("application/nyaterm-tab"))
+            return;
+          event.preventDefault();
+          setDropIndex(getInsertionIndex(event, index));
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          handleDropAtIndex(getInsertionIndex(event, index), event);
+        }}
       >
         {isActive && (
           <div
@@ -612,20 +685,48 @@ function TabBar({
 
         {renderTabIcon(tab)}
 
-        {measureOnly ? (
-          <span className="max-w-[160px] truncate whitespace-nowrap">{displayName}</span>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="max-w-[160px] truncate whitespace-nowrap">{displayName}</span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={6} showArrow className="max-w-xs truncate">
-              {displayName}
-            </TooltipContent>
-          </Tooltip>
-        )}
+        <span
+          className="shrink-0 min-w-[1.25em] text-xs font-semibold tabular-nums leading-none"
+          style={{ color: isActive ? "var(--df-text-muted)" : "var(--df-text-dimmed)" }}
+          aria-hidden="true"
+        >
+          {index + 1}
+        </span>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="max-w-[160px] truncate whitespace-nowrap">{displayName}</span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6} showArrow className="max-w-xs truncate">
+            {index + 1}. {displayName}
+          </TooltipContent>
+        </Tooltip>
 
         <SyncIndicator tab={tab} syncGroups={syncGroups} broadcastToAll={broadcastToAll} />
+
+        {(() => {
+          const pane = getActivePane(tab);
+          const conn = pane?.connectionId
+            ? savedConnections.find((c) => c.id === pane.connectionId)
+            : undefined;
+          const host = conn?.host;
+          if (host) {
+            return (
+              <div
+                className="ml-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-[var(--df-text-dimmed)] opacity-0 transition-all duration-200 hover:text-[var(--df-primary)] active:scale-90 group-hover:opacity-100"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigator.clipboard.writeText(host).catch(() => {});
+                  toast.success(t("tabCtx.ipCopied"));
+                }}
+                title={host}
+              >
+                <MdContentCopy className="text-[10px]" />
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         <div className="relative ml-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center">
           {showUnreadIndicator ? (
@@ -637,14 +738,10 @@ function TabBar({
                   ? "text-[var(--df-text-muted)]"
                   : "text-[var(--df-text-dimmed)] opacity-0 group-hover:opacity-100"
               } hover:!bg-red-500/10 hover:!text-red-500 active:scale-90 active:!bg-red-500/20`}
-              onClick={
-                measureOnly
-                  ? undefined
-                  : (event) => {
-                      event.stopPropagation();
-                      void onTabClose(tab);
-                    }
-              }
+              onClick={(event) => {
+                event.stopPropagation();
+                void onTabClose(tab);
+              }}
             >
               <MdClose className="text-[12px]" />
             </div>
@@ -653,16 +750,12 @@ function TabBar({
       </div>
     );
 
-    if (measureOnly) {
-      return (
-        <div key={tab.id} className="relative flex shrink-0">
-          {tabButton}
-        </div>
-      );
-    }
-
     return (
-      <div key={tab.id} className="relative flex shrink-0">
+      <div
+        key={tab.id}
+        ref={(element) => setVisibleTabRef(tab.id, element)}
+        className="relative flex shrink-0"
+      >
         {dropIndex === index && (draggedTabId || dropIndex !== null) && (
           <div
             className="pointer-events-none absolute inset-y-1 left-0 z-20 w-0.5 rounded-full"
@@ -689,51 +782,6 @@ function TabBar({
           {tabButton}
         </TabContextMenu>
       </div>
-    );
-  };
-
-  const renderOverflowTabItem = (tab: Tab) => {
-    const isActive = activeTabId === tab.id;
-    const displayName = getTabDisplayName(tab);
-
-    return (
-      <DropdownMenuItem
-        key={tab.id}
-        className="max-w-[320px] pr-1"
-        onSelect={(event) => {
-          event.preventDefault();
-          onTabChange(tab.id);
-          setOverflowMenuOpen(false);
-        }}
-      >
-        {renderTabIcon(tab)}
-        <span
-          className={`min-w-0 flex-1 truncate ${isActive ? "font-semibold" : ""}`}
-          style={{ color: isActive ? "var(--df-text)" : undefined }}
-        >
-          {displayName}
-        </span>
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={t("tabCtx.close")}
-          className="ml-2 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-          onPointerDown={(event) => {
-            event.stopPropagation();
-          }}
-          onPointerUp={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void onTabClose(tab);
-            setOverflowMenuOpen(false);
-          }}
-        >
-          <MdClose className="text-[12px]" />
-        </button>
-      </DropdownMenuItem>
     );
   };
 
@@ -771,21 +819,32 @@ function TabBar({
 
   return (
     <div
-      className="flex h-9 shrink-0 overflow-hidden"
+      className="flex h-9 shrink-0"
       style={{
         backgroundColor: "var(--df-bg-panel)",
         boxShadow: "inset 0 -1px 0 var(--df-border)",
       }}
     >
-      <div ref={tabStripRef} className="relative flex min-w-0 flex-1 overflow-hidden">
-        <div
-          className="pointer-events-none absolute -left-[10000px] top-0 flex h-9 opacity-0"
-          aria-hidden="true"
+      {tabStripScroll.hasOverflow && (
+        <button
+          type="button"
+          className="flex h-full w-7 shrink-0 items-center justify-center border-r transition-colors df-hover disabled:opacity-30"
+          style={{ color: "var(--df-text-muted)", borderColor: "var(--df-border)" }}
+          aria-label={t("terminal.scrollTabsLeft")}
+          disabled={!tabStripScroll.canScrollLeft}
+          onClick={() => scrollTabStripPage(-1)}
         >
-          {tabs.map((tab, index) => renderTabItem(tab, index, true))}
-        </div>
+          <MdChevronLeft className="text-base" />
+        </button>
+      )}
 
-        {visibleTabs.map((tab) =>
+      <div
+        ref={tabStripRef}
+        className="tab-strip-scroll relative flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
+        onScroll={handleTabStripScroll}
+        onWheel={handleTabStripWheel}
+      >
+        {tabs.map((tab) =>
           renderTabItem(
             tab,
             tabs.findIndex((item) => item.id === tab.id),
@@ -814,60 +873,17 @@ function TabBar({
         </div>
       </div>
 
-      {overflowTabs.length > 0 && (
-        <DropdownMenu
-          open={overflowMenuOpen}
-          onOpenChange={(open) => {
-            setOverflowMenuOpen(open);
-            if (open) {
-              setOverflowTooltipOpen(false);
-              setSuppressOverflowTooltip(true);
-            } else {
-              setSuppressOverflowTooltip(true);
-            }
-          }}
+      {tabStripScroll.hasOverflow && (
+        <button
+          type="button"
+          className="flex h-full w-7 shrink-0 items-center justify-center border-l transition-colors df-hover disabled:opacity-30"
+          style={{ color: "var(--df-text-muted)", borderColor: "var(--df-border)" }}
+          aria-label={t("terminal.scrollTabsRight")}
+          disabled={!tabStripScroll.canScrollRight}
+          onClick={() => scrollTabStripPage(1)}
         >
-          <Tooltip
-            open={!overflowMenuOpen && !suppressOverflowTooltip && overflowTooltipOpen}
-            onOpenChange={(open) =>
-              setOverflowTooltipOpen(open && !overflowMenuOpen && !suppressOverflowTooltip)
-            }
-          >
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="flex h-full w-9 shrink-0 items-center justify-center border-l transition-colors df-hover"
-                  style={{ color: "var(--df-text-muted)", borderColor: "var(--df-border)" }}
-                  aria-label={t("terminal.showHiddenSessions")}
-                  onPointerEnter={() => {
-                    if (!overflowMenuOpen && !suppressOverflowTooltip) {
-                      setOverflowTooltipOpen(true);
-                    }
-                  }}
-                  onPointerLeave={() => {
-                    setOverflowTooltipOpen(false);
-                    setSuppressOverflowTooltip(false);
-                  }}
-                  onClick={() => {
-                    setOverflowTooltipOpen(false);
-                    setSuppressOverflowTooltip(true);
-                  }}
-                >
-                  <RiExpandDiagonalLine className="text-base" />
-                </button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={6} showArrow>
-              {t("terminal.showHiddenSessions")}
-            </TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end" className="min-w-[240px] max-w-[360px]">
-            <DropdownMenuLabel className="text-muted-foreground">
-              {t("terminal.hiddenSessions")}
-            </DropdownMenuLabel>
-            {overflowTabs.map(renderOverflowTabItem)}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          <MdChevronRight className="text-base" />
+        </button>
       )}
 
       <DropdownMenu>

@@ -1069,6 +1069,7 @@ impl RemoteFs for ScpEnhancedBackend {
         session_id: &str,
         local_path: &str,
         remote_path: &str,
+        _transfer_settings: &crate::config::TransferSettings,
         transfer_id: Option<String>,
     ) -> AppResult<()> {
         let local_stats = collect_local_directory_stats(local_path).await?;

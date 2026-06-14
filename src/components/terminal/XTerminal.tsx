@@ -4,7 +4,10 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import MultiLinePasteDialog from "@/components/dialog/terminal/MultiLinePasteDialog";
+import ExternalFileDropOverlay from "@/components/ExternalFileDropOverlay";
+import type { ResolvedLocalDropPathEntry } from "@/components/panel/file-explorer/model";
 import { useTerminalAppSettings } from "@/context/AppContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useActionLinks } from "@/hooks/useActionLinks";
@@ -13,6 +16,7 @@ import { useCredentialAutofill } from "@/hooks/useCredentialAutofill";
 import { useKeywordHighlighter } from "@/hooks/useKeywordHighlighter";
 import { useShellIntegration } from "@/hooks/useShellIntegration";
 import { resolveShortcutKeys } from "@/hooks/useShortcutMap";
+import { useTerminalFileDrop } from "@/hooks/useTerminalFileDrop";
 import { useTerminalSearch } from "@/hooks/useTerminalSearch";
 import { useTerminalSettings } from "@/hooks/useTerminalSettings";
 import { emitAIErrorDetected } from "@/lib/aiEvents";
@@ -22,6 +26,7 @@ import { readClipboardText } from "@/lib/clipboard";
 import { detectCredentialPromptKind } from "@/lib/credentialAutofill";
 import { invoke } from "@/lib/invoke";
 import { hexLuminance } from "@/lib/keywordHighlightPresets";
+import { logger } from "@/lib/logger";
 import { openSendCommandPanel } from "@/lib/sendCommandPanelEvents";
 import {
   buildTerminalCommandInput,
@@ -33,6 +38,7 @@ import {
 } from "@/lib/sessionInput";
 import { matchesKeyEvent, resolveIndexedKeys } from "@/lib/shortcutRegistry";
 import { registerTerminalContextProvider } from "@/lib/terminalContext";
+import { getTerminalDropOverlayCopy, handleTerminalFileDrop } from "@/lib/terminalFileDrop";
 import {
   applyTerminalInputData,
   applyTerminalInputPreview,
@@ -115,6 +121,7 @@ export default function XTerminal({
   const [performanceOverlay, setPerformanceOverlay] = useState<PerformanceOverlayState>(null);
   const [skippedOutputChars, setSkippedOutputChars] = useState(0);
   const [multiLinePasteText, setMultiLinePasteText] = useState<string | null>(null);
+  const [isExternalDropActive, setIsExternalDropActive] = useState(false);
   const aiCapturingRef = useRef(false);
 
   const { terminalTheme } = useTheme();
@@ -366,7 +373,12 @@ export default function XTerminal({
       removePopup: removeLinkPopup,
     } = createTerminalLinkHandlers(terminal, tRef);
     const searchAddon = new SearchAddon();
-    const zmodemHandler = createZmodemEventHandler(terminal, sessionId, () => tRef.current);
+    const zmodemHandler = createZmodemEventHandler(
+      terminal,
+      sessionId,
+      () => tRef.current,
+      () => terminalAppSettingsRef.current?.transfer.duplicate_strategy ?? "ask",
+    );
 
     terminal.options.linkHandler = oscLinkHandler;
     terminal.loadAddon(fitAddon);
@@ -711,6 +723,7 @@ export default function XTerminal({
         return false;
       }
 
+      // Smart cursor selection: preserve editing behavior for command-line input
       if (
         (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
         !e.ctrlKey &&
@@ -742,6 +755,155 @@ export default function XTerminal({
           e.preventDefault();
           replaceInputSelection(selectedInputRange, directInputData);
           return false;
+        }
+      }
+
+      // Normal selection: preserve selection for ALL key presses - only clear on mouse click
+      // If there's a selection that's NOT a smart cursor selection,
+      // send the key input without triggering xterm's clearSelection
+      if (terminal.hasSelection() && !getSmartCursorSelectedInputRange()) {
+        if (directInputData) {
+          e.preventDefault();
+          terminal.input(directInputData, false);
+          return false;
+        }
+        // Handle Backspace/Delete - send control char without clearing selection
+        if (
+          (e.key === "Backspace" || e.key === "Delete") &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey
+        ) {
+          e.preventDefault();
+          terminal.input("\x7f", false);
+          return false;
+        }
+        // Handle Enter - send newline without clearing selection
+        if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          terminal.input("\r", false);
+          return false;
+        }
+        // Handle arrow keys - send ANSI escape sequences without clearing selection
+        if (e.key === "ArrowLeft" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          e.preventDefault();
+          terminal.input("\x1b[D", false);
+          return false;
+        }
+        if (e.key === "ArrowRight" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          e.preventDefault();
+          terminal.input("\x1b[C", false);
+          return false;
+        }
+        if (e.key === "ArrowUp" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          e.preventDefault();
+          terminal.input("\x1b[A", false);
+          return false;
+        }
+        if (e.key === "ArrowDown" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          e.preventDefault();
+          terminal.input("\x1b[B", false);
+          return false;
+        }
+        // Handle Ctrl key combinations - send control characters without clearing selection
+        if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          const ctrlCharMap: Record<string, string> = {
+            a: "\x01",
+            b: "\x02",
+            c: "\x03",
+            d: "\x04",
+            e: "\x05",
+            f: "\x06",
+            g: "\x07",
+            h: "\x08",
+            i: "\x09",
+            j: "\x0a",
+            k: "\x0b",
+            l: "\x0c",
+            m: "\x0d",
+            n: "\x0e",
+            o: "\x0f",
+            p: "\x10",
+            q: "\x11",
+            r: "\x12",
+            s: "\x13",
+            t: "\x14",
+            u: "\x15",
+            v: "\x16",
+            w: "\x17",
+            x: "\x18",
+            y: "\x19",
+            z: "\x1a",
+          };
+          const keyLower = e.key.toLowerCase();
+          if (ctrlCharMap[keyLower]) {
+            e.preventDefault();
+            terminal.input(ctrlCharMap[keyLower], false);
+            return false;
+          }
+          // Ctrl+Arrow keys (word navigation)
+          if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            terminal.input("\x1b[1;5D", false);
+            return false;
+          }
+          if (e.key === "ArrowRight") {
+            e.preventDefault();
+            terminal.input("\x1b[1;5C", false);
+            return false;
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            terminal.input("\x1b[1;5A", false);
+            return false;
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            terminal.input("\x1b[1;5B", false);
+            return false;
+          }
+        }
+        // Handle Alt/Meta key combinations
+        if ((e.altKey || e.metaKey) && !e.ctrlKey && !e.shiftKey) {
+          // Alt+Arrow keys (word navigation on some shells)
+          if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            terminal.input("\x1b[1;3D", false);
+            return false;
+          }
+          if (e.key === "ArrowRight") {
+            e.preventDefault();
+            terminal.input("\x1b[1;3C", false);
+            return false;
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            terminal.input("\x1b[1;3A", false);
+            return false;
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            terminal.input("\x1b[1;3B", false);
+            return false;
+          }
+          // Alt+b, Alt+f (word navigation shortcuts in bash)
+          const keyLower = e.key.toLowerCase();
+          if (keyLower === "b") {
+            e.preventDefault();
+            terminal.input("\x1bb", false);
+            return false;
+          }
+          if (keyLower === "f") {
+            e.preventDefault();
+            terminal.input("\x1bf", false);
+            return false;
+          }
+          // Alt+d (delete word forward)
+          if (keyLower === "d") {
+            e.preventDefault();
+            terminal.input("\x1bd", false);
+            return false;
+          }
         }
       }
 
@@ -1618,24 +1780,104 @@ export default function XTerminal({
     });
   }, []);
 
-  const handleSendMultiLinePasteByLine = useCallback((text: string) => {
-    if (!text) return;
-    openSendCommandPanel({
-      text,
-      sourceSessionId: sessionId,
-      sourceSessionType: sessionType,
-      dataType: "text",
-      sendMode: "line",
-      count: 1,
-      intervalSeconds: 1,
-      target: "current",
-    });
-    setMultiLinePasteText(null);
-  }, [sessionId, sessionType]);
+  const handleSendMultiLinePasteByLine = useCallback(
+    (text: string) => {
+      if (!text) return;
+      openSendCommandPanel({
+        text,
+        sourceSessionId: sessionId,
+        sourceSessionType: sessionType,
+        dataType: "text",
+        sendMode: "line",
+        count: 1,
+        intervalSeconds: 1,
+        target: "current",
+      });
+      setMultiLinePasteText(null);
+    },
+    [sessionId, sessionType],
+  );
 
   useEffect(() => {
     doFindRef.current = doFind;
   }, [doFind]);
+
+  const resetExternalDropHover = useCallback(() => {
+    setIsExternalDropActive(false);
+  }, []);
+
+  const resolveLocalDropPaths = useCallback(async (paths: string[]) => {
+    const uniquePaths = Array.from(
+      new Set(paths.map((path) => path.trim()).filter((path) => !!path)),
+    );
+    if (uniquePaths.length === 0) {
+      return [];
+    }
+
+    return invoke<ResolvedLocalDropPathEntry[]>("resolve_local_drop_paths", {
+      paths: uniquePaths,
+    });
+  }, []);
+
+  const processTerminalDropPaths = useCallback(
+    async (dropPaths: string[]) => {
+      try {
+        const resolvedLocalEntries = await resolveLocalDropPaths(dropPaths);
+        if (resolvedLocalEntries.length === 0) {
+          logger.warn({
+            domain: "ui.error",
+            event: "terminal.external_drop_paths_unresolved",
+            message: "Native terminal drop did not resolve to usable local paths",
+            ids: { session_id: sessionId },
+            data: { path_count: dropPaths.length },
+          });
+          toast.error(t("terminal.dropPathsRequired"));
+          return;
+        }
+
+        await handleTerminalFileDrop({
+          sessionId,
+          sessionType,
+          entries: resolvedLocalEntries,
+          t,
+          duplicateStrategy: terminalAppSettings.transfer.duplicate_strategy,
+        });
+      } catch (error) {
+        logger.error({
+          domain: "ui.error",
+          event: "terminal.external_drop_failed",
+          message: "Failed to process terminal file drop",
+          ids: { session_id: sessionId },
+          data: { path_count: dropPaths.length },
+          error,
+        });
+        toast.error(String(error));
+      }
+    },
+    [
+      resolveLocalDropPaths,
+      sessionId,
+      sessionType,
+      t,
+      terminalAppSettings.transfer.duplicate_strategy,
+    ],
+  );
+
+  useTerminalFileDrop({
+    sessionId,
+    sessionType,
+    enabled: visible,
+    containerRef,
+    resetExternalDropHover,
+    setIsExternalDropActive,
+    processDropPaths: processTerminalDropPaths,
+    externalDropPathsRequiredMessage: t("terminal.dropPathsRequired"),
+  });
+
+  const dropOverlayCopy = useMemo(
+    () => getTerminalDropOverlayCopy(sessionType, t),
+    [sessionType, t],
+  );
 
   return (
     <div className="h-full w-full relative flex" style={{ display: visible ? "flex" : "none" }}>
@@ -1658,6 +1900,10 @@ export default function XTerminal({
         >
           <div ref={containerRef} className="h-full w-full" />
         </TerminalContextMenu>
+
+        {isExternalDropActive && (
+          <ExternalFileDropOverlay title={dropOverlayCopy.title} hint={dropOverlayCopy.hint} />
+        )}
 
         {performanceOverlay && (
           <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex justify-end">

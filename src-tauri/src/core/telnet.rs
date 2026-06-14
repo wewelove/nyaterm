@@ -4,7 +4,8 @@ use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
 use super::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemEvent, ZmodemTransfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
+    ZmodemTransfer, start_zmodem_transfer,
 };
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
@@ -251,6 +252,7 @@ async fn telnet_session_task(
 
     let app_reader = app.clone();
     let sid_reader = session_id.clone();
+    let manager_reader = manager.clone();
     let output_reader = output.clone();
     let reader_connection_id = connection_id.clone();
     let recording_mgr_reader = recording_mgr.clone();
@@ -314,7 +316,28 @@ async fn telnet_session_task(
                                     output_reader.push_owned(pre);
                                 }
                             }
-                            let transfer = ZmodemTransfer::new(direction, &initial_bytes);
+                            let prepared_upload = if direction == ZmodemDirection::Upload {
+                                manager_reader
+                                    .take_pending_zmodem_upload(&sid_reader)
+                                    .await
+                            } else {
+                                None
+                            };
+                            let (transfer, bootstrap_actions) = start_zmodem_transfer(
+                                direction,
+                                &initial_bytes,
+                                prepared_upload,
+                            );
+                            for action in bootstrap_actions {
+                                match action {
+                                    ZmodemAction::SendToRemote(data) => {
+                                        let _ = zmodem_out_tx.send(data);
+                                    }
+                                    ZmodemAction::EmitEvent(event) => {
+                                        let _ = app_reader.emit(&zmodem_event_reader, &event);
+                                    }
+                                }
+                            }
                             *zmodem_state_reader.lock().await = Some(transfer);
                             let _ = app_reader
                                 .emit(&zmodem_event_reader, &ZmodemEvent::Detected { direction });
@@ -465,6 +488,7 @@ async fn telnet_session_task(
                         }
                     }
                     Some(SessionCommand::ZmodemCancel) => {
+                        manager.clear_pending_zmodem_upload(&session_id).await;
                         let mut zm = zmodem_state.lock().await;
                         if let Some(ref mut transfer) = *zm {
                             let actions = transfer.cancel();

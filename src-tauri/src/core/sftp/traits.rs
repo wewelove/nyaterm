@@ -57,6 +57,7 @@ pub(crate) trait RemoteFs: Send + Sync {
         session_id: &str,
         local_path: &str,
         remote_path: &str,
+        transfer_settings: &crate::config::TransferSettings,
         transfer_id: Option<String>,
     ) -> AppResult<()>;
 }

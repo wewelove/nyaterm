@@ -96,7 +96,7 @@ export default function TabContextMenu({
   onActivateTab,
 }: TabContextMenuProps) {
   const { t } = useTranslation();
-  const { updateTab } = useApp();
+  const { updateTab, savedConnections } = useApp();
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
 
@@ -162,6 +162,22 @@ export default function TabContextMenu({
       toast.error(t("tabCtx.copyFailed"));
     }
   }, [displayName, t]);
+
+  const conn = activePane?.connectionId
+    ? savedConnections.find((c) => c.id === activePane.connectionId)
+    : undefined;
+  const host = conn?.host;
+  const canCopyIp = !!host;
+
+  const handleCopyIp = useCallback(async () => {
+    if (!host) return;
+    try {
+      await navigator.clipboard.writeText(host);
+      toast.success(t("tabCtx.ipCopied"));
+    } catch {
+      toast.error(t("tabCtx.copyFailed"));
+    }
+  }, [host, t]);
 
   const handleOpenAI = useCallback(
     (action: "explain_output" | "analyze_error") => {
@@ -232,6 +248,11 @@ export default function TabContextMenu({
             {t("tabCtx.copyName")}
           </ContextMenuItem>
 
+          <ContextMenuItem disabled={!canCopyIp} onClick={() => void handleCopyIp()}>
+            <MdContentCopy className={iconClass} />
+            {t("tabCtx.copyIp")}
+          </ContextMenuItem>
+
           <ContextMenuSeparator />
 
           <ContextMenuItem disabled={!canSpawnSession} onClick={() => void onDuplicateSession(tab)}>
@@ -252,10 +273,7 @@ export default function TabContextMenu({
             {t("tabCtx.reconnect")}
           </ContextMenuItem>
 
-          <ContextMenuItem
-            disabled={!canDisconnect}
-            onClick={() => void onDisconnectSession(tab)}
-          >
+          <ContextMenuItem disabled={!canDisconnect} onClick={() => void onDisconnectSession(tab)}>
             <MdLinkOff className={iconClass} />
             {t("tabCtx.disconnect")}
           </ContextMenuItem>

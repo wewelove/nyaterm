@@ -1,6 +1,7 @@
 use crate::core::SessionManager;
-use crate::core::sftp;
-use crate::error::AppResult;
+use crate::core::sftp::{self, TransferDuplicateManager};
+use crate::core::sftp::duplicate::DuplicateChoice;
+use crate::error::{AppError, AppResult};
 use std::sync::Arc;
 
 #[tauri::command]
@@ -67,6 +68,7 @@ pub async fn upload_local_file(
     local_path: String,
     remote_path: String,
     transfer_id: Option<String>,
+    duplicate_strategy_override: Option<String>,
 ) -> AppResult<()> {
     sftp::upload_local_file(
         app,
@@ -75,6 +77,7 @@ pub async fn upload_local_file(
         &local_path,
         &remote_path,
         transfer_id,
+        duplicate_strategy_override,
     )
     .await
 }
@@ -176,6 +179,7 @@ pub async fn upload_local_directory(
     local_path: String,
     remote_path: String,
     transfer_id: Option<String>,
+    duplicate_strategy_override: Option<String>,
 ) -> AppResult<()> {
     sftp::upload_local_directory(
         app,
@@ -184,6 +188,7 @@ pub async fn upload_local_directory(
         &local_path,
         &remote_path,
         transfer_id,
+        duplicate_strategy_override,
     )
     .await
 }
@@ -201,4 +206,21 @@ pub async fn resume_transfer(app: tauri::AppHandle, transfer_id: String) -> AppR
 #[tauri::command]
 pub async fn cancel_transfer(app: tauri::AppHandle, transfer_id: String) -> AppResult<()> {
     sftp::cancel_transfer(app, &transfer_id).await
+}
+
+#[tauri::command]
+pub async fn respond_transfer_duplicate(
+    state: tauri::State<'_, Arc<TransferDuplicateManager>>,
+    request_id: String,
+    action: String,
+) -> AppResult<()> {
+    let choice = DuplicateChoice::from_action(&action)
+        .ok_or_else(|| AppError::Config(format!("Invalid duplicate action: {action}")))?;
+    if state.respond(&request_id, choice).await {
+        Ok(())
+    } else {
+        Err(AppError::Config(format!(
+            "No pending duplicate prompt with id '{request_id}'"
+        )))
+    }
 }

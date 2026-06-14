@@ -8,7 +8,8 @@ use super::session::{
 };
 use super::update_cwd_if_changed;
 use super::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemEvent, ZmodemTransfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
+    ZmodemTransfer, start_zmodem_transfer,
 };
 use crate::config::AiExecutionProfile;
 use crate::core::SessionOutputCoalescer;
@@ -587,7 +588,30 @@ fn pty_session_thread(
                                         output_reader.push_owned(pre);
                                     }
                                 }
-                                let transfer = ZmodemTransfer::new(direction, &initial_bytes);
+                                let prepared_upload = if direction == ZmodemDirection::Upload {
+                                    rt_for_reader.block_on(async {
+                                        manager_reader
+                                            .take_pending_zmodem_upload(&sid_read)
+                                            .await
+                                    })
+                                } else {
+                                    None
+                                };
+                                let (transfer, bootstrap_actions) = start_zmodem_transfer(
+                                    direction,
+                                    &initial_bytes,
+                                    prepared_upload,
+                                );
+                                for action in bootstrap_actions {
+                                    match action {
+                                        ZmodemAction::SendToRemote(data) => {
+                                            let _ = zmodem_out_tx.send(data);
+                                        }
+                                        ZmodemAction::EmitEvent(event) => {
+                                            let _ = app_read.emit(&zmodem_event_reader, &event);
+                                        }
+                                    }
+                                }
                                 *zmodem_state_reader.lock().unwrap() = Some(transfer);
                                 let _ = app_read.emit(
                                     &zmodem_event_reader,
@@ -761,6 +785,9 @@ fn pty_session_thread(
                 }
             }
             SessionCommand::ZmodemCancel => {
+                rt_handle.block_on(async {
+                    manager.clear_pending_zmodem_upload(&session_id).await;
+                });
                 let mut zm = zmodem_state.lock().unwrap();
                 if let Some(ref mut transfer) = *zm {
                     let actions = transfer.cancel();

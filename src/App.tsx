@@ -60,6 +60,7 @@ import {
   type TerminalWindowNode,
   updateTerminalWindowSplitRatio,
 } from "./lib/tabWindows";
+import { setBackendTransferDuplicatePrompt } from "./lib/transferDuplicatePrompt";
 import { checkForUpdate, type UpdateInfo } from "./lib/updater";
 import {
   getOwnerMainWindowLabel,
@@ -385,6 +386,28 @@ function App() {
       listen<HostKeyVerifyRequest>("host-key-verify", (event) => {
         if (!eventTargetsCurrentWindow(event.payload.targetWindowLabel)) return;
         setHostKeyVerifyRequest(event.payload);
+      }),
+    );
+
+    unsubs.push(
+      listen<{
+        requestId: string;
+        sessionId: string;
+        remotePath: string;
+        fileName: string;
+        isDirectory: boolean;
+        targetWindowLabel?: string | null;
+      }>("transfer-duplicate-request", (event) => {
+        if (!eventTargetsCurrentWindow(event.payload.targetWindowLabel)) return;
+        setBackendTransferDuplicatePrompt({
+          requestId: event.payload.requestId,
+          sessionId: event.payload.sessionId,
+          remotePath: event.payload.remotePath,
+          fileName: event.payload.fileName,
+          isDirectory: event.payload.isDirectory,
+          targetWindowLabel: event.payload.targetWindowLabel,
+          respondViaBackend: true,
+        });
       }),
     );
 

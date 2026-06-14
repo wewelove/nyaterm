@@ -3,129 +3,21 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import {
+  collectExternalDropAdditionalObjects,
+  createExternalFileDropBridgeMessage,
+  DRAG_EVENT_CAPTURE_OPTIONS,
+  getDragEventPosition,
+  getExternalFileDropBridge,
+  isDropPositionInsideElement,
+  isExternalFileDragEvent,
+  type NativeFileDropEventPayload,
+} from "@/lib/nativeFileDrop";
 import { normalizeDirectoryPath } from "./model";
-
-interface ExternalFileDropEventPayload {
-  kind: "enter" | "over" | "leave" | "drop";
-  paths: string[];
-  position: {
-    x: number;
-    y: number;
-  };
-}
-
-const EXTERNAL_FILE_DROP_MESSAGE_KIND = "external-file-drop";
-const DRAG_EVENT_CAPTURE_OPTIONS = true;
-
-type WebView2Bridge = {
-  postMessageWithAdditionalObjects: (
-    message: unknown,
-    additionalObjects: ArrayLike<unknown>,
-  ) => void;
-};
-
-type DataTransferItemWithFileSystemHandle = DataTransferItem & {
-  getAsFileSystemHandle?: () => Promise<unknown>;
-};
 
 type CurrentRef<T> = {
   current: T;
 };
-
-declare global {
-  interface Window {
-    chrome?: {
-      webview?: WebView2Bridge;
-    };
-  }
-}
-
-function isDropPositionInsideElement(
-  position: { x: number; y: number },
-  element: HTMLElement | null,
-) {
-  if (!element) {
-    return false;
-  }
-
-  const rect = element.getBoundingClientRect();
-  const scale = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  const candidates =
-    scale === 1 ? [position] : [position, { x: position.x / scale, y: position.y / scale }];
-
-  return candidates.some(
-    ({ x, y }) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
-  );
-}
-
-function isExternalFileDragEvent(event: DragEvent) {
-  const dataTransfer = event.dataTransfer;
-  if (!dataTransfer) {
-    return false;
-  }
-
-  if (Array.from(dataTransfer.types ?? []).includes("Files")) {
-    return true;
-  }
-
-  if (dataTransfer.files.length > 0) {
-    return true;
-  }
-
-  return Array.from(dataTransfer.items ?? []).some((item) => item.kind === "file");
-}
-
-function getDragEventPosition(event: DragEvent) {
-  return {
-    x: event.clientX,
-    y: event.clientY,
-  };
-}
-
-function getExternalFileDropBridge() {
-  return window.chrome?.webview;
-}
-
-function createExternalFileDropBridgeMessage(position: { x: number; y: number }) {
-  return JSON.stringify({
-    kind: EXTERNAL_FILE_DROP_MESSAGE_KIND,
-    position,
-  });
-}
-
-async function collectExternalDropAdditionalObjects(dataTransfer: DataTransfer | null) {
-  if (!dataTransfer) {
-    return [];
-  }
-
-  const fileItems = Array.from(dataTransfer.items ?? []).filter((item) => item.kind === "file");
-  if (fileItems.length === 0 && dataTransfer.files.length > 0) {
-    return Array.from(dataTransfer.files);
-  }
-
-  const additionalObjects: unknown[] = [];
-  for (const item of fileItems) {
-    const file = item.getAsFile();
-    if (file) {
-      additionalObjects.push(file);
-      continue;
-    }
-
-    const itemWithHandle = item as DataTransferItemWithFileSystemHandle;
-    if (typeof itemWithHandle.getAsFileSystemHandle === "function") {
-      try {
-        const handle = await itemWithHandle.getAsFileSystemHandle();
-        if (handle) {
-          additionalObjects.push(handle);
-        }
-      } catch {
-        // Fall back to File objects if the runtime cannot expose FileSystemHandle.
-      }
-    }
-  }
-
-  return additionalObjects;
-}
 
 interface UseExternalFileDropParams {
   activeSessionIdRef: CurrentRef<string | null>;
@@ -164,17 +56,23 @@ export function useExternalFileDrop({
         return;
       }
 
-      event.preventDefault();
       const isOverDropTarget = isDropPositionInsideElement(
         getDragEventPosition(event),
         listContainerRef.current,
       );
+
+      if (!isOverDropTarget) {
+        resetExternalDropHover();
+        return;
+      }
+
+      event.preventDefault();
       const isActive =
         canBrowseFilesRef.current && !!activeSessionIdRef.current && isOverDropTarget;
 
       setIsExternalDropActive(isActive);
       if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = event.type === "dragenter" || isActive ? "copy" : "none";
+        event.dataTransfer.dropEffect = "copy";
       }
     };
 
@@ -204,7 +102,6 @@ export function useExternalFileDrop({
         return;
       }
 
-      event.preventDefault();
       const dropPosition = getDragEventPosition(event);
       const isOverDropTarget = isDropPositionInsideElement(dropPosition, listContainerRef.current);
       resetExternalDropHover();
@@ -213,6 +110,8 @@ export function useExternalFileDrop({
       if (!canBrowseFilesRef.current || !currentSessionId || !isOverDropTarget) {
         return;
       }
+
+      event.preventDefault();
 
       const dataTransfer = event.dataTransfer;
       if (dataTransfer?.files && dataTransfer.files.length > 0) {
@@ -318,7 +217,7 @@ export function useExternalFileDrop({
 
     let cancelled = false;
 
-    const unlistenPromise = listen<ExternalFileDropEventPayload>("external-file-drop", (event) => {
+    const unlistenPromise = listen<NativeFileDropEventPayload>("external-file-drop", (event) => {
       if (cancelled) {
         return;
       }

@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::RwLock;
 
 const SFTP_MIN_REQUEST_KIB: usize = 64;
@@ -464,7 +464,10 @@ async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> AppResult<()> {
 }
 
 async fn resolve_remote_path(
+    app: &tauri::AppHandle,
+    session_manager: &crate::core::SessionManager,
     sftp: &SftpSession,
+    session_id: &str,
     remote_path: &str,
     strategy: &str,
 ) -> Option<String> {
@@ -472,6 +475,12 @@ async fn resolve_remote_path(
     if !exists {
         return Some(remote_path.to_string());
     }
+    let file_name = remote_path.split('/').last().unwrap_or(remote_path);
+    let is_directory = sftp
+        .metadata(remote_path)
+        .await
+        .map(|attrs| sftp_attrs_is_dir(&attrs))
+        .unwrap_or(false);
     match strategy {
         "skip" => None,
         "rename" => {
@@ -497,7 +506,64 @@ async fn resolve_remote_path(
             }
             Some(remote_path.to_string())
         }
+        "ask" => {
+            match super::duplicate::prompt_duplicate_choice(
+                app,
+                session_manager,
+                session_id,
+                remote_path,
+                file_name,
+                is_directory,
+            )
+            .await
+            {
+                Ok(super::duplicate::DuplicateChoice::Skip) => None,
+                Ok(super::duplicate::DuplicateChoice::Overwrite) => Some(remote_path.to_string()),
+                Err(_) => None,
+            }
+        }
         _ => Some(remote_path.to_string()),
+    }
+}
+
+async fn ensure_remote_upload_target_allowed(
+    app: &tauri::AppHandle,
+    session_manager: &crate::core::SessionManager,
+    sftp: &SftpSession,
+    session_id: &str,
+    remote_path: &str,
+    strategy: &str,
+) -> bool {
+    let exists = sftp.metadata(remote_path).await.is_ok();
+    if !exists {
+        return true;
+    }
+
+    let file_name = file_name_from_path(remote_path);
+    let is_directory = sftp
+        .metadata(remote_path)
+        .await
+        .map(|attrs| sftp_attrs_is_dir(&attrs))
+        .unwrap_or(false);
+
+    match strategy {
+        "skip" => false,
+        "rename" => true,
+        "ask" => {
+            matches!(
+                super::duplicate::prompt_duplicate_choice(
+                    app,
+                    session_manager,
+                    session_id,
+                    remote_path,
+                    &file_name,
+                    is_directory,
+                )
+                .await,
+                Ok(super::duplicate::DuplicateChoice::Overwrite)
+            )
+        }
+        _ => true,
     }
 }
 
@@ -1455,9 +1521,13 @@ impl RemoteFs for SftpBackend {
         transfer_id: Option<String>,
     ) -> AppResult<()> {
         let max_retries = transfer_settings.max_transfer_retries;
+        let session_manager = app.state::<Arc<crate::core::SessionManager>>();
         let sftp_for_resolve = self.open_sftp().await?;
         let actual_remote_path = match resolve_remote_path(
+            app,
+            session_manager.inner(),
             &sftp_for_resolve,
+            session_id,
             remote_path,
             &transfer_settings.duplicate_strategy,
         )
@@ -1465,30 +1535,6 @@ impl RemoteFs for SftpBackend {
         {
             Some(path) => path,
             None => {
-                let file_name = remote_path.split('/').last().unwrap_or(remote_path);
-                let transfer_id = transfer_id
-                    .clone()
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                let _ = app.emit(
-                    "transfer-event",
-                    &TransferEvent {
-                        id: transfer_id,
-                        session_id: session_id.to_string(),
-                        file_name: file_name.to_string(),
-                        remote_path: remote_path.to_string(),
-                        local_path: local_path.to_string(),
-                        direction: "upload".to_string(),
-                        kind: "file".to_string(),
-                        status: "completed".to_string(),
-                        size: 0,
-                        bytes_transferred: 0,
-                        total_size: 0,
-                        parent_id: None,
-                        item_count_total: None,
-                        item_count_completed: None,
-                        error_msg: None,
-                    },
-                );
                 let _ = sftp_for_resolve.close().await;
                 return Ok(());
             }
@@ -1643,13 +1689,28 @@ impl RemoteFs for SftpBackend {
         session_id: &str,
         local_path: &str,
         remote_path: &str,
+        transfer_settings: &crate::config::TransferSettings,
         transfer_id: Option<String>,
     ) -> AppResult<()> {
-        let transfer_settings = crate::config::load_app_settings(app)
-            .map(|s| s.transfer)
-            .unwrap_or_default();
+        let session_manager = app.state::<Arc<crate::core::SessionManager>>();
+        let sftp_for_check = self.open_sftp().await?;
+        if !ensure_remote_upload_target_allowed(
+            app,
+            session_manager.inner(),
+            &sftp_for_check,
+            session_id,
+            remote_path,
+            &transfer_settings.duplicate_strategy,
+        )
+        .await
+        {
+            let _ = sftp_for_check.close().await;
+            return Ok(());
+        }
+        let _ = sftp_for_check.close().await;
+
         let (request_kib, pipeline_depth, max_concurrent_writes) =
-            sftp_pipeline_config(&transfer_settings);
+            sftp_pipeline_config(transfer_settings);
         let concurrent_tasks =
             background_transfer_task_concurrency(transfer_settings.upload_threads);
         let transfer_started = Instant::now();

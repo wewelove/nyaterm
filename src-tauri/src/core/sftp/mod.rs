@@ -5,6 +5,7 @@
 //! The upper layers and the frontend never need to know which protocol is in use.
 
 mod cache;
+pub(crate) mod duplicate;
 mod scp_enhanced;
 mod scp_normal;
 mod sftp_backend;
@@ -24,6 +25,7 @@ use crate::error::{AppError, AppResult};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+pub(crate) use duplicate::TransferDuplicateManager;
 pub(crate) use transfer::{active_transfer_count, transfer_target_directory};
 pub use transfer::{cancel_transfer, pause_transfer, resume_transfer};
 pub use util::{FileEntry, FileProperties, RemoteFileAttributeUpdate, RemoteTextFile};
@@ -338,11 +340,15 @@ pub async fn upload_local_file(
     local_path: &str,
     remote_path: &str,
     transfer_id: Option<String>,
+    duplicate_strategy_override: Option<String>,
 ) -> AppResult<()> {
     let auto_fs = get_or_create_auto_fs(&manager, session_id).await?;
-    let transfer_settings = crate::config::load_app_settings(&app)
+    let mut transfer_settings = crate::config::load_app_settings(&app)
         .map(|s| s.transfer)
         .unwrap_or_default();
+    if let Some(strategy) = duplicate_strategy_override {
+        transfer_settings.duplicate_strategy = strategy;
+    }
     let guard = auto_fs.backend().await?;
     let fs = guard.as_ref().unwrap();
     fs.upload_file(
@@ -531,10 +537,24 @@ pub async fn upload_local_directory(
     local_path: &str,
     remote_path: &str,
     transfer_id: Option<String>,
+    duplicate_strategy_override: Option<String>,
 ) -> AppResult<()> {
     let auto_fs = get_or_create_auto_fs(&manager, session_id).await?;
+    let mut transfer_settings = crate::config::load_app_settings(&app)
+        .map(|s| s.transfer)
+        .unwrap_or_default();
+    if let Some(strategy) = duplicate_strategy_override {
+        transfer_settings.duplicate_strategy = strategy;
+    }
     let guard = auto_fs.backend().await?;
     let fs = guard.as_ref().unwrap();
-    fs.upload_directory(&app, session_id, local_path, remote_path, transfer_id)
-        .await
+    fs.upload_directory(
+        &app,
+        session_id,
+        local_path,
+        remote_path,
+        &transfer_settings,
+        transfer_id,
+    )
+    .await
 }

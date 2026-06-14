@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
 use russh::ChannelMsg;
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 pub(crate) struct ScpNormalBackend {
     ssh_handle: Arc<SshConnectionHandles>,
@@ -694,8 +694,21 @@ async fn resolve_remote_exists(ssh_handle: &Arc<SshConnectionHandles>, remote_pa
         .unwrap_or(false)
 }
 
-async fn resolve_remote_path(
+async fn resolve_remote_is_directory(
     ssh_handle: &Arc<SshConnectionHandles>,
+    remote_path: &str,
+) -> bool {
+    exec_command(ssh_handle, &format!("test -d {}", sh_quote(remote_path)))
+        .await
+        .map(|r| r.exit_code == Some(0))
+        .unwrap_or(false)
+}
+
+async fn resolve_remote_path(
+    app: &tauri::AppHandle,
+    session_manager: &crate::core::SessionManager,
+    ssh_handle: &Arc<SshConnectionHandles>,
+    session_id: &str,
     remote_path: &str,
     strategy: &str,
 ) -> Option<String> {
@@ -703,6 +716,8 @@ async fn resolve_remote_path(
     if !exists {
         return Some(remote_path.to_string());
     }
+    let file_name = file_name_from_path(remote_path);
+    let is_directory = resolve_remote_is_directory(ssh_handle, remote_path).await;
     match strategy {
         "skip" => None,
         "rename" => {
@@ -728,7 +743,59 @@ async fn resolve_remote_path(
             }
             Some(remote_path.to_string())
         }
+        "ask" => {
+            match super::duplicate::prompt_duplicate_choice(
+                app,
+                session_manager,
+                session_id,
+                remote_path,
+                &file_name,
+                is_directory,
+            )
+            .await
+            {
+                Ok(super::duplicate::DuplicateChoice::Skip) => None,
+                Ok(super::duplicate::DuplicateChoice::Overwrite) => Some(remote_path.to_string()),
+                Err(_) => None,
+            }
+        }
         _ => Some(remote_path.to_string()),
+    }
+}
+
+async fn ensure_remote_upload_target_allowed(
+    app: &tauri::AppHandle,
+    session_manager: &crate::core::SessionManager,
+    ssh_handle: &Arc<SshConnectionHandles>,
+    session_id: &str,
+    remote_path: &str,
+    strategy: &str,
+) -> bool {
+    if !resolve_remote_exists(ssh_handle, remote_path).await {
+        return true;
+    }
+
+    let file_name = file_name_from_path(remote_path);
+    let is_directory = resolve_remote_is_directory(ssh_handle, remote_path).await;
+
+    match strategy {
+        "skip" => false,
+        "rename" => true,
+        "ask" => {
+            matches!(
+                super::duplicate::prompt_duplicate_choice(
+                    app,
+                    session_manager,
+                    session_id,
+                    remote_path,
+                    &file_name,
+                    is_directory,
+                )
+                .await,
+                Ok(super::duplicate::DuplicateChoice::Overwrite)
+            )
+        }
+        _ => true,
     }
 }
 
@@ -1020,41 +1087,19 @@ impl RemoteFs for ScpNormalBackend {
         transfer_id: Option<String>,
     ) -> AppResult<()> {
         let max_retries = transfer_settings.max_transfer_retries;
+        let session_manager = app.state::<Arc<crate::core::SessionManager>>();
         let actual_remote_path = match resolve_remote_path(
+            app,
+            session_manager.inner(),
             &self.ssh_handle,
+            session_id,
             remote_path,
             &transfer_settings.duplicate_strategy,
         )
         .await
         {
             Some(path) => path,
-            None => {
-                let file_name = file_name_from_path(remote_path);
-                let transfer_id = transfer_id
-                    .clone()
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                let _ = app.emit(
-                    "transfer-event",
-                    &TransferEvent {
-                        id: transfer_id,
-                        session_id: session_id.to_string(),
-                        file_name,
-                        remote_path: remote_path.to_string(),
-                        local_path: local_path.to_string(),
-                        direction: "upload".to_string(),
-                        kind: "file".to_string(),
-                        status: "completed".to_string(),
-                        size: 0,
-                        bytes_transferred: 0,
-                        total_size: 0,
-                        parent_id: None,
-                        item_count_total: None,
-                        item_count_completed: None,
-                        error_msg: None,
-                    },
-                );
-                return Ok(());
-            }
+            None => return Ok(()),
         };
 
         let mut last_err = None;
@@ -1178,8 +1223,23 @@ impl RemoteFs for ScpNormalBackend {
         session_id: &str,
         local_path: &str,
         remote_path: &str,
+        transfer_settings: &crate::config::TransferSettings,
         transfer_id: Option<String>,
     ) -> AppResult<()> {
+        let session_manager = app.state::<Arc<crate::core::SessionManager>>();
+        if !ensure_remote_upload_target_allowed(
+            app,
+            session_manager.inner(),
+            &self.ssh_handle,
+            session_id,
+            remote_path,
+            &transfer_settings.duplicate_strategy,
+        )
+        .await
+        {
+            return Ok(());
+        }
+
         let local_stats = collect_local_directory_stats(local_path).await?;
         let directory_controller = create_directory_transfer_controller(
             transfer_id,

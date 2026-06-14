@@ -160,7 +160,14 @@ function createSessionRequestId() {
 
 export type TerminalAppSettings = Pick<
   AppSettings,
-  "appearance" | "interaction" | "terminal" | "translation" | "search" | "ai" | "keybindings"
+  | "appearance"
+  | "interaction"
+  | "terminal"
+  | "translation"
+  | "search"
+  | "ai"
+  | "keybindings"
+  | "transfer"
 >;
 
 /**
@@ -253,7 +260,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   transfer: {
     download_threads: 3,
     upload_threads: 3,
-    duplicate_strategy: "overwrite",
+    duplicate_strategy: "ask",
     preserve_timestamps: true,
     resume_broken_transfer: true,
     default_file_permissions: "644",
@@ -1255,6 +1262,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       search: appSettings.search,
       ai: appSettings.ai,
       keybindings: appSettings.keybindings,
+      transfer: appSettings.transfer,
     }),
     [
       appSettings.appearance,
@@ -1264,6 +1272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       appSettings.search,
       appSettings.ai,
       appSettings.keybindings,
+      appSettings.transfer,
     ],
   );
 

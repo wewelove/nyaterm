@@ -39,6 +39,7 @@ import type { MoveDialogData } from "@/components/dialog/file-explorer/MoveDialo
 import type { NewItemDialogData } from "@/components/dialog/file-explorer/NewItemDialog";
 import type { NewSymlinkDialogData } from "@/components/dialog/file-explorer/NewSymlinkDialog";
 import type { PropertiesDialogData } from "@/components/dialog/file-explorer/PropertiesDialog";
+import ExternalFileDropOverlay from "@/components/ExternalFileDropOverlay";
 import PanelHeader from "@/components/layout/PanelHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -192,8 +193,9 @@ function FileExplorer({
   const autoSyncCwd = !!activeConnectionId && autoSyncConnectionIds.includes(activeConnectionId);
   const favoriteDirectoriesByConnection =
     appSettings.ui.file_explorer_favorite_dirs_by_connection_id ?? {};
-  const favoriteDirectories =
-    activeConnectionId ? (favoriteDirectoriesByConnection[activeConnectionId] ?? []) : [];
+  const favoriteDirectories = activeConnectionId
+    ? (favoriteDirectoriesByConnection[activeConnectionId] ?? [])
+    : [];
   const listScrollResetKey = `${activeSessionId ?? ""}:${currentPath}`;
   const listFilterResetKey = `${fileSearchQuery}:${fileSortMode.column}:${fileSortMode.direction}`;
 
@@ -1702,16 +1704,11 @@ function FileExplorer({
         <ContextMenuTrigger asChild>
           <div className="relative min-h-0 flex-1">
             {isExternalDropActive && canBrowseFiles && (
-              <div
-                className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-lg border-2 border-dashed px-4 text-center text-xs font-medium"
-                style={{
-                  borderColor: "var(--df-primary)",
-                  backgroundColor: "rgba(59, 130, 246, 0.12)",
-                  color: "var(--df-text)",
-                }}
-              >
-                {t("fileExplorer.externalDropOverlay")}
-              </div>
+              <ExternalFileDropOverlay
+                insetClassName="inset-3"
+                title={t("fileExplorer.externalDropOverlayTitle")}
+                hint={t("fileExplorer.externalDropOverlayHint")}
+              />
             )}
             <div
               ref={listContainerRef}

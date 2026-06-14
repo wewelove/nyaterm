@@ -10,6 +10,7 @@ import type { HostKeyVerifyRequest } from "@/components/dialog/connections/HostK
 import { HostKeyVerifyDialog } from "@/components/dialog/connections/HostKeyVerifyDialog";
 import type { OtpRequest } from "@/components/dialog/connections/OtpDialog";
 import { OtpDialog } from "@/components/dialog/connections/OtpDialog";
+import { TransferDuplicateDialog } from "@/components/dialog/file-explorer/TransferDuplicateDialog";
 import SyncGroupDialog from "@/components/dialog/terminal/SyncGroupDialog";
 import ActivityBar from "@/components/layout/ActivityBar";
 import Header from "@/components/layout/Header";
@@ -461,6 +462,7 @@ export default function AppLayout({
           request={dialogs.hostKeyVerifyRequest}
           onDone={dialogs.onHostKeyVerifyDone}
         />
+        <TransferDuplicateDialog />
 
         {dialogs.modalChildWindowCount > 0 && (
           <div

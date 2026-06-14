@@ -86,7 +86,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   transfer: {
     download_threads: 3,
     upload_threads: 3,
-    duplicate_strategy: "overwrite",
+    duplicate_strategy: "ask",
     preserve_timestamps: true,
     resume_broken_transfer: true,
     default_file_permissions: "644",

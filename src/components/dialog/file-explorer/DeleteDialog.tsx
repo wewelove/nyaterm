@@ -2,15 +2,16 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MdRefresh } from "react-icons/md";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { invoke } from "@/lib/invoke";
 
 export interface DeleteDialogData {
@@ -72,16 +73,32 @@ export default function DeleteDialog({ data, onClose, onSuccess }: DeleteDialogP
   };
 
   return (
-    <Dialog open onOpenChange={(v) => !v && !isSubmitting && onClose()}>
-      <DialogContent className="w-[min(20rem,calc(100vw-2rem))] sm:max-w-80">
-        <DialogHeader className="min-w-0 pr-8">
-          <DialogTitle className="text-sm break-all leading-relaxed">
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSubmitting) {
+          onClose();
+        }
+      }}
+    >
+      <AlertDialogContent
+        size="sm"
+        className="w-[min(20rem,calc(100vw-2rem))] sm:max-w-80"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !isSubmitting && data.items.length > 0) {
+            event.preventDefault();
+            void handleDeleteSubmit();
+          }
+        }}
+      >
+        <AlertDialogHeader className="min-w-0 text-left">
+          <AlertDialogTitle className="text-sm break-all leading-relaxed">
             {data.items.length === 1
               ? t("fileExplorer.sureDelete", { name: data.items[0]?.name ?? "" })
               : t("fileExplorer.sureDeleteMultiple", { count: data.items.length })}
-          </DialogTitle>
-          <DialogDescription className="sr-only">{t("fileExplorer.cmDelete")}</DialogDescription>
-        </DialogHeader>
+          </AlertDialogTitle>
+          <AlertDialogDescription>{t("fileExplorer.deleteConfirmHint")}</AlertDialogDescription>
+        </AlertDialogHeader>
 
         {data.items.length > 1 && (
           <div
@@ -101,22 +118,22 @@ export default function DeleteDialog({ data, onClose, onSuccess }: DeleteDialogP
           </div>
         )}
 
-        <DialogFooter className="mt-4 min-w-0">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
-            {t("dialog.cancel")}
-          </Button>
-          <Button
+        <AlertDialogFooter className="mt-2 min-w-0">
+          <AlertDialogCancel disabled={isSubmitting}>{t("dialog.cancel")}</AlertDialogCancel>
+          <AlertDialogAction
             variant="destructive"
-            size="sm"
-            onClick={handleDeleteSubmit}
-            disabled={isSubmitting || data.items.length === 0}
             autoFocus
+            disabled={isSubmitting || data.items.length === 0}
+            onClick={(event) => {
+              event.preventDefault();
+              void handleDeleteSubmit();
+            }}
           >
             {isSubmitting && <MdRefresh className="mr-1 text-[0.875rem] animate-spin" />}
             {t("fileExplorer.cmDelete")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

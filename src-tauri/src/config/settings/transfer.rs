@@ -45,7 +45,7 @@ fn default_transfer_threads() -> u32 {
     3
 }
 fn default_duplicate_strategy() -> String {
-    "overwrite".to_string()
+    "ask".to_string()
 }
 fn default_file_permissions() -> String {
     "644".to_string()

@@ -153,6 +153,7 @@ pub struct SessionManager {
     pub sessions: Arc<Mutex<HashMap<String, SessionHandle>>>,
     pub history_store: Arc<Mutex<CommandHistoryStore>>,
     command_submissions: Arc<Mutex<HashMap<String, CommandSubmissionState>>>,
+    pending_zmodem_uploads: Arc<Mutex<HashMap<String, Vec<std::path::PathBuf>>>>,
     history_save_notify: Arc<Notify>,
     history_save_worker_started: AtomicBool,
     history_event_notify: Arc<Notify>,
@@ -168,6 +169,7 @@ impl SessionManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             history_store: Arc::new(Mutex::new(CommandHistoryStore::new())),
             command_submissions: Arc::new(Mutex::new(HashMap::new())),
+            pending_zmodem_uploads: Arc::new(Mutex::new(HashMap::new())),
             history_save_notify: Arc::new(Notify::new()),
             history_save_worker_started: AtomicBool::new(false),
             history_event_notify: Arc::new(Notify::new()),
@@ -261,6 +263,7 @@ impl SessionManager {
         if removed {
             self.flush_pending_submission(id).await;
             self.command_submissions.lock().await.remove(id);
+            self.pending_zmodem_uploads.lock().await.remove(id);
         }
         if removed {
             if let Some(app) = self.app_handle.get() {
@@ -269,6 +272,25 @@ impl SessionManager {
             }
         }
         removed
+    }
+
+    /// Takes and clears any prepared ZMODEM upload paths for a session.
+    pub async fn take_pending_zmodem_upload(
+        &self,
+        session_id: &str,
+    ) -> Option<Vec<std::path::PathBuf>> {
+        self.pending_zmodem_uploads
+            .lock()
+            .await
+            .remove(session_id)
+    }
+
+    /// Clears prepared ZMODEM upload paths without starting a transfer.
+    pub async fn clear_pending_zmodem_upload(&self, session_id: &str) {
+        self.pending_zmodem_uploads
+            .lock()
+            .await
+            .remove(session_id);
     }
 
     /// Sends a command to a session's I/O loop; errors if session not found.

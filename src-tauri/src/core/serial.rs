@@ -4,7 +4,8 @@ use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
 use super::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemEvent, ZmodemTransfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
+    ZmodemTransfer, start_zmodem_transfer,
 };
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
@@ -226,6 +227,8 @@ fn serial_session_thread(
     // Reader thread
     let app_reader = app.clone();
     let sid_reader = session_id.clone();
+    let manager_reader = manager.clone();
+    let rt_handle_reader = rt_handle.clone();
     let port_writer_reader = port_writer.clone();
     let output_reader = output.clone();
     let recording_mgr_reader = recording_mgr.clone();
@@ -284,7 +287,32 @@ fn serial_session_thread(
                                     output_reader.push_owned(pre);
                                 }
                             }
-                            let transfer = ZmodemTransfer::new(direction, &initial_bytes);
+                            let prepared_upload = if direction == ZmodemDirection::Upload {
+                                rt_handle_reader.block_on(async {
+                                    manager_reader
+                                        .take_pending_zmodem_upload(&sid_reader)
+                                        .await
+                                })
+                            } else {
+                                None
+                            };
+                            let (transfer, bootstrap_actions) = start_zmodem_transfer(
+                                direction,
+                                &initial_bytes,
+                                prepared_upload,
+                            );
+                            for action in bootstrap_actions {
+                                match action {
+                                    ZmodemAction::SendToRemote(data) => {
+                                        let mut p = port_writer_reader.lock().unwrap();
+                                        let _ = p.write_all(&data);
+                                        let _ = p.flush();
+                                    }
+                                    ZmodemAction::EmitEvent(event) => {
+                                        let _ = app_reader.emit(&zmodem_event_reader, &event);
+                                    }
+                                }
+                            }
                             *zmodem_state_reader.lock().unwrap() = Some(transfer);
                             let _ = app_reader
                                 .emit(&zmodem_event_reader, &ZmodemEvent::Detected { direction });
@@ -419,6 +447,9 @@ fn serial_session_thread(
                 }
             }
             SessionCommand::ZmodemCancel => {
+                rt_handle.block_on(async {
+                    manager.clear_pending_zmodem_upload(&session_id).await;
+                });
                 let mut zm = zmodem_state.lock().unwrap();
                 if let Some(ref mut transfer) = *zm {
                     let actions = transfer.cancel();

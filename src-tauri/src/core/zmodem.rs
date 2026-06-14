@@ -63,6 +63,20 @@ pub enum ZmodemEvent {
     Failed { reason: String },
 }
 
+/// Creates a transfer and optionally auto-accepts a prepared upload.
+pub fn start_zmodem_transfer(
+    direction: ZmodemDirection,
+    initial_bytes: &[u8],
+    prepared_upload_files: Option<Vec<PathBuf>>,
+) -> (ZmodemTransfer, Vec<ZmodemAction>) {
+    let mut transfer = ZmodemTransfer::new(direction, initial_bytes);
+    let bootstrap_actions = match (direction, prepared_upload_files) {
+        (ZmodemDirection::Upload, Some(files)) => transfer.accept_upload(files),
+        _ => Vec::new(),
+    };
+    (transfer, bootstrap_actions)
+}
+
 /// Actions returned to the I/O loop after feeding bytes.
 pub enum ZmodemAction {
     /// Send these bytes back to the remote (protocol responses).
@@ -115,13 +129,18 @@ impl ZmodemDetector {
     ///
     /// `passthrough` contains bytes that can be shown in the terminal. Split
     /// header prefixes are retained internally until enough bytes arrive.
+    /// When an upload is detected, the "rz -y" shell echo is stripped from
+    /// passthrough so the user doesn't see the command.
     pub fn feed(&mut self, data: &[u8]) -> ZmodemDetectResult {
         self.pending.extend_from_slice(data);
 
         if let Some((direction, header_start)) = detect_zmodem_start(&self.pending) {
-            let passthrough = self.pending[..header_start].to_vec();
+            let mut passthrough = self.pending[..header_start].to_vec();
             let initial_bytes = self.pending[header_start..].to_vec();
             self.reset();
+            if direction == ZmodemDirection::Upload {
+                strip_rz_echo(&mut passthrough);
+            }
             return ZmodemDetectResult::Detected {
                 direction,
                 passthrough,
@@ -219,6 +238,22 @@ fn has_rz_receive_prompt_before(data: &[u8], start: usize) -> bool {
     data[..start]
         .windows(RZ_RECEIVE_PROMPT.len())
         .any(|window| window == RZ_RECEIVE_PROMPT)
+}
+
+/// Strip the "rz" shell echo from the end of the passthrough data
+/// so that the user doesn't see the upload command in the terminal.
+/// Handles common echo variants: "rz\r\n", "rz\r", "rz".
+fn strip_rz_echo(data: &mut Vec<u8>) {
+    // Try to strip from the end: \r\n, \r, or just the command text.
+    // The command is always at the end of the passthrough because the
+    // ZMODEM header follows immediately.
+    let patterns: &[&[u8]] = &[b"rz\r\n", b"rz\r", b"rz"];
+    for &pat in patterns {
+        if data.ends_with(pat) {
+            data.truncate(data.len() - pat.len());
+            return;
+        }
+    }
 }
 
 fn is_possible_zmodem_prefix(data: &[u8]) -> bool {

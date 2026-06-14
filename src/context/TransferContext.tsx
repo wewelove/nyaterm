@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useApp } from "@/context/AppContext";
 import { invoke } from "@/lib/invoke";
+import { filterEnqueueUploadRequests } from "@/lib/transferDuplicateResolution";
 
 export type TransferDirection = "upload" | "download";
 export type TransferKind = "file" | "directory";
@@ -30,6 +31,7 @@ export interface EnqueueUploadRequest {
   localPath: string;
   remotePath: string;
   kind: TransferKind;
+  duplicateStrategyOverride?: string;
 }
 
 export interface EnqueueDownloadRequest {
@@ -47,6 +49,7 @@ interface QueuedTransferRequest {
   remotePath: string;
   kind: TransferKind;
   direction: TransferDirection;
+  duplicateStrategyOverride?: string;
 }
 
 export interface TransferItem {
@@ -127,6 +130,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
   const transferMapRef = useRef(transferMap);
   const queuedTransfersRef = useRef<Map<string, QueuedTransferRequest>>(new Map());
   const parkedTransferIdsRef = useRef<Set<string>>(new Set());
+  const uploadFolderToastIdsRef = useRef<Map<string, string | number>>(new Map());
   const [queueRevision, setQueueRevision] = useState(0);
 
   const transfers = useMemo(() => Array.from(transferMap.values()), [transferMap]);
@@ -249,13 +253,62 @@ export function TransferProvider({ children }: { children: ReactNode }) {
         setQueueRevision((revision) => revision + 1);
       }
 
-      if (p.status === "completed" && p.direction === "download" && !p.parent_id) {
-        toast.success(
+      if (p.status === "completed" && !p.parent_id) {
+        if (p.direction === "download") {
+          toast.success(
+            kind === "directory"
+              ? t("fileTransfer.downloadFolderCompleted")
+              : t("fileTransfer.downloadCompleted"),
+            {
+              description: p.local_path,
+            },
+          );
+          return;
+        }
+
+        if (p.direction === "upload") {
+          const folderToastId = uploadFolderToastIdsRef.current.get(p.id);
+          if (folderToastId !== undefined) {
+            toast.dismiss(folderToastId);
+            uploadFolderToastIdsRef.current.delete(p.id);
+          }
+          toast.success(
+            kind === "directory"
+              ? t("fileTransfer.uploadFolderCompleted")
+              : t("fileTransfer.uploadCompleted"),
+            {
+              description: p.remote_path,
+            },
+          );
+        }
+        return;
+      }
+
+      if (
+        p.status === "started" &&
+        p.direction === "upload" &&
+        !p.parent_id &&
+        kind === "directory"
+      ) {
+        const toastId = toast.message(
+          t("fileTransfer.uploadFolderStarted", { name: p.file_name }),
+        );
+        uploadFolderToastIdsRef.current.set(p.id, toastId);
+        return;
+      }
+
+      if (p.status === "error" && p.direction === "upload" && !p.parent_id) {
+        const folderToastId = uploadFolderToastIdsRef.current.get(p.id);
+        if (folderToastId !== undefined) {
+          toast.dismiss(folderToastId);
+          uploadFolderToastIdsRef.current.delete(p.id);
+        }
+        toast.error(
           kind === "directory"
-            ? t("fileTransfer.downloadFolderCompleted")
-            : t("fileTransfer.downloadCompleted"),
+            ? t("fileTransfer.uploadFolderFailed", { name: p.file_name })
+            : t("fileTransfer.uploadFailed", { name: p.file_name }),
           {
-            description: p.local_path,
+            description: p.error_msg,
           },
         );
       }
@@ -366,6 +419,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
               localPath: request.localPath,
               remotePath: request.remotePath,
               transferId: nextQueued.id,
+              duplicateStrategyOverride: request.duplicateStrategyOverride,
             });
           } else if (request.direction === "upload") {
             await invoke("upload_local_file", {
@@ -373,6 +427,7 @@ export function TransferProvider({ children }: { children: ReactNode }) {
               localPath: request.localPath,
               remotePath: request.remotePath,
               transferId: nextQueued.id,
+              duplicateStrategyOverride: request.duplicateStrategyOverride,
             });
           } else if (request.kind === "directory") {
             await invoke("download_remote_directory", {
@@ -652,9 +707,20 @@ export function TransferProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const enqueueUploads = useCallback(
-    (uploads: EnqueueUploadRequest[]) =>
-      enqueueTransfers(uploads.map((upload) => ({ ...upload, direction: "upload" as const }))),
-    [enqueueTransfers],
+    (uploads: EnqueueUploadRequest[]) => {
+      void (async () => {
+        const filtered = await filterEnqueueUploadRequests(
+          uploads,
+          appSettings.transfer.duplicate_strategy,
+        );
+        if (filtered.length === 0) {
+          return;
+        }
+        enqueueTransfers(filtered.map((upload) => ({ ...upload, direction: "upload" as const })));
+      })();
+      return [];
+    },
+    [appSettings.transfer.duplicate_strategy, enqueueTransfers],
   );
 
   const enqueueDownloads = useCallback(

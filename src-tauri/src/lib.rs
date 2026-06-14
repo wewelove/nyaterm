@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::core::ai::AgentApprovalManager;
 use crate::core::ssh::{HostKeyVerifyManager, PendingAuthManager, TunnelManager};
+use crate::core::sftp::TransferDuplicateManager;
 use crate::core::{CloudSyncManager, QuickCommandsStore, RecordingManager, SessionManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,6 +33,7 @@ pub fn run() {
     let quick_commands_store = Arc::new(QuickCommandsStore::new());
     let cloud_sync_manager = Arc::new(CloudSyncManager::new());
     let agent_approval_manager = Arc::new(AgentApprovalManager::new());
+    let transfer_duplicate_manager = Arc::new(TransferDuplicateManager::new());
 
     let builder = tauri::Builder::default();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -64,6 +66,7 @@ pub fn run() {
         .manage(quick_commands_store.clone())
         .manage(cloud_sync_manager.clone())
         .manage(agent_approval_manager.clone())
+        .manage(transfer_duplicate_manager.clone())
         .setup(move |a| {
             app::setup(
                 a,
@@ -155,6 +158,7 @@ pub fn run() {
             cmd::sftp::pause_transfer,
             cmd::sftp::resume_transfer,
             cmd::sftp::cancel_transfer,
+            cmd::sftp::respond_transfer_duplicate,
             cmd::connection::get_saved_connections,
             cmd::connection::save_connection,
             cmd::connection::delete_connection,

@@ -157,3 +157,6 @@ windows = { version = "0.61", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[patch.crates-io]
+zmodem2 = { path = "vendor/zmodem2" }
