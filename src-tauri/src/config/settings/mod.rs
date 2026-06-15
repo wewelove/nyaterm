@@ -11,11 +11,11 @@ mod transfer;
 mod translation;
 
 pub use ai::{
-    ai_model_id_for_credential, ai_model_id_for_provider, decrypt_ai_settings, encrypt_ai_settings,
-    mask_ai_settings, merge_masked_ai_settings, normalize_ai_settings,
-    AgentCommandExecutionMode, AiCustomActionConfig, AiMode, AiModelConfigItem, AiModelSource,
-    AiProviderCredential, AiProviderKind, AiProviderProfile, AiSettings, RiskLevel,
-    AI_REQUEST_USER_AGENT_DEFAULT,
+    AI_REQUEST_USER_AGENT_DEFAULT, AgentCommandExecutionMode, AiCustomActionConfig, AiMode,
+    AiModelConfigItem, AiModelSource, AiProviderCredential, AiProviderKind, AiProviderProfile,
+    AiSettings, RiskLevel, ai_model_id_for_credential, ai_model_id_for_provider,
+    decrypt_ai_settings, encrypt_ai_settings, mask_ai_settings, merge_masked_ai_settings,
+    normalize_ai_settings,
 };
 pub use appearance::AppearanceSettings;
 pub use diagnostics::{DiagnosticsLogLevel, DiagnosticsSettings};
@@ -29,8 +29,8 @@ pub use transfer::TransferSettings;
 pub use translation::TranslationSettings;
 
 use super::cloud_sync::{
-    decrypt_cloud_sync_settings, encrypt_cloud_sync_settings, load_cloud_sync_settings,
-    CloudSyncSettings,
+    CloudSyncSettings, decrypt_cloud_sync_settings, encrypt_cloud_sync_settings,
+    load_cloud_sync_settings,
 };
 use super::ui::UiConfig;
 use crate::error::AppResult;

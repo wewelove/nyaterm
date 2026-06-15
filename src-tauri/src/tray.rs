@@ -595,8 +595,8 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
 }
 
 fn emit_tray_action(app: &AppHandle, payload: TrayActionPayload) {
-    let target_window_label = crate::app::focused_or_first_main_window(app)
-        .map(|window| window.label().to_string());
+    let target_window_label =
+        crate::app::focused_or_first_main_window(app).map(|window| window.label().to_string());
     let _ = app.emit(
         "tray-action",
         TargetedTrayActionPayload {

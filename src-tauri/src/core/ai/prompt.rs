@@ -146,13 +146,9 @@ fn normalize_prompt_locale(language: &str) -> String {
 }
 
 fn prompt_language_map() -> &'static HashMap<&'static str, PromptLanguage> {
-    static PROMPT_LANGUAGE_MAP: OnceLock<HashMap<&'static str, PromptLanguage>> =
-        OnceLock::new();
+    static PROMPT_LANGUAGE_MAP: OnceLock<HashMap<&'static str, PromptLanguage>> = OnceLock::new();
     PROMPT_LANGUAGE_MAP.get_or_init(|| {
-        HashMap::from([
-            ("zh-cn", PromptLanguage::ZhCn),
-            ("en", PromptLanguage::En),
-        ])
+        HashMap::from([("zh-cn", PromptLanguage::ZhCn), ("en", PromptLanguage::En)])
     })
 }
 
@@ -338,13 +334,27 @@ pub(super) fn build_prompt(request: &AiChatRequest, settings: &AiSettings) -> St
         )
     } else {
         let action = match request.action {
-            AiAction::GenerateCommand => "Generate 1 to 2 Shell commands from the natural language request",
-            AiAction::ExplainOutput => "Explain the recent terminal output and suggest the next step",
-            AiAction::ExplainSelected => "Explain the selected terminal text and suggest the next step",
-            AiAction::AnalyzeError => "Analyze the terminal error output and provide troubleshooting steps",
-            AiAction::RepairFromSelection => "Generate repair or troubleshooting commands from the selected content",
-            AiAction::CustomTerminalAction => "Handle the selected content using the configured terminal AI action",
-            AiAction::CustomFileAction => "Handle the file content using the configured file AI action",
+            AiAction::GenerateCommand => {
+                "Generate 1 to 2 Shell commands from the natural language request"
+            }
+            AiAction::ExplainOutput => {
+                "Explain the recent terminal output and suggest the next step"
+            }
+            AiAction::ExplainSelected => {
+                "Explain the selected terminal text and suggest the next step"
+            }
+            AiAction::AnalyzeError => {
+                "Analyze the terminal error output and provide troubleshooting steps"
+            }
+            AiAction::RepairFromSelection => {
+                "Generate repair or troubleshooting commands from the selected content"
+            }
+            AiAction::CustomTerminalAction => {
+                "Handle the selected content using the configured terminal AI action"
+            }
+            AiAction::CustomFileAction => {
+                "Handle the file content using the configured file AI action"
+            }
         };
         format!(
             r#"Task: {action}

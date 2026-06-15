@@ -6,8 +6,8 @@ use crate::utils::crypto::get_master_password;
 
 use super::cloud_sync::crypto::{decrypt_snapshot_bytes, encrypt_snapshot_bytes};
 use super::portable_snapshot::{
-    apply_portable_snapshot, build_portable_snapshot, decode_portable_snapshot,
-    encode_portable_snapshot, PortableSnapshotKind,
+    PortableSnapshotKind, apply_portable_snapshot, build_portable_snapshot,
+    decode_portable_snapshot, encode_portable_snapshot,
 };
 
 pub async fn export_config(app: &AppHandle, output_path: &str) -> AppResult<()> {

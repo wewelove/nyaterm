@@ -19,8 +19,8 @@
 use crate::error::{AppError, AppResult};
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit};
-use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::RwLock;

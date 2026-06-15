@@ -1,5 +1,5 @@
 use crate::error::{AppError, AppResult};
-use crate::utils::fuzzy::{fuzzy_search_items, FuzzyResult};
+use crate::utils::fuzzy::{FuzzyResult, fuzzy_search_items};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -426,8 +426,8 @@ fn temporary_path_for(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        sanitize_history_command, CommandHistoryStore, HistoryEntry, HistoryStoreFileV2,
-        HISTORY_STORE_VERSION, MAX_HISTORY,
+        CommandHistoryStore, HISTORY_STORE_VERSION, HistoryEntry, HistoryStoreFileV2, MAX_HISTORY,
+        sanitize_history_command,
     };
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};

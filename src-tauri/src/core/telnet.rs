@@ -4,19 +4,19 @@ use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
 use super::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
-    ZmodemTransfer, start_zmodem_transfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
+    start_zmodem_transfer,
 };
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::{RecordingManager, SessionOutputCoalescer};
 use crate::error::AppResult;
-use crate::observability::{log_event, log_rate_limited, StructuredLog, StructuredLogLevel};
+use crate::observability::{StructuredLog, StructuredLogLevel, log_event, log_rate_limited};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex as TokioMutex};
+use tokio::sync::{Mutex as TokioMutex, mpsc};
 
 const IAC: u8 = 255;
 const WILL: u8 = 251;
@@ -323,17 +323,12 @@ async fn telnet_session_task(
                                 }
                             }
                             let prepared_upload = if direction == ZmodemDirection::Upload {
-                                manager_reader
-                                    .take_pending_zmodem_upload(&sid_reader)
-                                    .await
+                                manager_reader.take_pending_zmodem_upload(&sid_reader).await
                             } else {
                                 None
                             };
-                            let (transfer, bootstrap_actions) = start_zmodem_transfer(
-                                direction,
-                                &initial_bytes,
-                                prepared_upload,
-                            );
+                            let (transfer, bootstrap_actions) =
+                                start_zmodem_transfer(direction, &initial_bytes, prepared_upload);
                             for action in bootstrap_actions {
                                 match action {
                                     ZmodemAction::SendToRemote(data) => {

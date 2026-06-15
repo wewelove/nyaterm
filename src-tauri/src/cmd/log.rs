@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::core::ssh::TunnelManager;
 use crate::core::SessionManager;
+use crate::core::ssh::TunnelManager;
 use crate::error::AppResult;
 use crate::observability::{self, FrontendLogEntry};
 

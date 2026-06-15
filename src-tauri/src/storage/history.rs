@@ -3,9 +3,9 @@ use redb::ReadableTable;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+use super::Storage;
 use super::tables::*;
 use super::util::*;
-use super::Storage;
 
 impl Storage {
     pub fn append_command_history(

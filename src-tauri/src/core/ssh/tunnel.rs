@@ -1,15 +1,15 @@
 //! SSH tunnel manager for local, remote, and dynamic (SOCKS5) port forwarding.
 
-use super::{create_ssh_handle, SshHandle, SshRawHandle};
+use super::{SshHandle, SshRawHandle, create_ssh_handle};
 use crate::config::{self, TunnelConfig};
 use crate::error::{AppError, AppResult};
-use crate::observability::{log_event, log_rate_limited, StructuredLog, StructuredLogLevel};
+use crate::observability::{StructuredLog, StructuredLogLevel, log_event, log_rate_limited};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 
 struct TunnelHandle {
     shutdown_tx: Option<oneshot::Sender<()>>,

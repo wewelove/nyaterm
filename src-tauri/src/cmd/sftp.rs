@@ -1,6 +1,6 @@
 use crate::core::SessionManager;
-use crate::core::sftp::{self, TransferDuplicateManager};
 use crate::core::sftp::duplicate::DuplicateChoice;
+use crate::core::sftp::{self, TransferDuplicateManager};
 use crate::error::{AppError, AppResult};
 use std::sync::Arc;
 

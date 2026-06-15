@@ -2,8 +2,8 @@ use super::client::{SshHandle, SshHandler, SshPostLoginConfig};
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::ssh::osc::{self, OscStripper, ShellKind};
 use crate::core::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
-    ZmodemTransfer, start_zmodem_transfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
+    start_zmodem_transfer,
 };
 use crate::core::{
     RecordingManager, SessionCommand, SessionManager, SessionOutputCoalescer, SharedCwd,

@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use crate::config::{self, CloudSyncHistoryEntry};
 use crate::error::AppResult;
 use crate::observability::{
-    self, StructuredLog, StructuredLogLevel, LOG_FILE_PREFIX, LOG_FILE_SUFFIX,
+    self, LOG_FILE_PREFIX, LOG_FILE_SUFFIX, StructuredLog, StructuredLogLevel,
 };
 use serde_json::Value;
 

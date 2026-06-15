@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use tauri::{async_runtime, Emitter, Manager};
+use tauri::{Emitter, Manager, async_runtime};
 use tokio::sync::{Mutex, Notify};
 
 use crate::config::{
@@ -17,14 +17,13 @@ use super::crypto::{decrypt_snapshot_bytes, encrypt_snapshot_bytes, require_mast
 use super::history_log::{log_history_entry, read_cloud_sync_history_from_logs};
 use super::operator::{build_remote, ensure_remote_layout};
 use super::remote::{
-    current_time_ms, elapsed_ms, load_backup_index, load_sync_pointer, remote_path,
-    write_backup_index, write_sync_pointer, RemoteSyncPointer, BACKUPS_SNAPSHOTS_DIR,
-    SYNC_SNAPSHOTS_DIR,
+    BACKUPS_SNAPSHOTS_DIR, RemoteSyncPointer, SYNC_SNAPSHOTS_DIR, current_time_ms, elapsed_ms,
+    load_backup_index, load_sync_pointer, remote_path, write_backup_index, write_sync_pointer,
 };
 
 use crate::core::portable_snapshot::{
-    apply_portable_snapshot, build_portable_snapshot, decode_portable_snapshot,
-    encode_portable_snapshot, PortableSnapshotKind,
+    PortableSnapshotKind, apply_portable_snapshot, build_portable_snapshot,
+    decode_portable_snapshot, encode_portable_snapshot,
 };
 
 const BACKUP_CHECK_INTERVAL: Duration = Duration::from_secs(60);

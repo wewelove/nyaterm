@@ -1,8 +1,8 @@
 use crate::error::AppResult;
 
+use super::Storage;
 use super::tables::*;
 use super::util::*;
-use super::Storage;
 
 impl Storage {
     pub fn save_credential(&self, credential: &crate::config::SavedCredential) -> AppResult<()> {

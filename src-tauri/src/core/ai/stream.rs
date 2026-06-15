@@ -12,7 +12,7 @@ use crate::config::{self, AiMode, AiSettings};
 use crate::core::session::SessionManager;
 use crate::error::{AppError, AppResult};
 
-use super::agent::{run_agent_stream, AgentApprovalManager};
+use super::agent::{AgentApprovalManager, run_agent_stream};
 use super::history::{append_message, load_history, save_user_message};
 use super::model::{build_client, resolve_request_model};
 use super::parser::{
@@ -21,7 +21,7 @@ use super::parser::{
 use super::prompt::{build_prompt, system_prompt};
 use super::redaction::{redact_context, redact_sensitive_text};
 use super::types::{
-    uuid, AiChatRequest, AiMessage, AiMessageRole, AiStreamEventPayload, AiStreamStart,
+    AiChatRequest, AiMessage, AiMessageRole, AiStreamEventPayload, AiStreamStart, uuid,
 };
 
 static ACTIVE_STREAMS: OnceLock<Mutex<HashMap<String, oneshot::Sender<()>>>> = OnceLock::new();
@@ -332,7 +332,9 @@ pub(super) async fn run_model_stream(
     let client = build_client(&resolved_model, settings)?;
     let prompt = build_prompt(request, settings);
 
-    let mut messages = vec![ChatMessage::system(system_prompt(&request.options.language))];
+    let mut messages = vec![ChatMessage::system(system_prompt(
+        &request.options.language,
+    ))];
 
     if let Some(session_id) = &request.session_id {
         let max_turns = request.options.history_turns as usize;

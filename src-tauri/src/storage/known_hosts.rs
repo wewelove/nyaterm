@@ -1,14 +1,14 @@
 use crate::error::AppResult;
-use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
 use hmac::Mac;
 use redb::ReadableTable;
 
+use super::KnownHostCheck;
+use super::Storage;
 use super::history::history_id;
 use super::tables::*;
 use super::util::*;
-use super::KnownHostCheck;
-use super::Storage;
 
 impl Storage {
     pub fn check_known_host(
@@ -137,11 +137,7 @@ fn parse_known_host_line(line: &str, now: u64) -> Option<KnownHostRecord> {
     let key_base64 = parts.next()?;
     let comment = {
         let rest = parts.collect::<Vec<_>>().join(" ");
-        if rest.is_empty() {
-            None
-        } else {
-            Some(rest)
-        }
+        if rest.is_empty() { None } else { Some(rest) }
     };
     let host_patterns = host_list
         .split(',')

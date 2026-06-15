@@ -1,10 +1,10 @@
 use crate::error::{AppError, AppResult};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::tables::*;
 use super::Storage;
+use super::tables::*;
 
 impl Storage {
     pub(super) fn read_json<T>(

@@ -4,14 +4,14 @@ use super::session::{
     SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
 };
 use super::zmodem::{
-    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent,
-    ZmodemTransfer, start_zmodem_transfer,
+    ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
+    start_zmodem_transfer,
 };
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::{RecordingManager, SessionOutputCoalescer};
 use crate::error::{AppError, AppResult};
-use crate::observability::{log_event, log_rate_limited, StructuredLog, StructuredLogLevel};
+use crate::observability::{StructuredLog, StructuredLogLevel, log_event, log_rate_limited};
 use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -301,18 +301,13 @@ fn serial_session_thread(
                             }
                             let prepared_upload = if direction == ZmodemDirection::Upload {
                                 rt_handle_reader.block_on(async {
-                                    manager_reader
-                                        .take_pending_zmodem_upload(&sid_reader)
-                                        .await
+                                    manager_reader.take_pending_zmodem_upload(&sid_reader).await
                                 })
                             } else {
                                 None
                             };
-                            let (transfer, bootstrap_actions) = start_zmodem_transfer(
-                                direction,
-                                &initial_bytes,
-                                prepared_upload,
-                            );
+                            let (transfer, bootstrap_actions) =
+                                start_zmodem_transfer(direction, &initial_bytes, prepared_upload);
                             for action in bootstrap_actions {
                                 match action {
                                     ZmodemAction::SendToRemote(data) => {

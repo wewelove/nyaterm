@@ -7,8 +7,8 @@ use crate::error::AppResult;
 use crate::storage::{self, SettingsDocKey};
 
 use super::types::{
-    now_rfc3339, uuid, AiAuditLog, AiChatRequest, AiMessage, AiMessageRole, AiSession,
-    AppendAiAuditRequest,
+    AiAuditLog, AiChatRequest, AiMessage, AiMessageRole, AiSession, AppendAiAuditRequest,
+    now_rfc3339, uuid,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -288,9 +288,11 @@ mod tests {
             .collect();
         assert!(!retained_sessions.contains("s-000"));
         assert!(retained_sessions.contains("s-219"));
-        assert!(history
-            .messages
-            .iter()
-            .all(|message| retained_sessions.contains(message.session_id.as_str())));
+        assert!(
+            history
+                .messages
+                .iter()
+                .all(|message| retained_sessions.contains(message.session_id.as_str()))
+        );
     }
 }

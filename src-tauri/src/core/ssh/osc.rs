@@ -65,9 +65,7 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
                 " NYATERM_PRUNE_HISTORY=1;",
                 " if [ -z \"${{NYATERM_INJ:-}}\" ]; then export NYATERM_INJ=1;",
                 " NYATERM_LAST_HISTCMD=\"${{HISTCMD-}}\";",
-
                 " __nyaterm_host(){{ hostname 2>/dev/null || printf localhost; }};",
-
                 " __nyaterm_prune_history(){{",
                 " [ -n \"${{NYATERM_PRUNE_HISTORY:-}}\" ] || return 0;",
                 " unset NYATERM_PRUNE_HISTORY;",
@@ -82,7 +80,6 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
                 " esac;",
                 " NYATERM_LAST_HISTCMD=\"${{HISTCMD-}}\";",
                 " }};",
-
                 " __nyaterm_emit_command(){{",
                 " local histcmd=\"${{HISTCMD-}}\";",
                 " if [ -n \"$histcmd\" ] && [ \"${{NYATERM_LAST_HISTCMD-}}\" != \"$histcmd\" ]; then",
@@ -94,13 +91,11 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
                 " fi;",
                 " fi;",
                 " }};",
-
                 " __nyaterm_prompt(){{",
                 " __nyaterm_prune_history;",
                 " __nyaterm_emit_command;",
                 " printf '\\033]7;file://%s%s\\007' \"$(__nyaterm_host)\" \"$PWD\";",
                 " }};",
-
                 " __nyaterm_install_prompt(){{",
                 " local decl;",
                 " decl=\"$(declare -p PROMPT_COMMAND 2>/dev/null || true)\";",
@@ -115,7 +110,6 @@ pub fn injection_script(shell: ShellKind, ready_marker: &str) -> Option<String> 
                 " PROMPT_COMMAND=\"__nyaterm_prompt${{PROMPT_COMMAND:+; $PROMPT_COMMAND}}\" ;; esac;",
                 " fi;",
                 " }};",
-
                 " __nyaterm_install_prompt;",
                 " fi;",
                 " printf '{}' 2>/dev/null\n",

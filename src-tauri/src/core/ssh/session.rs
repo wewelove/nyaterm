@@ -1,7 +1,7 @@
 use super::auth::{authenticate_handle, load_saved_ssh_config};
 use super::client::{
-    build_client_config, connect_via_stream, connect_with_proxy, SshConfig, SshConnectionHandles,
-    SshHandle, SshHandler, SshRawHandle,
+    SshConfig, SshConnectionHandles, SshHandle, SshHandler, SshRawHandle, build_client_config,
+    connect_via_stream, connect_with_proxy,
 };
 use super::io::{open_shell_channel, ssh_io_loop};
 use crate::config::AiExecutionProfile;

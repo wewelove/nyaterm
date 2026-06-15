@@ -1,6 +1,6 @@
 use crate::error::AppResult;
 use redb::ReadableTable;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use super::tables::*;
 use super::util::*;

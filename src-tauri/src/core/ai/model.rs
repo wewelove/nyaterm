@@ -8,8 +8,8 @@ use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use serde_json::Value;
 
 use crate::config::{
-    self, AiModelConfigItem, AiModelSource, AiProviderCredential, AiProviderKind, AiSettings,
-    ai_model_id_for_credential, AI_REQUEST_USER_AGENT_DEFAULT,
+    self, AI_REQUEST_USER_AGENT_DEFAULT, AiModelConfigItem, AiModelSource, AiProviderCredential,
+    AiProviderKind, AiSettings, ai_model_id_for_credential,
 };
 use crate::error::{AppError, AppResult};
 use crate::utils::url::{join_api_base_url, normalize_api_base_url};
@@ -233,9 +233,7 @@ fn effective_request_user_agent(settings: &AiSettings) -> &str {
 fn ai_request_headers(settings: &AiSettings) -> AppResult<HeaderMap> {
     let user_agent = effective_request_user_agent(settings);
     let user_agent_value = HeaderValue::from_str(user_agent).map_err(|error| {
-        AppError::Config(format!(
-            "Invalid AI User-Agent header value: {error}"
-        ))
+        AppError::Config(format!("Invalid AI User-Agent header value: {error}"))
     })?;
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, user_agent_value);
@@ -411,7 +409,9 @@ mod tests {
         let headers = ai_request_headers(&settings).unwrap();
 
         assert_eq!(
-            headers.get(USER_AGENT).and_then(|value| value.to_str().ok()),
+            headers
+                .get(USER_AGENT)
+                .and_then(|value| value.to_str().ok()),
             Some("nyaterm-test/1.0")
         );
     }
@@ -424,7 +424,9 @@ mod tests {
         let headers = ai_request_headers(&settings).unwrap();
 
         assert_eq!(
-            headers.get(USER_AGENT).and_then(|value| value.to_str().ok()),
+            headers
+                .get(USER_AGENT)
+                .and_then(|value| value.to_str().ok()),
             Some(AI_REQUEST_USER_AGENT_DEFAULT)
         );
     }

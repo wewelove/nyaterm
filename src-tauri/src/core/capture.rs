@@ -23,7 +23,7 @@
 //!    prompt that would otherwise appear as a blank line (since the
 //!    command itself was invisible).
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::collections::HashMap;
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -505,9 +505,10 @@ mod tests {
         let mut proc = OutputCaptureProcessor::new();
         let rx = register_capture(&mut proc, "m3");
 
-        assert!(proc
-            .process("__DF_CMD_START_m3__\nhello\n__DF_CMD_EN")
-            .is_empty());
+        assert!(
+            proc.process("__DF_CMD_START_m3__\nhello\n__DF_CMD_EN")
+                .is_empty()
+        );
         assert!(proc.process("D_m3_9__\n").is_empty());
 
         let captured = rx.await.unwrap();

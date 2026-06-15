@@ -1,4 +1,4 @@
-use crate::core::translate::{translate, TranslateResult};
+use crate::core::translate::{TranslateResult, translate};
 use crate::error::AppResult;
 
 #[tauri::command]

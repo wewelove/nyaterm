@@ -10,8 +10,8 @@ pub(crate) mod osc;
 mod session;
 mod tunnel;
 
-pub(crate) use auth::load_saved_ssh_config;
 pub use auth::PendingAuthManager;
+pub(crate) use auth::load_saved_ssh_config;
 pub use client::HostKeyVerifyManager;
 pub(crate) use client::{SshConfig, SshConnectionHandles, SshHandle, SshRawHandle};
 pub use session::{create_multiplexed_ssh_session, create_ssh_handle, create_ssh_session};

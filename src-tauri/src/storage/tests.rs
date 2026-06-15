@@ -104,13 +104,15 @@ fn connection_crud_and_group_index_roundtrip() {
     storage.save_connection(&one).expect("save one");
     storage.save_connection(&two).expect("save two");
     assert_eq!(storage.list_connections().expect("list").len(), 2);
-    assert!(storage
-        .get_connection("one")
-        .expect("get one")
-        .expect("one")
-        .auth
-        .and_then(|auth| auth.password)
-        .is_none());
+    assert!(
+        storage
+            .get_connection("one")
+            .expect("get one")
+            .expect("one")
+            .auth
+            .and_then(|auth| auth.password)
+            .is_none()
+    );
     assert_eq!(
         storage
             .get_connection_with_secret("one")
@@ -145,10 +147,12 @@ fn connection_crud_and_group_index_roundtrip() {
     one.group_id = Some("group-b".to_string());
     one.auth.as_mut().expect("auth").password = Some("cipher-one".to_string());
     storage.save_connection(&one).expect("move one");
-    assert!(storage
-        .list_connections_by_group(Some("group-a"))
-        .expect("list old group")
-        .is_empty());
+    assert!(
+        storage
+            .list_connections_by_group(Some("group-a"))
+            .expect("list old group")
+            .is_empty()
+    );
     assert_eq!(
         storage
             .list_connections_by_group(Some("group-b"))
@@ -237,11 +241,13 @@ fn v1_migration_splits_sessions_deletes_legacy_tables_and_keeps_external_backup(
     let compat = storage.load_sessions().expect("load sessions");
     assert_eq!(compat.groups[0].id, "group-a");
     assert_eq!(compat.connections[0].id, "conn-a");
-    assert!(compat.connections[0]
-        .auth
-        .as_ref()
-        .and_then(|auth| auth.password.as_deref())
-        .is_some());
+    assert!(
+        compat.connections[0]
+            .auth
+            .as_ref()
+            .and_then(|auth| auth.password.as_deref())
+            .is_some()
+    );
     let legacy_docs =
         migration::read_legacy_docs(&storage.db, tables::JSON_DOCS_TABLE).expect("legacy docs");
     assert!(legacy_docs.is_empty());
@@ -288,7 +294,9 @@ fn known_hosts_repository_preserves_structured_marker_hashed_and_raw_lines() {
         .expect("load known hosts");
     assert!(rendered.contains("# comment"));
     assert!(rendered.contains("@cert-authority *.example.com ssh-ed25519 AAAA ca"));
-    assert!(rendered
-        .contains("|1|nNMSH1CuL4w6FneDFn3ONf5paeg=|q8MlMsHsBk6GOpNwYqhnCeXKlRk= ssh-rsa BBBB"));
+    assert!(
+        rendered
+            .contains("|1|nNMSH1CuL4w6FneDFn3ONf5paeg=|q8MlMsHsBk6GOpNwYqhnCeXKlRk= ssh-rsa BBBB")
+    );
     let _ = fs::remove_dir_all(dir);
 }

@@ -3,7 +3,7 @@ use crate::core::CloudSyncManager;
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
 use crate::utils::crypto;
-use crate::utils::fonts::{list_system_font_families, list_system_font_infos, FontInfo};
+use crate::utils::fonts::{FontInfo, list_system_font_families, list_system_font_infos};
 use std::sync::Arc;
 use tauri::Emitter;
 

@@ -16,8 +16,8 @@ mod window_state;
 use std::sync::Arc;
 
 use crate::core::ai::AgentApprovalManager;
-use crate::core::ssh::{HostKeyVerifyManager, PendingAuthManager, TunnelManager};
 use crate::core::sftp::TransferDuplicateManager;
+use crate::core::ssh::{HostKeyVerifyManager, PendingAuthManager, TunnelManager};
 use crate::core::{CloudSyncManager, QuickCommandsStore, RecordingManager, SessionManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -1,6 +1,6 @@
-use crate::core::ssh::SshConnectionHandles;
-use crate::core::stats::{parse_stats_output, RemoteStats, SYSINFO_SCRIPT};
 use crate::core::SessionManager;
+use crate::core::ssh::SshConnectionHandles;
+use crate::core::stats::{RemoteStats, SYSINFO_SCRIPT, parse_stats_output};
 use crate::error::{AppError, AppResult};
 use std::sync::Arc;
 use std::time::Duration;

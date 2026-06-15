@@ -25,7 +25,7 @@ pub use tables::{
 
 use crate::error::{AppError, AppResult};
 use redb::Database;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};

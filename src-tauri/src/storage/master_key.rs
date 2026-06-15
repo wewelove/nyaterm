@@ -1,8 +1,8 @@
 use crate::error::AppResult;
 
+use super::Storage;
 use super::tables::*;
 use super::util::*;
-use super::Storage;
 
 impl Storage {
     pub fn load_master_key_token(&self) -> AppResult<Option<String>> {

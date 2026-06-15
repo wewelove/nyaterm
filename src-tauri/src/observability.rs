@@ -5,14 +5,14 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tauri::AppHandle;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::{fmt as subscriber_fmt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt as subscriber_fmt, util::SubscriberInitExt};
 use zip::write::SimpleFileOptions;
 
 use crate::config::{self, DiagnosticsLogLevel, DiagnosticsSettings};
@@ -806,8 +806,8 @@ fn format_timestamp() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_log_entry_json, sanitize_value, Value};
-    use serde_json::{json, Map};
+    use super::{Value, build_log_entry_json, sanitize_value};
+    use serde_json::{Map, json};
 
     #[test]
     fn sanitize_value_redacts_secret_fields() {

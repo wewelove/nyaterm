@@ -19,9 +19,9 @@ use super::prompt::{agent_system_prompt, build_agent_prompt, build_observation_m
 use super::redaction::{redact_context, redact_sensitive_text};
 use super::stream::{active_streams, emit_stream_event, is_cancelled};
 use super::types::{
-    now_rfc3339, uuid, AgentActionKind, AgentLlmResponse, AgentStepAction, AgentStepPayload,
-    AgentStepStatus, AiCaptureEvent, AiChatRequest, AiMessage, AiMessageRole, AiStreamEventPayload,
-    AppendAiAuditRequest, CommandObservation,
+    AgentActionKind, AgentLlmResponse, AgentStepAction, AgentStepPayload, AgentStepStatus,
+    AiCaptureEvent, AiChatRequest, AiMessage, AiMessageRole, AiStreamEventPayload,
+    AppendAiAuditRequest, CommandObservation, now_rfc3339, uuid,
 };
 
 // ---------------------------------------------------------------------------
@@ -343,11 +343,7 @@ enum ApprovalDecision {
 }
 
 fn max_risk(a: RiskLevel, b: RiskLevel) -> RiskLevel {
-    if a >= b {
-        a
-    } else {
-        b
-    }
+    if a >= b { a } else { b }
 }
 
 fn risk_label(risk: &RiskLevel) -> &'static str {
@@ -376,9 +372,9 @@ fn is_root_rm_command(command: &str) -> bool {
     if tokens.first() != Some(&"rm") {
         return false;
     }
-    let has_recursive_force = tokens.iter().any(|token| {
-        token.starts_with('-') && token.contains('r') && token.contains('f')
-    });
+    let has_recursive_force = tokens
+        .iter()
+        .any(|token| token.starts_with('-') && token.contains('r') && token.contains('f'));
     has_recursive_force
         && tokens
             .iter()
@@ -492,16 +488,44 @@ fn assess_local_command_risk(command: &str) -> (RiskLevel, String) {
     }
 
     let readonly_prefixes = [
-        "ls", "pwd", "whoami", "id", "uname", "cat", "less", "head", "tail", "grep", "rg",
-        "find", "df", "du", "free", "top", "ps", "ss", "netstat", "ip ", "journalctl",
-        "systemctl status", "docker ps", "docker logs", "kubectl get", "kubectl describe",
-        "git status", "git log", "git diff",
+        "ls",
+        "pwd",
+        "whoami",
+        "id",
+        "uname",
+        "cat",
+        "less",
+        "head",
+        "tail",
+        "grep",
+        "rg",
+        "find",
+        "df",
+        "du",
+        "free",
+        "top",
+        "ps",
+        "ss",
+        "netstat",
+        "ip ",
+        "journalctl",
+        "systemctl status",
+        "docker ps",
+        "docker logs",
+        "kubectl get",
+        "kubectl describe",
+        "git status",
+        "git log",
+        "git diff",
     ];
     if readonly_prefixes
         .iter()
         .any(|prefix| compact == prefix.trim() || compact.starts_with(&format!("{prefix} ")))
     {
-        return (RiskLevel::Low, "matches read-only diagnostic pattern".to_string());
+        return (
+            RiskLevel::Low,
+            "matches read-only diagnostic pattern".to_string(),
+        );
     }
 
     (
@@ -543,7 +567,10 @@ fn decide_agent_command_execution(
             if assessment.effective_risk == RiskLevel::Critical {
                 return (
                     ApprovalDecision::NeedsApproval,
-                    Some("critical risk always requires manual confirmation in smart mode".to_string()),
+                    Some(
+                        "critical risk always requires manual confirmation in smart mode"
+                            .to_string(),
+                    ),
                 );
             }
             if assessment.effective_risk <= settings.agent_smart_auto_execute_max_risk {
@@ -634,9 +661,18 @@ mod tests {
     #[test]
     fn local_risk_rules_cover_expected_levels() {
         assert_eq!(assess_local_command_risk("ls -la").0, RiskLevel::Low);
-        assert_eq!(assess_local_command_risk("touch app.log").0, RiskLevel::Medium);
-        assert_eq!(assess_local_command_risk("sudo apt install nginx").0, RiskLevel::High);
-        assert_eq!(assess_local_command_risk("rm -rf /tmp/build-cache").0, RiskLevel::High);
+        assert_eq!(
+            assess_local_command_risk("touch app.log").0,
+            RiskLevel::Medium
+        );
+        assert_eq!(
+            assess_local_command_risk("sudo apt install nginx").0,
+            RiskLevel::High
+        );
+        assert_eq!(
+            assess_local_command_risk("rm -rf /tmp/build-cache").0,
+            RiskLevel::High
+        );
         assert_eq!(assess_local_command_risk("rm -rf /").0, RiskLevel::Critical);
     }
 
@@ -667,7 +703,8 @@ mod tests {
             ApprovalDecision::Auto
         );
 
-        let critical = assess_agent_command_risk(&parsed_response(Some(RiskLevel::Low)), "rm -rf /");
+        let critical =
+            assess_agent_command_risk(&parsed_response(Some(RiskLevel::Low)), "rm -rf /");
         assert_eq!(
             decide_agent_command_execution(&settings, &critical).0,
             ApprovalDecision::NeedsApproval
@@ -1167,8 +1204,7 @@ pub(super) async fn run_agent_stream(
                     false,
                 );
 
-                let obs_msg =
-                    build_observation_message(&obs, &command, &request.options.language);
+                let obs_msg = build_observation_message(&obs, &command, &request.options.language);
                 conversation.push(ChatMessage::user(obs_msg));
             }
             other => {

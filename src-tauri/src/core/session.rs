@@ -3,11 +3,11 @@
 //! Tracks SSH/local sessions, routes commands, coordinates command submission
 //! confirmation, and persists history for fuzzy search.
 
-use super::history::{sanitize_history_command, CommandHistoryStore};
+use super::history::{CommandHistoryStore, sanitize_history_command};
 use crate::config::AiExecutionProfile;
 use crate::core::capture::CapturedOutput;
 use crate::error::{AppError, AppResult};
-use crate::utils::fuzzy::{fuzzy_search_items, FuzzyResult};
+use crate::utils::fuzzy::{FuzzyResult, fuzzy_search_items};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::Emitter;
-use tokio::sync::{mpsc, oneshot, Mutex, Notify};
+use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 
 const HISTORY_SAVE_DEBOUNCE: Duration = Duration::from_millis(100);
 const HISTORY_EVENT_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -283,18 +283,12 @@ impl SessionManager {
         &self,
         session_id: &str,
     ) -> Option<Vec<std::path::PathBuf>> {
-        self.pending_zmodem_uploads
-            .lock()
-            .await
-            .remove(session_id)
+        self.pending_zmodem_uploads.lock().await.remove(session_id)
     }
 
     /// Clears prepared ZMODEM upload paths without starting a transfer.
     pub async fn clear_pending_zmodem_upload(&self, session_id: &str) {
-        self.pending_zmodem_uploads
-            .lock()
-            .await
-            .remove(session_id);
+        self.pending_zmodem_uploads.lock().await.remove(session_id);
     }
 
     /// Sends a command to a session's I/O loop; errors if session not found.
@@ -666,12 +660,12 @@ mod tests {
     use crate::config::AiExecutionProfile;
 
     use super::{
-        normalize_cwd_path, SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType,
+        SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, normalize_cwd_path,
     };
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use tokio::sync::{mpsc, Mutex};
+    use tokio::sync::{Mutex, mpsc};
 
     fn test_handle(id: &str, session_type: SessionType, injection_active: bool) -> SessionHandle {
         let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
@@ -794,7 +788,10 @@ mod tests {
             .send_command("local-flow", SessionCommand::PauseOutput)
             .await
             .expect("pause command");
-        assert!(matches!(cmd_rx.recv().await, Some(SessionCommand::PauseOutput)));
+        assert!(matches!(
+            cmd_rx.recv().await,
+            Some(SessionCommand::PauseOutput)
+        ));
 
         manager
             .send_command("local-flow", SessionCommand::ResumeOutput)

@@ -663,10 +663,12 @@ mod tests {
         assert!(normalize_ai_settings(&mut settings));
         assert_eq!(settings.schema_version, 3);
         assert!(!settings.provider_credentials.is_empty());
-        assert!(settings
-            .models
-            .iter()
-            .any(|model| model.name == "deepseek-chat"));
+        assert!(
+            settings
+                .models
+                .iter()
+                .any(|model| model.name == "deepseek-chat")
+        );
         assert_eq!(
             settings.default_model_id.as_deref(),
             Some("deepseek:deepseek-chat")

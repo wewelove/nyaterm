@@ -1,6 +1,6 @@
 use super::super::{default_false, default_true};
 use crate::utils::fonts::{
-    normalize_terminal_font_family, DEFAULT_TERMINAL_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY,
+    DEFAULT_TERMINAL_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY, normalize_terminal_font_family,
 };
 use serde::{Deserialize, Serialize};
 

@@ -1,9 +1,9 @@
 use crate::error::AppResult;
 use redb::{ReadableDatabase, ReadableTable};
 
+use super::Storage;
 use super::tables::*;
 use super::util::*;
-use super::Storage;
 
 impl Storage {
     pub fn load_sessions(&self) -> AppResult<crate::config::SessionsConfig> {

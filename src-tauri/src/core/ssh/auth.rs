@@ -1,14 +1,14 @@
 use super::client::{SshAuth, SshConfig, SshHandler, SshPostLoginConfig};
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
-use russh::client::{self, KeyboardInteractiveAuthResponse};
 use russh::MethodKind;
+use russh::client::{self, KeyboardInteractiveAuthResponse};
 use serde::Serialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 
 /// Manages pending keyboard-interactive auth requests awaiting user input from the frontend.
 pub struct PendingAuthManager {
@@ -846,7 +846,7 @@ async fn finish_keyboard_interactive(
                                 prompt: prompt.prompt.clone(),
                                 echo: prompt.echo,
                             })
-                        .collect(),
+                            .collect(),
                         otp_entry_id: otp_info.map(|i| i.otp_id.clone()),
                         target_window_label: target_window_label.map(str::to_string),
                     };
@@ -1048,9 +1048,9 @@ fn is_password_keyboard_interactive_prompt(prompt: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_password_keyboard_interactive_prompt, is_totp_code_reused, record_totp_code_use,
-        resolve_password_material, seconds_until_next_totp_step, should_auto_fill_password_prompts,
-        used_totp_codes, KeyboardInteractiveMode, TotpUseCandidate,
+        KeyboardInteractiveMode, TotpUseCandidate, is_password_keyboard_interactive_prompt,
+        is_totp_code_reused, record_totp_code_use, resolve_password_material,
+        seconds_until_next_totp_step, should_auto_fill_password_prompts, used_totp_codes,
     };
     use crate::config::ConnectionAuth;
     use russh::client::Prompt;
@@ -1121,9 +1121,11 @@ mod tests {
 
     #[test]
     fn additional_factor_mode_never_exposes_password_fallback() {
-        assert!(KeyboardInteractiveMode::AdditionalFactor
-            .password()
-            .is_none());
+        assert!(
+            KeyboardInteractiveMode::AdditionalFactor
+                .password()
+                .is_none()
+        );
     }
 
     #[test]
@@ -1135,9 +1137,11 @@ mod tests {
 
         let error = resolve_password_material(None, &auth).unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("No password for this connection"));
+        assert!(
+            error
+                .to_string()
+                .contains("No password for this connection")
+        );
     }
 
     #[test]
