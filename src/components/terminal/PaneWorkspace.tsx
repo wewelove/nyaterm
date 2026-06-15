@@ -24,6 +24,7 @@ interface PaneWorkspaceProps {
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
   onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
+  onConnectionError?: (tabId: string, paneId: string, sessionId: string, error: string) => void;
 }
 
 function SplitView({
@@ -35,6 +36,7 @@ function SplitView({
   onReconnectPane,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
 }: {
   split: SplitPane;
   tab: Tab;
@@ -44,6 +46,7 @@ function SplitView({
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
   onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
+  onConnectionError?: (tabId: string, paneId: string, sessionId: string, error: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isHorizontalSplit = split.direction === "horizontal";
@@ -77,6 +80,7 @@ function SplitView({
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
           onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+          onConnectionError={onConnectionError}
         />
       </div>
       <ResizeHandle
@@ -97,6 +101,7 @@ function SplitView({
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
           onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+          onConnectionError={onConnectionError}
         />
       </div>
     </div>
@@ -113,6 +118,7 @@ function PaneNodeView({
   onReconnectPane,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
 }: {
   node: PaneNode;
   tab: Tab;
@@ -123,6 +129,7 @@ function PaneNodeView({
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
   onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
+  onConnectionError?: (tabId: string, paneId: string, sessionId: string, error: string) => void;
 }) {
   const { t } = useTranslation();
   const { syncGroups, broadcastToAll } = useApp();
@@ -149,6 +156,7 @@ function PaneNodeView({
         onReconnectPane={onReconnectPane}
         onReconnected={onReconnected}
         onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+        onConnectionError={onConnectionError}
       />
     );
   }
@@ -261,6 +269,9 @@ function PaneNodeView({
           connectionId={node.connectionId}
           onReconnected={onReconnected}
           onDisconnectedCloseRequested={() => void onDisconnectedCloseRequested?.(tab.id, node.id)}
+          onConnectionError={(sessionId, error) =>
+            onConnectionError?.(tab.id, node.id, sessionId, error)
+          }
           syncGroups={syncGroups}
           broadcastToAll={broadcastToAll}
         />
@@ -277,6 +288,7 @@ function PaneXTerminal({
   connectionId,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
   syncGroups,
   broadcastToAll,
 }: {
@@ -287,6 +299,7 @@ function PaneXTerminal({
   connectionId?: string;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
   onDisconnectedCloseRequested?: () => void;
+  onConnectionError?: (sessionId: string, error: string) => void;
   syncGroups: import("@/types/global").SyncGroup[];
   broadcastToAll: boolean;
 }) {
@@ -379,6 +392,7 @@ function PaneXTerminal({
       connectionId={connectionId}
       onReconnected={onReconnected}
       onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+      onConnectionError={onConnectionError}
       syncPeerSessionIds={syncPeerSessionIds}
       syncOverlay={syncOverlay}
     />
@@ -393,6 +407,7 @@ function PaneWorkspace({
   onReconnectPane,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
 }: PaneWorkspaceProps) {
   return (
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
@@ -406,6 +421,7 @@ function PaneWorkspace({
         onReconnectPane={onReconnectPane}
         onReconnected={onReconnected}
         onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+        onConnectionError={onConnectionError}
       />
     </div>
   );

@@ -114,6 +114,7 @@ export default function XTerminal({
   connectionId,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
   syncPeerSessionIds,
   syncOverlay,
 }: XTerminalProps) {
@@ -161,6 +162,7 @@ export default function XTerminal({
   const connectionIdRef = useRef(connectionId);
   const onReconnectedRef = useRef(onReconnected);
   const onDisconnectedCloseRequestedRef = useRef(onDisconnectedCloseRequested);
+  const onConnectionErrorRef = useRef(onConnectionError);
   const sessionIdRef = useRef(sessionId);
   const syncPeerSessionIdsRef = useRef(syncPeerSessionIds);
   const visibleRef = useRef(visible);
@@ -196,6 +198,10 @@ export default function XTerminal({
   useEffect(() => {
     onDisconnectedCloseRequestedRef.current = onDisconnectedCloseRequested;
   }, [onDisconnectedCloseRequested]);
+
+  useEffect(() => {
+    onConnectionErrorRef.current = onConnectionError;
+  }, [onConnectionError]);
 
   useEffect(() => {
     syncPeerSessionIdsRef.current = syncPeerSessionIds;
@@ -1035,6 +1041,7 @@ export default function XTerminal({
     });
 
     let outputUnlisten: UnlistenFn | null = null;
+    let errorUnlisten: UnlistenFn | null = null;
     let closedUnlisten: UnlistenFn | null = null;
     let focusUnlisten: UnlistenFn | null = null;
     let captureUnlisten: UnlistenFn | null = null;
@@ -1365,6 +1372,24 @@ export default function XTerminal({
         return;
       }
       outputUnlisten = nextOutputUnlisten;
+
+      const nextErrorUnlisten = await listen<string>(`session-error-${sessionId}`, (event) => {
+        if (!isTerminalAlive()) return;
+        const message = String(event.payload || tRef.current("terminal.connectionFailed"));
+        disconnectedRef.current = true;
+        terminal.write(`\r\n\x1b[31m[${tRef.current("terminal.connectionFailed")}]\x1b[0m\r\n`);
+        terminal.write(`\x1b[31m${message}\x1b[0m\r\n`);
+        toast.error(message);
+        onConnectionErrorRef.current?.(sessionIdRef.current, message);
+        inputStateRef.current = createTerminalInputState();
+        clearCredentialPromptInputMode();
+        dismissSuggestions();
+      });
+      if (disposed) {
+        nextErrorUnlisten();
+        return;
+      }
+      errorUnlisten = nextErrorUnlisten;
 
       const nextClosedUnlisten = await listen<void>(`session-closed-${sessionId}`, () => {
         if (!isTerminalAlive()) return;
@@ -1727,6 +1752,7 @@ export default function XTerminal({
 
       observer.disconnect();
       if (outputUnlisten) outputUnlisten();
+      if (errorUnlisten) errorUnlisten();
       if (closedUnlisten) closedUnlisten();
       if (focusUnlisten) focusUnlisten();
       if (captureUnlisten) captureUnlisten();

@@ -38,6 +38,7 @@ interface TabWindowsWorkspaceProps {
   onReconnectPane?: (tabId: string, paneId: string) => void | Promise<void>;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
   onDisconnectedCloseRequested?: (tabId: string, paneId: string) => void | Promise<void>;
+  onConnectionError?: (tabId: string, paneId: string, sessionId: string, error: string) => void;
 }
 
 function SplitWindow({
@@ -68,6 +69,7 @@ function SplitWindow({
   onReconnectPane,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
 }: {
   split: TerminalWindowSplit;
 } & Omit<TabWindowsWorkspaceProps, "layout">) {
@@ -119,6 +121,7 @@ function SplitWindow({
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
           onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+          onConnectionError={onConnectionError}
         />
       </div>
       <ResizeHandle direction={isHorizontal ? "vertical" : "horizontal"} onResize={handleResize} />
@@ -151,6 +154,7 @@ function SplitWindow({
           onReconnectPane={onReconnectPane}
           onReconnected={onReconnected}
           onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+          onConnectionError={onConnectionError}
         />
       </div>
     </div>
@@ -184,6 +188,7 @@ function LeafWindow({
   onReconnectPane,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
 }: {
   leaf: TerminalWindowLeaf;
 } & Omit<TabWindowsWorkspaceProps, "layout" | "onUpdateWindowSplitRatio">) {
@@ -253,6 +258,7 @@ function LeafWindow({
             onReconnectPane={onReconnectPane}
             onReconnected={onReconnected}
             onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+            onConnectionError={onConnectionError}
           />
         ))}
       </div>
@@ -288,6 +294,7 @@ function WindowNodeView({
   onReconnectPane,
   onReconnected,
   onDisconnectedCloseRequested,
+  onConnectionError,
 }: {
   node: TerminalWindowNode;
 } & Omit<TabWindowsWorkspaceProps, "layout">) {
@@ -321,6 +328,7 @@ function WindowNodeView({
         onReconnectPane={onReconnectPane}
         onReconnected={onReconnected}
         onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+        onConnectionError={onConnectionError}
       />
     );
   }
@@ -353,6 +361,7 @@ function WindowNodeView({
       onReconnectPane={onReconnectPane}
       onReconnected={onReconnected}
       onDisconnectedCloseRequested={onDisconnectedCloseRequested}
+      onConnectionError={onConnectionError}
     />
   );
 }

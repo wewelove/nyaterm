@@ -12,7 +12,7 @@ use crate::core::capture::OutputCaptureProcessor;
 use crate::core::{RecordingManager, SessionOutputCoalescer};
 use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event, log_rate_limited};
-use serialport::{DataBits, FlowControl, Parity, StopBits};
+use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -97,6 +97,26 @@ pub async fn create_serial_session(
     });
 
     let session_id = uuid::Uuid::new_v4().to_string();
+    let port = match open_serial_port(&config) {
+        Ok(port) => port,
+        Err(e) => {
+            log_serial_connection_failed(&session_id, connection_id.as_ref(), &config, &e);
+            return Err(AppError::Config(format!(
+                "Failed to open serial port '{}': {}",
+                config.port_name, e
+            )));
+        }
+    };
+    let reader_port = match port.try_clone() {
+        Ok(port) => port,
+        Err(e) => {
+            log_serial_connection_failed(&session_id, connection_id.as_ref(), &config, &e);
+            return Err(AppError::Config(format!(
+                "Failed to open serial port '{}': {}",
+                config.port_name, e
+            )));
+        }
+    };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
 
     let session_info = SessionInfo {
@@ -125,10 +145,55 @@ pub async fn create_serial_session(
     let rt_handle = tokio::runtime::Handle::current();
 
     std::thread::spawn(move || {
-        serial_session_thread(app, sid, mgr, cmd_rx, rt_handle, config, connection_id);
+        serial_session_thread(
+            app,
+            sid,
+            mgr,
+            cmd_rx,
+            rt_handle,
+            config,
+            connection_id,
+            port,
+            reader_port,
+        );
     });
 
     Ok(session_id)
+}
+
+fn open_serial_port(config: &SerialConfig) -> serialport::Result<Box<dyn SerialPort>> {
+    serialport::new(&config.port_name, config.baud_rate)
+        .data_bits(parse_data_bits(config.data_bits))
+        .parity(parse_parity(&config.parity))
+        .stop_bits(parse_stop_bits(&config.stop_bits))
+        .flow_control(FlowControl::None)
+        .timeout(Duration::from_millis(100))
+        .open()
+}
+
+fn log_serial_connection_failed(
+    session_id: &str,
+    connection_id: Option<&String>,
+    config: &SerialConfig,
+    error: &dyn std::fmt::Display,
+) {
+    log_event(StructuredLog {
+        level: StructuredLogLevel::Error,
+        domain: "session.lifecycle".to_string(),
+        event: "session.connection_failed".to_string(),
+        message: "Failed to open serial port".to_string(),
+        ids: Some(serde_json::json!({
+            "session_id": session_id,
+            "connection_id": connection_id,
+        })),
+        data: Some(serde_json::json!({
+            "session_type": "Serial",
+            "port_name": config.port_name.clone(),
+            "baud_rate": config.baud_rate,
+        })),
+        error: Some(serde_json::json!({ "message": error.to_string() })),
+        client_timestamp: None,
+    });
 }
 
 fn serial_session_thread(
@@ -139,75 +204,10 @@ fn serial_session_thread(
     rt_handle: tokio::runtime::Handle,
     config: SerialConfig,
     connection_id: Option<String>,
+    port: Box<dyn SerialPort>,
+    mut reader_port: Box<dyn SerialPort>,
 ) {
-    let port = match serialport::new(&config.port_name, config.baud_rate)
-        .data_bits(parse_data_bits(config.data_bits))
-        .parity(parse_parity(&config.parity))
-        .stop_bits(parse_stop_bits(&config.stop_bits))
-        .flow_control(FlowControl::None)
-        .timeout(Duration::from_millis(100))
-        .open()
-    {
-        Ok(p) => p,
-        Err(e) => {
-            log_event(StructuredLog {
-                level: StructuredLogLevel::Error,
-                domain: "session.lifecycle".to_string(),
-                event: "session.connection_failed".to_string(),
-                message: "Failed to open serial port".to_string(),
-                ids: Some(serde_json::json!({
-                    "session_id": session_id.clone(),
-                    "connection_id": connection_id.clone(),
-                })),
-                data: Some(serde_json::json!({
-                    "session_type": "Serial",
-                    "port_name": config.port_name.clone(),
-                    "baud_rate": config.baud_rate,
-                })),
-                error: Some(serde_json::json!({ "message": e.to_string() })),
-                client_timestamp: None,
-            });
-            let _ = app.emit(
-                &format!("session-error-{}", session_id),
-                format!("Failed to open serial port: {}", e),
-            );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
-            rt_handle.block_on(async { manager.remove_session(&session_id).await });
-            return;
-        }
-    };
-
     let backspace_as_bs = config.backspace_mode == "ctrl_h";
-    let mut reader_port = match port.try_clone() {
-        Ok(port) => port,
-        Err(e) => {
-            log_event(StructuredLog {
-                level: StructuredLogLevel::Error,
-                domain: "session.lifecycle".to_string(),
-                event: "session.connection_failed".to_string(),
-                message: "Failed to clone serial port for reading".to_string(),
-                ids: Some(serde_json::json!({
-                    "session_id": session_id.clone(),
-                    "connection_id": connection_id.clone(),
-                })),
-                data: Some(serde_json::json!({
-                    "session_type": "Serial",
-                    "port_name": config.port_name.clone(),
-                    "baud_rate": config.baud_rate,
-                })),
-                error: Some(serde_json::json!({ "message": e.to_string() })),
-                client_timestamp: None,
-            });
-            let _ = app.emit(
-                &format!("session-error-{}", session_id),
-                format!("Failed to clone serial port: {}", e),
-            );
-            let _ = app.emit(&format!("session-closed-{}", session_id), ());
-            rt_handle.block_on(async { manager.remove_session(&session_id).await });
-            return;
-        }
-    };
-
     let port_writer = Arc::new(Mutex::new(port));
     let output_event = format!("terminal-output-{}", session_id);
     let closed_event = format!("session-closed-{}", session_id);

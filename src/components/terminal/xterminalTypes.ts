@@ -18,6 +18,7 @@ export interface XTerminalProps {
   connectionId?: string;
   onReconnected?: (oldSessionId: string, newSessionId: string) => void;
   onDisconnectedCloseRequested?: () => void;
+  onConnectionError?: (sessionId: string, error: string) => void;
   syncPeerSessionIds?: string[];
   syncOverlay?: SyncOverlayState;
 }

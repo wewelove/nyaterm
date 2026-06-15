@@ -1016,6 +1016,16 @@ function App() {
     [tabs, updatePaneSession],
   );
 
+  const handleConnectionError = useCallback(
+    (tabId: string, paneId: string, sessionId: string, error: string) => {
+      const tab = tabs.find((item) => item.id === tabId);
+      const pane = tab ? findSessionPaneById(tab.root, paneId) : null;
+      if (!pane || pane.sessionId !== sessionId || pane.connectError) return;
+      markPaneConnectionFailed(tabId, paneId, error);
+    },
+    [markPaneConnectionFailed, tabs],
+  );
+
   // --- Shortcut callbacks ---
 
   const handleNewLocalTerminal = useCallback(() => {
@@ -2279,6 +2289,7 @@ function App() {
           onReconnectPane: handleReconnectPane,
           onReconnected: handleReconnected,
           onDisconnectedCloseRequested: handleCloseDisconnectedPane,
+          onConnectionError: handleConnectionError,
         }}
         tabsCount={tabs.length}
         emptyWorkspace={{
