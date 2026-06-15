@@ -81,6 +81,22 @@ impl SftpSession {
         self.session.set_timeout(secs);
     }
 
+    /// Returns limits advertised by the server via the `limits@openssh.com`
+    /// extension, when available.
+    pub fn limits(&self) -> Option<Limits> {
+        self.features.limits
+    }
+
+    /// Returns the effective maximum packet length after applying server limits.
+    pub fn effective_max_packet_len(&self) -> u32 {
+        self.features.max_packet_len
+    }
+
+    /// Returns the maximum number of open handles advertised by the server.
+    pub fn max_open_handles(&self) -> Option<u64> {
+        self.features.limits.and_then(|limits| limits.open_handles)
+    }
+
     /// Closes the inner channel stream.
     pub async fn close(&self) -> SftpResult<()> {
         self.session.close_session()
@@ -272,5 +288,51 @@ impl SftpSession {
         }
 
         self.session.statvfs(path).await.map(Some)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl SftpSession {
+        fn for_test_with_limits(limits: Option<Limits>, max_packet_len: u32) -> Self {
+            let stream = tokio::io::duplex(64).0;
+            Self {
+                session: Arc::new(RawSftpSession::new(stream)),
+                features: Features {
+                    hardlink: false,
+                    fsync: false,
+                    statvfs: false,
+                    limits,
+                    max_concurrent_writes: 8,
+                    max_packet_len,
+                },
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn exposes_server_limits_and_effective_packet_len() {
+        let limits = Limits {
+            packet_len: Some(65_536),
+            read_len: Some(32_768),
+            write_len: Some(32_768),
+            open_handles: Some(128),
+        };
+        let session = SftpSession::for_test_with_limits(Some(limits), 65_536);
+
+        assert_eq!(session.limits(), Some(limits));
+        assert_eq!(session.effective_max_packet_len(), 65_536);
+        assert_eq!(session.max_open_handles(), Some(128));
+    }
+
+    #[tokio::test]
+    async fn max_open_handles_is_none_without_limits_extension() {
+        let session = SftpSession::for_test_with_limits(None, 262_144);
+
+        assert_eq!(session.limits(), None);
+        assert_eq!(session.effective_max_packet_len(), 262_144);
+        assert_eq!(session.max_open_handles(), None);
     }
 }

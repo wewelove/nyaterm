@@ -93,7 +93,7 @@ impl Handler for SessionInner {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Limits {
     pub packet_len: Option<u64>,
     pub read_len: Option<u64>,

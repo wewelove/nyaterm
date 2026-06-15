@@ -11,12 +11,12 @@ use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
 use russh::ChannelMsg;
 use russh_sftp::client::{Config as SftpClientConfig, SftpSession};
 use russh_sftp::protocol::{FileAttributes, FileType};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 const SFTP_MIN_REQUEST_KIB: usize = 64;
 const SFTP_MAX_REQUEST_KIB: usize = 256;
@@ -28,6 +28,13 @@ const SFTP_MIN_CONCURRENT_WRITES: usize = 8;
 const SFTP_MAX_CONCURRENT_WRITES: usize = 16;
 const SFTP_PACKET_OVERHEAD_RESERVE: usize = 1024;
 const TRANSFER_PROGRESS_INTERVAL: Duration = Duration::from_millis(50);
+const SFTP_SMALL_FILE_THRESHOLD: u64 = 512 * 1024;
+const SFTP_DEFAULT_SMALL_FILE_CONCURRENCY: usize = 64;
+const SFTP_MAX_SMALL_FILE_CONCURRENCY: usize = 256;
+const SFTP_DEFAULT_SESSION_POOL_SIZE: usize = 4;
+const SFTP_MAX_SESSION_POOL_SIZE: usize = 4;
+const SFTP_LARGE_FILE_CONCURRENCY: usize = 2;
+const SFTP_HANDLE_RESERVE: usize = 8;
 
 fn sftp_pipeline_config(ts: &crate::config::TransferSettings) -> (usize, usize, usize) {
     let request_kib =
@@ -55,13 +62,63 @@ fn sftp_payload_size(request_kib: usize) -> usize {
         .max(32 * 1024)
 }
 
-fn transfer_task_concurrency(value: u32) -> usize {
-    (value as usize).clamp(1, 10)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SftpDirectoryConcurrency {
+    session_pool_size: usize,
+    small_file_concurrency: usize,
+    large_file_concurrency: usize,
 }
 
-fn background_transfer_task_concurrency(value: u32) -> usize {
-    let configured = transfer_task_concurrency(value);
-    if configured > 1 { configured - 1 } else { 1 }
+fn sftp_directory_concurrency(max_open_handles: Option<u64>) -> SftpDirectoryConcurrency {
+    let handle_budget = max_open_handles
+        .map(|handles| handles.saturating_sub(SFTP_HANDLE_RESERVE as u64) as usize)
+        .filter(|handles| *handles > 0);
+
+    let small_file_concurrency = handle_budget
+        .unwrap_or(SFTP_DEFAULT_SMALL_FILE_CONCURRENCY)
+        .clamp(1, SFTP_MAX_SMALL_FILE_CONCURRENCY);
+    let large_file_concurrency = SFTP_LARGE_FILE_CONCURRENCY
+        .min(small_file_concurrency)
+        .max(1);
+    let session_pool_size = SFTP_DEFAULT_SESSION_POOL_SIZE
+        .min(SFTP_MAX_SESSION_POOL_SIZE)
+        .min(small_file_concurrency)
+        .max(1);
+
+    SftpDirectoryConcurrency {
+        session_pool_size,
+        small_file_concurrency,
+        large_file_concurrency,
+    }
+}
+
+#[derive(Clone)]
+struct SftpSessionPool {
+    sessions: Arc<Vec<Arc<SftpSession>>>,
+}
+
+impl SftpSessionPool {
+    async fn new(backend: &SftpBackend, size: usize, config: SftpClientConfig) -> AppResult<Self> {
+        let mut sessions = Vec::with_capacity(size);
+        for _ in 0..size {
+            sessions.push(Arc::new(
+                backend.open_sftp_with_client_config(config.clone()).await?,
+            ));
+        }
+        Ok(Self {
+            sessions: Arc::new(sessions),
+        })
+    }
+
+    fn session_for(&self, index: usize) -> Arc<SftpSession> {
+        self.sessions[index % self.sessions.len()].clone()
+    }
+
+    async fn close_all(&self) {
+        for session in self.sessions.iter() {
+            let _ = session.close().await;
+        }
+    }
 }
 
 fn log_transfer_performance(
@@ -426,41 +483,16 @@ fn join_remote_child(parent: &str, name: &str) -> String {
     }
 }
 
-async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> AppResult<()> {
-    let path = normalize_remote_dir_path(path);
-    let dir = sftp.read_dir(path).await?;
-    let mut errors: Vec<String> = Vec::new();
-
-    for entry in dir {
-        let name = entry.file_name();
-        if name == "." || name == ".." {
-            continue;
-        }
-        let child = join_remote_child(path, &name);
-        let file_type = entry.file_type();
-
-        if file_type == FileType::Dir {
-            if let Err(e) = Box::pin(remove_dir_recursive(sftp, &child)).await {
-                errors.push(e.to_string());
-            }
-        } else {
-            if let Err(e) = sftp.remove_file(&child).await {
-                errors.push(format!("'{}': {}", child, e));
-            }
-        }
+fn is_safe_recursive_remove_target(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || matches!(trimmed, "/" | "." | "..") {
+        return false;
     }
 
-    if !errors.is_empty() {
-        return Err(AppError::Channel(format!(
-            "{} item(s) could not be deleted:\n{}",
-            errors.len(),
-            errors.join("\n")
-        )));
-    }
-
-    sftp.remove_dir(path)
-        .await
-        .map_err(|e| AppError::Channel(format!("Failed to remove directory '{}': {}", path, e)))
+    let normalized = normalize_remote_dir_path(trimmed);
+    !normalized.is_empty()
+        && !matches!(normalized, "/" | "." | "..")
+        && !normalized.split('/').any(|part| part == "..")
 }
 
 async fn resolve_remote_path(
@@ -737,23 +769,15 @@ async fn cleanup_cancelled_upload(backend: &SftpBackend, remote_path: &str) -> A
 }
 
 async fn read_sftp_chunk(
-    mut remote_file: russh_sftp::client::fs::File,
+    remote_file: russh_sftp::client::fs::File,
     offset: u64,
     len: usize,
 ) -> AppResult<(u64, Vec<u8>, russh_sftp::client::fs::File)> {
-    use std::io::SeekFrom;
-    use tokio::io::{AsyncReadExt, AsyncSeekExt};
-
-    remote_file
-        .seek(SeekFrom::Start(offset))
-        .await
-        .map_err(|e| AppError::Channel(format!("Seek failed: {}", e)))?;
-    let mut buf = vec![0u8; len];
-    remote_file
-        .read_exact(&mut buf)
+    let data = remote_file
+        .read_at(offset, len)
         .await
         .map_err(|e| AppError::Channel(format!("SFTP read failed: {}", e)))?;
-    Ok((offset, buf, remote_file))
+    Ok((offset, data, remote_file))
 }
 
 async fn download_remote_file_inner_with_controller(
@@ -1284,7 +1308,9 @@ impl RemoteFs for SftpBackend {
         if sftp_attrs_is_symlink(&meta) {
             sftp.remove_file(path).await?;
         } else if sftp_attrs_is_dir(&meta) {
-            remove_dir_recursive(&sftp, path).await?;
+            let _ = sftp.close().await;
+            self.remove_dir_fast(path).await?;
+            return Ok(());
         } else {
             sftp.remove_file(path).await?;
         }
@@ -1605,10 +1631,7 @@ impl RemoteFs for SftpBackend {
             .unwrap_or_default();
         let (request_kib, pipeline_depth, max_concurrent_writes) =
             sftp_pipeline_config(&transfer_settings);
-        let concurrent_tasks =
-            background_transfer_task_concurrency(transfer_settings.download_threads);
         let transfer_started = Instant::now();
-        let total_files = self.count_remote_files(remote_path).await?;
         let directory_controller = create_directory_transfer_controller(
             transfer_id,
             session_id,
@@ -1616,7 +1639,7 @@ impl RemoteFs for SftpBackend {
             remote_path,
             local_path,
             "download",
-            total_files,
+            0,
             0,
         );
         register_transfer(directory_controller.clone());
@@ -1626,18 +1649,12 @@ impl RemoteFs for SftpBackend {
         );
 
         let result = async {
-            let mut files = Vec::new();
-            self.collect_remote_directory_files(
-                remote_path,
-                local_path,
-                &directory_controller,
-                &mut files,
-            )
-            .await?;
+            let inventory = self
+                .collect_remote_directory_inventory(remote_path, local_path, &directory_controller)
+                .await?;
             self.download_remote_directory_files(
                 app,
-                session_id,
-                files,
+                inventory,
                 directory_controller.clone(),
                 &transfer_settings,
             )
@@ -1646,18 +1663,19 @@ impl RemoteFs for SftpBackend {
         .await;
 
         match result {
-            Ok(completed_count) => {
+            Ok(summary) => {
                 log_transfer_performance(
                     "download",
                     "directory",
-                    0,
+                    summary.bytes,
                     transfer_started.elapsed(),
                     request_kib,
                     pipeline_depth,
                     max_concurrent_writes,
-                    concurrent_tasks,
+                    summary.small_file_concurrency,
                 );
-                directory_controller.update_item_progress(completed_count, total_files);
+                directory_controller.update_progress(summary.bytes, summary.bytes);
+                directory_controller.update_item_progress(summary.completed, summary.total_files);
                 let _ = app.emit(
                     "transfer-event",
                     &directory_controller.build_event("completed", 0, None),
@@ -1712,10 +1730,7 @@ impl RemoteFs for SftpBackend {
 
         let (request_kib, pipeline_depth, max_concurrent_writes) =
             sftp_pipeline_config(transfer_settings);
-        let concurrent_tasks =
-            background_transfer_task_concurrency(transfer_settings.upload_threads);
         let transfer_started = Instant::now();
-        let local_stats = collect_local_directory_stats(local_path).await?;
         let directory_controller = create_directory_transfer_controller(
             transfer_id,
             session_id,
@@ -1723,8 +1738,8 @@ impl RemoteFs for SftpBackend {
             remote_path,
             local_path,
             "upload",
-            local_stats.file_count,
-            local_stats.total_size,
+            0,
+            0,
         );
         register_transfer(directory_controller.clone());
         let _ = app.emit(
@@ -1733,40 +1748,38 @@ impl RemoteFs for SftpBackend {
         );
 
         let result = async {
-            let mut files = Vec::new();
-            self.collect_local_directory_files(
-                local_path,
-                remote_path,
-                &directory_controller,
-                &mut files,
-            )
-            .await?;
+            let inventory = self
+                .collect_local_directory_inventory(
+                    local_path,
+                    remote_path,
+                    &directory_controller,
+                    transfer_settings,
+                )
+                .await?;
             self.upload_local_directory_files(
                 app,
-                session_id,
-                files,
-                directory_controller.clone(),
-                &transfer_settings,
+                inventory,
+                &directory_controller,
+                transfer_settings,
             )
             .await
         }
         .await;
 
         match result {
-            Ok(completed_count) => {
+            Ok(summary) => {
                 log_transfer_performance(
                     "upload",
                     "directory",
-                    local_stats.total_size,
+                    summary.bytes,
                     transfer_started.elapsed(),
                     request_kib,
                     pipeline_depth,
                     max_concurrent_writes,
-                    concurrent_tasks,
+                    summary.small_file_concurrency,
                 );
-                directory_controller
-                    .update_progress(local_stats.total_size, local_stats.total_size);
-                directory_controller.update_item_progress(completed_count, local_stats.file_count);
+                directory_controller.update_progress(summary.bytes, summary.bytes);
+                directory_controller.update_item_progress(summary.completed, summary.total_files);
                 let _ = app.emit(
                     "transfer-event",
                     &directory_controller.build_event("completed", 0, None),
@@ -1794,92 +1807,321 @@ impl RemoteFs for SftpBackend {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct RemoteDirectoryFile {
-    name: String,
     remote_path: String,
     local_path: String,
+    size: u64,
+    mtime: Option<u32>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct LocalDirectoryFile {
-    name: String,
     local_path: String,
     remote_path: String,
+    size: u64,
+    mtime: Option<std::time::SystemTime>,
+    atime: Option<std::time::SystemTime>,
+}
+
+struct RemoteDirectoryInventory {
+    files: Vec<RemoteDirectoryFile>,
+    total_files: u64,
+    total_size: u64,
+    max_open_handles: Option<u64>,
+}
+
+struct LocalDirectoryInventory {
+    files: Vec<LocalDirectoryFile>,
+    total_files: u64,
+    total_size: u64,
+    max_open_handles: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DirectoryTransferSummary {
+    completed: u64,
+    total_files: u64,
+    bytes: u64,
+    small_file_concurrency: usize,
+}
+
+struct RemoveInventory {
+    files: Vec<String>,
+    dirs: Vec<String>,
+}
+
+async fn collect_remove_inventory(sftp: &SftpSession, path: &str) -> AppResult<RemoveInventory> {
+    let path = normalize_remote_dir_path(path).to_string();
+    let dir = sftp.read_dir(&path).await?;
+    let mut files = Vec::new();
+    let mut dirs = vec![path.clone()];
+
+    for entry in dir {
+        let name = entry.file_name();
+        if name == "." || name == ".." {
+            continue;
+        }
+        let child = join_remote_child(&path, &name);
+        if entry.file_type() == FileType::Dir {
+            let child_inventory = Box::pin(collect_remove_inventory(sftp, &child)).await?;
+            files.extend(child_inventory.files);
+            dirs.extend(child_inventory.dirs);
+        } else {
+            files.push(child);
+        }
+    }
+
+    Ok(RemoveInventory { files, dirs })
+}
+
+async fn remove_inventory_concurrent(
+    pool: SftpSessionPool,
+    mut inventory: RemoveInventory,
+    concurrency: SftpDirectoryConcurrency,
+) -> AppResult<()> {
+    let worker_count = sftp_directory_file_concurrency(inventory.files.len(), concurrency);
+    let queue = Arc::new(StdMutex::new(VecDeque::from(std::mem::take(
+        &mut inventory.files,
+    ))));
+    let mut join_set: tokio::task::JoinSet<AppResult<()>> = tokio::task::JoinSet::new();
+
+    for worker_index in 0..worker_count {
+        let pool = pool.clone();
+        let queue = queue.clone();
+        join_set.spawn(async move {
+            loop {
+                let file = {
+                    let mut queue = queue.lock().unwrap();
+                    queue.pop_front()
+                };
+                let Some(file) = file else {
+                    return Ok(());
+                };
+                let session = pool.session_for(worker_index);
+                session.remove_file(&file).await.map_err(|e| {
+                    AppError::Channel(format!("Failed to remove file '{}': {}", file, e))
+                })?;
+            }
+        });
+    }
+
+    let mut errors = Vec::new();
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => errors.push(error.to_string()),
+            Err(error) => errors.push(format!("Directory delete worker panicked: {error}")),
+        }
+    }
+
+    inventory
+        .dirs
+        .sort_by_key(|dir| std::cmp::Reverse(dir.matches('/').count()));
+    for dir in inventory.dirs {
+        let session = pool.session_for(0);
+        if let Err(error) = session.remove_dir(&dir).await {
+            errors.push(format!("Failed to remove directory '{}': {}", dir, error));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Channel(format!(
+            "{} item(s) could not be deleted:\n{}",
+            errors.len(),
+            errors.join("\n")
+        )))
+    }
 }
 
 impl SftpBackend {
-    async fn count_remote_files(&self, remote_path: &str) -> AppResult<u64> {
-        let mut count = 0;
-        let mut stack = vec![remote_path.to_string()];
-        while let Some(path) = stack.pop() {
-            let entries = self.list_dir(&path).await?;
-            for entry in entries {
-                let child_remote = format!("{}/{}", path.trim_end_matches('/'), entry.name);
-                if entry.is_dir {
-                    stack.push(child_remote);
-                } else if !entry.is_symlink {
-                    count += 1;
+    async fn remove_dir_fast(&self, path: &str) -> AppResult<()> {
+        if is_safe_recursive_remove_target(path) {
+            let command = format!("rm -rf -- {}", sh_quote(normalize_remote_dir_path(path)));
+            match self.exec_ok(&command).await {
+                Ok(_) => return Ok(()),
+                Err(error) => {
+                    tracing::warn!(
+                        remote_path = path,
+                        error = %error,
+                        "Remote rm -rf fast path failed, falling back to SFTP recursive delete"
+                    );
                 }
             }
         }
-        Ok(count)
+
+        self.remove_dir_concurrent_sftp(path).await
     }
 
-    async fn collect_remote_directory_files(
+    async fn remove_dir_concurrent_sftp(&self, path: &str) -> AppResult<()> {
+        let sftp = self.open_sftp().await?;
+        let max_open_handles = sftp.max_open_handles();
+        let result = collect_remove_inventory(&sftp, path).await;
+        let _ = sftp.close().await;
+        let inventory = result?;
+
+        if inventory.files.is_empty() && inventory.dirs.len() <= 1 {
+            let sftp = self.open_sftp().await?;
+            let result = sftp.remove_dir(normalize_remote_dir_path(path)).await;
+            let _ = sftp.close().await;
+            return result.map_err(|e| {
+                AppError::Channel(format!(
+                    "Failed to remove directory '{}': {}",
+                    normalize_remote_dir_path(path),
+                    e
+                ))
+            });
+        }
+
+        let concurrency = sftp_directory_concurrency(max_open_handles);
+        let pool = SftpSessionPool::new(
+            self,
+            concurrency.session_pool_size,
+            SftpClientConfig::default(),
+        )
+        .await?;
+        let result = remove_inventory_concurrent(pool.clone(), inventory, concurrency).await;
+        pool.close_all().await;
+        result
+    }
+
+    async fn collect_remote_directory_inventory(
         &self,
         remote_path: &str,
         local_path: &str,
         directory_controller: &Arc<TransferController>,
-        files: &mut Vec<RemoteDirectoryFile>,
-    ) -> AppResult<()> {
+    ) -> AppResult<RemoteDirectoryInventory> {
+        let sftp = self.open_sftp().await?;
+        let max_open_handles = sftp.max_open_handles();
+        let result = self
+            .collect_remote_directory_inventory_inner(
+                &sftp,
+                remote_path,
+                local_path,
+                directory_controller,
+            )
+            .await;
+        let _ = sftp.close().await;
+        result.map(|(files, total_size)| {
+            let total_files = files.len() as u64;
+            directory_controller.update_totals(total_size, total_files);
+            RemoteDirectoryInventory {
+                files,
+                total_files,
+                total_size,
+                max_open_handles,
+            }
+        })
+    }
+
+    async fn collect_remote_directory_inventory_inner(
+        &self,
+        sftp: &SftpSession,
+        remote_path: &str,
+        local_path: &str,
+        directory_controller: &Arc<TransferController>,
+    ) -> AppResult<(Vec<RemoteDirectoryFile>, u64)> {
         wait_for_transfer_ready(directory_controller).await?;
 
         tokio::fs::create_dir_all(local_path)
             .await
             .map_err(|e| AppError::Channel(format!("Failed to create local dir: {}", e)))?;
 
-        let entries = self.list_dir(remote_path).await?;
+        let dir = sftp.read_dir(remote_path).await?;
+        let mut files = Vec::new();
+        let mut total_size = 0u64;
 
-        for entry in entries {
+        for entry in dir {
             wait_for_transfer_ready(directory_controller).await?;
 
-            let child_remote = format!("{}/{}", remote_path.trim_end_matches('/'), entry.name);
-            let child_local = append_safe_local_child_path(local_path, &entry.name);
+            let name = entry.file_name();
+            let child_remote = join_remote_child(normalize_remote_dir_path(remote_path), &name);
+            let child_local = append_safe_local_child_path(local_path, &name);
+            let attrs = entry.metadata();
+            let file_type = entry.file_type();
+            let is_symlink = file_type == FileType::Symlink;
+            let is_symlink_to_dir = is_symlink
+                && sftp
+                    .metadata(&child_remote)
+                    .await
+                    .ok()
+                    .as_ref()
+                    .map_or(false, sftp_attrs_is_dir);
 
-            if entry.is_dir {
-                Box::pin(self.collect_remote_directory_files(
-                    &child_remote,
-                    &child_local,
-                    directory_controller,
-                    files,
-                ))
-                .await?;
-            } else if !entry.is_symlink {
+            if file_type == FileType::Dir || is_symlink_to_dir {
+                let (child_files, child_size) =
+                    Box::pin(self.collect_remote_directory_inventory_inner(
+                        sftp,
+                        &child_remote,
+                        &child_local,
+                        directory_controller,
+                    ))
+                    .await?;
+                total_size = total_size.saturating_add(child_size);
+                files.extend(child_files);
+            } else if !is_symlink {
+                let size = attrs.size.unwrap_or(0);
+                total_size = total_size.saturating_add(size);
                 files.push(RemoteDirectoryFile {
-                    name: entry.name,
                     remote_path: child_remote,
                     local_path: child_local,
+                    size,
+                    mtime: attrs.mtime,
                 });
+                directory_controller.update_totals(total_size, files.len() as u64);
             }
         }
 
-        Ok(())
+        Ok((files, total_size))
     }
 
-    async fn collect_local_directory_files(
+    async fn collect_local_directory_inventory(
         &self,
         local_path: &str,
         remote_path: &str,
         directory_controller: &Arc<TransferController>,
-        files: &mut Vec<LocalDirectoryFile>,
-    ) -> AppResult<()> {
+        transfer_settings: &crate::config::TransferSettings,
+    ) -> AppResult<LocalDirectoryInventory> {
+        let (request_kib, _, max_concurrent_writes) = sftp_pipeline_config(transfer_settings);
+        let sftp = self
+            .open_sftp_with_client_config(sftp_client_config(request_kib, max_concurrent_writes))
+            .await?;
+        let max_open_handles = sftp.max_open_handles();
+        let result = self
+            .collect_local_directory_inventory_inner(
+                &sftp,
+                local_path,
+                remote_path,
+                directory_controller,
+            )
+            .await;
+        let _ = sftp.close().await;
+        result.map(|(files, total_size)| {
+            let total_files = files.len() as u64;
+            directory_controller.update_totals(total_size, total_files);
+            LocalDirectoryInventory {
+                files,
+                total_files,
+                total_size,
+                max_open_handles,
+            }
+        })
+    }
+
+    async fn collect_local_directory_inventory_inner(
+        &self,
+        sftp: &SftpSession,
+        local_path: &str,
+        remote_path: &str,
+        directory_controller: &Arc<TransferController>,
+    ) -> AppResult<(Vec<LocalDirectoryFile>, u64)> {
         wait_for_transfer_ready(directory_controller).await?;
 
-        let sftp = self.open_sftp().await?;
         let _ = sftp.create_dir(remote_path).await;
-        let _ = sftp.close().await;
-
+        let mut files = Vec::new();
+        let mut total_size = 0u64;
         let mut read_dir = tokio::fs::read_dir(local_path)
             .await
             .map_err(|e| AppError::Channel(format!("Failed to read local dir: {}", e)))?;
@@ -1895,267 +2137,517 @@ impl SftpBackend {
                 .file_type()
                 .await
                 .map_err(|e| AppError::Channel(format!("Failed to get file type: {}", e)))?;
-            let entry_name = entry.file_name().to_string_lossy().to_string();
-            let child_local = format!(
-                "{}/{}",
-                local_path.trim_end_matches(['/', '\\']),
-                entry_name
-            );
-            let child_remote = format!("{}/{}", remote_path.trim_end_matches('/'), entry_name);
+            let name = entry.file_name().to_string_lossy().to_string();
+            let child_local = std::path::Path::new(local_path)
+                .join(&name)
+                .to_string_lossy()
+                .to_string();
+            let child_remote = join_remote_child(normalize_remote_dir_path(remote_path), &name);
 
             if file_type.is_dir() {
-                Box::pin(self.collect_local_directory_files(
-                    &child_local,
-                    &child_remote,
-                    directory_controller,
-                    files,
-                ))
-                .await?;
+                let (child_files, child_size) =
+                    Box::pin(self.collect_local_directory_inventory_inner(
+                        sftp,
+                        &child_local,
+                        &child_remote,
+                        directory_controller,
+                    ))
+                    .await?;
+                total_size = total_size.saturating_add(child_size);
+                files.extend(child_files);
             } else if file_type.is_file() {
+                let metadata = entry.metadata().await.map_err(|e| {
+                    AppError::Channel(format!("Failed to read file metadata: {}", e))
+                })?;
+                let size = metadata.len();
+                total_size = total_size.saturating_add(size);
                 files.push(LocalDirectoryFile {
-                    name: entry_name,
                     local_path: child_local,
                     remote_path: child_remote,
+                    size,
+                    mtime: metadata.modified().ok(),
+                    atime: metadata.accessed().ok(),
                 });
+                directory_controller.update_totals(total_size, files.len() as u64);
             }
         }
 
-        Ok(())
+        Ok((files, total_size))
     }
 
     async fn download_remote_directory_files(
         &self,
         app: &tauri::AppHandle,
-        session_id: &str,
-        files: Vec<RemoteDirectoryFile>,
+        inventory: RemoteDirectoryInventory,
         directory_controller: Arc<TransferController>,
         transfer_settings: &crate::config::TransferSettings,
-    ) -> AppResult<u64> {
-        if files.is_empty() {
-            return Ok(0);
+    ) -> AppResult<DirectoryTransferSummary> {
+        let concurrency = sftp_directory_concurrency(inventory.max_open_handles);
+        if inventory.files.is_empty() {
+            return Ok(DirectoryTransferSummary {
+                completed: 0,
+                total_files: 0,
+                bytes: 0,
+                small_file_concurrency: concurrency.small_file_concurrency,
+            });
         }
 
-        let concurrency = background_transfer_task_concurrency(transfer_settings.download_threads)
-            .min(files.len())
-            .max(1);
-        let completed_count = Arc::new(AtomicU64::new(0));
-        let total = directory_controller
-            .item_count_total()
-            .unwrap_or(files.len() as u64);
-        let mut join_set: tokio::task::JoinSet<AppResult<()>> = tokio::task::JoinSet::new();
-        let mut next_index = 0usize;
-        let mut first_err: Option<AppError> = None;
-
-        while next_index < files.len() && join_set.len() < concurrency {
-            self.spawn_download_directory_file(
-                &mut join_set,
-                app,
-                session_id,
-                files[next_index].clone(),
-                directory_controller.clone(),
-                transfer_settings.clone(),
-            );
-            next_index += 1;
-        }
-
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(Ok(())) => {
-                    let completed = completed_count.fetch_add(1, Ordering::SeqCst) + 1;
-                    directory_controller.update_item_progress(completed, total);
-                    let _ = app.emit(
-                        "transfer-event",
-                        &directory_controller.build_event("progress", 0, None),
-                    );
-                    if first_err.is_none() {
-                        while next_index < files.len() && join_set.len() < concurrency {
-                            self.spawn_download_directory_file(
-                                &mut join_set,
-                                app,
-                                session_id,
-                                files[next_index].clone(),
-                                directory_controller.clone(),
-                                transfer_settings.clone(),
-                            );
-                            next_index += 1;
-                        }
-                    }
-                }
-                Ok(Err(error)) => {
-                    if first_err.is_none() {
-                        first_err = Some(error);
-                    }
-                }
-                Err(error) => {
-                    if first_err.is_none() {
-                        first_err = Some(AppError::Channel(format!(
-                            "Directory download task panicked: {}",
-                            error
-                        )));
-                    }
-                }
-            }
-        }
-
-        if let Some(error) = first_err {
-            Err(error)
-        } else {
-            Ok(completed_count.load(Ordering::SeqCst))
-        }
-    }
-
-    fn spawn_download_directory_file(
-        &self,
-        join_set: &mut tokio::task::JoinSet<AppResult<()>>,
-        app: &tauri::AppHandle,
-        session_id: &str,
-        file: RemoteDirectoryFile,
-        directory_controller: Arc<TransferController>,
-        transfer_settings: crate::config::TransferSettings,
-    ) {
-        let backend = self.clone();
-        let app = app.clone();
-        let session_id = session_id.to_string();
-        join_set.spawn(async move {
-            wait_for_transfer_ready(&directory_controller).await?;
-            let child_controller = create_child_file_transfer_controller(
-                None,
-                &session_id,
-                file.name,
-                &file.remote_path,
-                &file.local_path,
-                "download",
-                Some(directory_controller.id()),
-            );
-            download_remote_file_inner_with_controller(
-                &backend,
-                &app,
-                &session_id,
-                &file.remote_path,
-                &file.local_path,
-                &transfer_settings,
-                child_controller,
-                Some(directory_controller),
-            )
-            .await
-        });
+        let (request_kib, _, max_concurrent_writes) = sftp_pipeline_config(transfer_settings);
+        let pool = SftpSessionPool::new(
+            self,
+            concurrency.session_pool_size,
+            sftp_client_config(request_kib, max_concurrent_writes),
+        )
+        .await?;
+        let result = run_download_directory_workers(
+            app,
+            pool.clone(),
+            inventory,
+            directory_controller,
+            transfer_settings,
+            concurrency,
+        )
+        .await;
+        pool.close_all().await;
+        result
     }
 
     async fn upload_local_directory_files(
         &self,
         app: &tauri::AppHandle,
-        session_id: &str,
-        files: Vec<LocalDirectoryFile>,
-        directory_controller: Arc<TransferController>,
+        inventory: LocalDirectoryInventory,
+        directory_controller: &Arc<TransferController>,
         transfer_settings: &crate::config::TransferSettings,
-    ) -> AppResult<u64> {
-        if files.is_empty() {
-            return Ok(0);
+    ) -> AppResult<DirectoryTransferSummary> {
+        let concurrency = sftp_directory_concurrency(inventory.max_open_handles);
+        if inventory.files.is_empty() {
+            return Ok(DirectoryTransferSummary {
+                completed: 0,
+                total_files: 0,
+                bytes: 0,
+                small_file_concurrency: concurrency.small_file_concurrency,
+            });
         }
 
-        let concurrency = background_transfer_task_concurrency(transfer_settings.upload_threads)
-            .min(files.len())
-            .max(1);
-        let completed_count = Arc::new(AtomicU64::new(0));
-        let total = directory_controller
-            .item_count_total()
-            .unwrap_or(files.len() as u64);
-        let mut join_set: tokio::task::JoinSet<AppResult<()>> = tokio::task::JoinSet::new();
-        let mut next_index = 0usize;
-        let mut first_err: Option<AppError> = None;
+        let (request_kib, _, max_concurrent_writes) = sftp_pipeline_config(transfer_settings);
+        let pool = SftpSessionPool::new(
+            self,
+            concurrency.session_pool_size,
+            sftp_client_config(request_kib, max_concurrent_writes),
+        )
+        .await?;
+        let result = run_upload_directory_workers(
+            app,
+            pool.clone(),
+            inventory,
+            directory_controller.clone(),
+            transfer_settings,
+            concurrency,
+        )
+        .await;
+        pool.close_all().await;
+        result
+    }
+}
 
-        while next_index < files.len() && join_set.len() < concurrency {
-            self.spawn_upload_directory_file(
-                &mut join_set,
-                app,
-                session_id,
-                files[next_index].clone(),
-                directory_controller.clone(),
-                transfer_settings.clone(),
-            );
-            next_index += 1;
-        }
+fn sftp_directory_file_concurrency(
+    files_len: usize,
+    concurrency: SftpDirectoryConcurrency,
+) -> usize {
+    files_len.min(concurrency.small_file_concurrency).max(1)
+}
 
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(Ok(())) => {
-                    let completed = completed_count.fetch_add(1, Ordering::SeqCst) + 1;
-                    directory_controller.update_item_progress(completed, total);
-                    let _ = app.emit(
-                        "transfer-event",
-                        &directory_controller.build_event("progress", 0, None),
-                    );
-                    if first_err.is_none() {
-                        while next_index < files.len() && join_set.len() < concurrency {
-                            self.spawn_upload_directory_file(
-                                &mut join_set,
-                                app,
-                                session_id,
-                                files[next_index].clone(),
-                                directory_controller.clone(),
-                                transfer_settings.clone(),
-                            );
-                            next_index += 1;
-                        }
-                    }
+async fn run_download_directory_workers(
+    app: &tauri::AppHandle,
+    pool: SftpSessionPool,
+    inventory: RemoteDirectoryInventory,
+    directory_controller: Arc<TransferController>,
+    transfer_settings: &crate::config::TransferSettings,
+    concurrency: SftpDirectoryConcurrency,
+) -> AppResult<DirectoryTransferSummary> {
+    let worker_count = sftp_directory_file_concurrency(inventory.files.len(), concurrency);
+    let total_files = inventory.total_files;
+    let total_size = inventory.total_size;
+    let queue = Arc::new(StdMutex::new(VecDeque::from(inventory.files)));
+    let completed_count = Arc::new(AtomicU64::new(0));
+    let completed_bytes = Arc::new(AtomicU64::new(0));
+    let large_lane = Arc::new(Semaphore::new(concurrency.large_file_concurrency));
+    let mut join_set = tokio::task::JoinSet::new();
+
+    for worker_index in 0..worker_count {
+        let app = app.clone();
+        let pool = pool.clone();
+        let queue = queue.clone();
+        let directory_controller = directory_controller.clone();
+        let completed_count = completed_count.clone();
+        let completed_bytes = completed_bytes.clone();
+        let large_lane = large_lane.clone();
+        let transfer_settings = transfer_settings.clone();
+        join_set.spawn(async move {
+            loop {
+                wait_for_transfer_ready(&directory_controller).await?;
+                let file = {
+                    let mut queue = queue.lock().unwrap();
+                    queue.pop_front()
+                };
+                let Some(file) = file else {
+                    return Ok(());
+                };
+                let _large_permit = if file.size > SFTP_SMALL_FILE_THRESHOLD {
+                    Some(large_lane.acquire().await.map_err(|e| {
+                        AppError::Channel(format!("SFTP large-file lane closed: {}", e))
+                    })?)
+                } else {
+                    None
+                };
+                let session = pool.session_for(worker_index);
+                let bytes = download_directory_file_with_session(
+                    &app,
+                    session,
+                    file,
+                    &directory_controller,
+                    &transfer_settings,
+                )
+                .await?;
+                let completed = completed_count.fetch_add(1, Ordering::SeqCst) + 1;
+                let bytes_done = completed_bytes.fetch_add(bytes, Ordering::SeqCst) + bytes;
+                directory_controller.update_progress(bytes_done, total_size);
+                directory_controller.update_item_progress(completed, total_files);
+                let _ = app.emit(
+                    "transfer-event",
+                    &directory_controller.build_event("progress", 0, None),
+                );
+            }
+        });
+    }
+
+    let mut first_err = None;
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                if first_err.is_none() {
+                    first_err = Some(error);
                 }
-                Ok(Err(error)) => {
-                    if first_err.is_none() {
-                        first_err = Some(error);
-                    }
-                }
-                Err(error) => {
-                    if first_err.is_none() {
-                        first_err = Some(AppError::Channel(format!(
-                            "Directory upload task panicked: {}",
-                            error
-                        )));
-                    }
+            }
+            Err(error) => {
+                if first_err.is_none() {
+                    first_err = Some(AppError::Channel(format!(
+                        "Directory download worker panicked: {}",
+                        error
+                    )));
                 }
             }
         }
+    }
 
-        if let Some(error) = first_err {
-            Err(error)
-        } else {
-            Ok(completed_count.load(Ordering::SeqCst))
+    if let Some(error) = first_err {
+        Err(error)
+    } else {
+        Ok(DirectoryTransferSummary {
+            completed: completed_count.load(Ordering::SeqCst),
+            total_files,
+            bytes: completed_bytes.load(Ordering::SeqCst),
+            small_file_concurrency: concurrency.small_file_concurrency,
+        })
+    }
+}
+
+async fn run_upload_directory_workers(
+    app: &tauri::AppHandle,
+    pool: SftpSessionPool,
+    inventory: LocalDirectoryInventory,
+    directory_controller: Arc<TransferController>,
+    transfer_settings: &crate::config::TransferSettings,
+    concurrency: SftpDirectoryConcurrency,
+) -> AppResult<DirectoryTransferSummary> {
+    let worker_count = sftp_directory_file_concurrency(inventory.files.len(), concurrency);
+    let total_files = inventory.total_files;
+    let total_size = inventory.total_size;
+    let queue = Arc::new(StdMutex::new(VecDeque::from(inventory.files)));
+    let completed_count = Arc::new(AtomicU64::new(0));
+    let completed_bytes = Arc::new(AtomicU64::new(0));
+    let large_lane = Arc::new(Semaphore::new(concurrency.large_file_concurrency));
+    let mut join_set = tokio::task::JoinSet::new();
+
+    for worker_index in 0..worker_count {
+        let app = app.clone();
+        let pool = pool.clone();
+        let queue = queue.clone();
+        let directory_controller = directory_controller.clone();
+        let completed_count = completed_count.clone();
+        let completed_bytes = completed_bytes.clone();
+        let large_lane = large_lane.clone();
+        let transfer_settings = transfer_settings.clone();
+        join_set.spawn(async move {
+            loop {
+                wait_for_transfer_ready(&directory_controller).await?;
+                let file = {
+                    let mut queue = queue.lock().unwrap();
+                    queue.pop_front()
+                };
+                let Some(file) = file else {
+                    return Ok(());
+                };
+                let _large_permit = if file.size > SFTP_SMALL_FILE_THRESHOLD {
+                    Some(large_lane.acquire().await.map_err(|e| {
+                        AppError::Channel(format!("SFTP large-file lane closed: {}", e))
+                    })?)
+                } else {
+                    None
+                };
+                let session = pool.session_for(worker_index);
+                let bytes = upload_directory_file_with_session(
+                    &app,
+                    session,
+                    file,
+                    &directory_controller,
+                    &transfer_settings,
+                )
+                .await?;
+                let completed = completed_count.fetch_add(1, Ordering::SeqCst) + 1;
+                let bytes_done = completed_bytes.fetch_add(bytes, Ordering::SeqCst) + bytes;
+                directory_controller.update_progress(bytes_done, total_size);
+                directory_controller.update_item_progress(completed, total_files);
+                let _ = app.emit(
+                    "transfer-event",
+                    &directory_controller.build_event("progress", 0, None),
+                );
+            }
+        });
+    }
+
+    let mut first_err = None;
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                if first_err.is_none() {
+                    first_err = Some(error);
+                }
+            }
+            Err(error) => {
+                if first_err.is_none() {
+                    first_err = Some(AppError::Channel(format!(
+                        "Directory upload worker panicked: {}",
+                        error
+                    )));
+                }
+            }
         }
     }
 
-    fn spawn_upload_directory_file(
-        &self,
-        join_set: &mut tokio::task::JoinSet<AppResult<()>>,
-        app: &tauri::AppHandle,
-        session_id: &str,
-        file: LocalDirectoryFile,
-        directory_controller: Arc<TransferController>,
-        transfer_settings: crate::config::TransferSettings,
-    ) {
-        let backend = self.clone();
-        let app = app.clone();
-        let session_id = session_id.to_string();
-        join_set.spawn(async move {
-            wait_for_transfer_ready(&directory_controller).await?;
-            let child_controller = create_child_file_transfer_controller(
-                None,
-                &session_id,
-                file.name,
-                &file.remote_path,
-                &file.local_path,
-                "upload",
-                Some(directory_controller.id()),
-            );
-            upload_local_file_inner_with_controller(
-                &backend,
-                &app,
-                &session_id,
-                &file.local_path,
-                &file.remote_path,
-                &transfer_settings,
-                child_controller,
-                Some(directory_controller),
-            )
+    if let Some(error) = first_err {
+        Err(error)
+    } else {
+        Ok(DirectoryTransferSummary {
+            completed: completed_count.load(Ordering::SeqCst),
+            total_files,
+            bytes: completed_bytes.load(Ordering::SeqCst),
+            small_file_concurrency: concurrency.small_file_concurrency,
+        })
+    }
+}
+
+async fn download_directory_file_with_session(
+    app: &tauri::AppHandle,
+    sftp: Arc<SftpSession>,
+    file: RemoteDirectoryFile,
+    directory_controller: &Arc<TransferController>,
+    transfer_settings: &crate::config::TransferSettings,
+) -> AppResult<u64> {
+    use tokio::io::AsyncWriteExt;
+
+    wait_for_transfer_ready(directory_controller).await?;
+    if let Some(parent) = std::path::Path::new(&file.local_path).parent() {
+        tokio::fs::create_dir_all(parent)
             .await
-        });
+            .map_err(|e| AppError::Channel(format!("Failed to create local dir: {}", e)))?;
+    }
+
+    let mut local_file = tokio::fs::File::create(&file.local_path)
+        .await
+        .map_err(|e| {
+            AppError::Channel(format!(
+                "Failed to create local file {}: {}",
+                file.local_path, e
+            ))
+        })?;
+    if file.size > 0 {
+        let _ = local_file.set_len(file.size).await;
+    }
+
+    let mut bytes_transferred = 0u64;
+    if file.size > 0 {
+        let (request_kib, _, _) = sftp_pipeline_config(transfer_settings);
+        let chunk_size = sftp_payload_size(request_kib) as u64;
+        let remote_file = sftp.open(&file.remote_path).await.map_err(|e| {
+            AppError::Channel(format!(
+                "Failed to open remote file {}: {}",
+                file.remote_path, e
+            ))
+        })?;
+        let mut next_offset = 0u64;
+        while next_offset < file.size {
+            wait_for_transfer_ready(directory_controller).await?;
+            let len = chunk_size.min(file.size - next_offset) as usize;
+            let offset = next_offset;
+            let data = remote_file.read_at(offset, len).await.map_err(|e| {
+                AppError::Channel(format!("SFTP read failed for {}: {}", file.remote_path, e))
+            })?;
+            if data.is_empty() {
+                break;
+            }
+            next_offset = next_offset.saturating_add(data.len() as u64);
+            local_file.write_all(&data).await.map_err(|e| {
+                AppError::Channel(format!("Local write failed for {}: {}", file.local_path, e))
+            })?;
+            bytes_transferred = bytes_transferred.saturating_add(data.len() as u64);
+        }
+    }
+
+    local_file
+        .flush()
+        .await
+        .map_err(|e| AppError::Channel(format!("Flush failed for {}: {}", file.local_path, e)))?;
+
+    if transfer_settings.preserve_timestamps {
+        if let Some(mtime) = file.mtime.filter(|mtime| *mtime > 0) {
+            let set_mtime =
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(u64::from(mtime));
+            if let Ok(f) = std::fs::File::open(&file.local_path) {
+                let _ = f.set_modified(set_mtime);
+            }
+        }
+    }
+
+    emit_parent_progress(app, Some(directory_controller));
+    Ok(bytes_transferred)
+}
+
+async fn upload_directory_file_with_session(
+    app: &tauri::AppHandle,
+    sftp: Arc<SftpSession>,
+    file: LocalDirectoryFile,
+    directory_controller: &Arc<TransferController>,
+    transfer_settings: &crate::config::TransferSettings,
+) -> AppResult<u64> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    wait_for_transfer_ready(directory_controller).await?;
+    let mut local_file = tokio::fs::File::open(&file.local_path).await.map_err(|e| {
+        AppError::Channel(format!(
+            "Failed to open local file {}: {}",
+            file.local_path, e
+        ))
+    })?;
+    let mut remote_file = sftp.create(&file.remote_path).await.map_err(|e| {
+        AppError::Channel(format!(
+            "Failed to create remote file {}: {}",
+            file.remote_path, e
+        ))
+    })?;
+
+    let (request_kib, _, _) = sftp_pipeline_config(transfer_settings);
+    let mut buf = vec![0u8; sftp_payload_size(request_kib)];
+    let mut bytes_transferred = 0u64;
+    loop {
+        wait_for_transfer_ready(directory_controller).await?;
+        let read = local_file.read(&mut buf).await.map_err(|e| {
+            AppError::Channel(format!(
+                "Failed to read local file {}: {}",
+                file.local_path, e
+            ))
+        })?;
+        if read == 0 {
+            break;
+        }
+        remote_file.write_all(&buf[..read]).await.map_err(|e| {
+            AppError::Channel(format!("SFTP write failed for {}: {}", file.remote_path, e))
+        })?;
+        bytes_transferred = bytes_transferred.saturating_add(read as u64);
+    }
+    remote_file.shutdown().await.map_err(|e| {
+        AppError::Channel(format!("SFTP flush failed for {}: {}", file.remote_path, e))
+    })?;
+
+    if transfer_settings.preserve_timestamps {
+        if let Some(mtime) = file.mtime {
+            if let Ok(dur) = mtime.duration_since(std::time::UNIX_EPOCH) {
+                let atime_secs = file
+                    .atime
+                    .and_then(|a| a.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as u32)
+                    .unwrap_or(dur.as_secs() as u32);
+                if let Ok(mut attrs) = sftp.metadata(&file.remote_path).await {
+                    attrs.mtime = Some(dur.as_secs() as u32);
+                    attrs.atime = Some(atime_secs);
+                    let _ = sftp.set_metadata(&file.remote_path, attrs).await;
+                }
+            }
+        }
+    }
+
+    emit_parent_progress(app, Some(directory_controller));
+    Ok(bytes_transferred)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn directory_concurrency_uses_fast_default_without_server_limits() {
+        let concurrency = sftp_directory_concurrency(None);
+
+        assert_eq!(concurrency.session_pool_size, 4);
+        assert_eq!(concurrency.small_file_concurrency, 64);
+        assert_eq!(concurrency.large_file_concurrency, 2);
+    }
+
+    #[test]
+    fn directory_concurrency_respects_low_server_handle_limits() {
+        let concurrency = sftp_directory_concurrency(Some(12));
+
+        assert_eq!(concurrency.session_pool_size, 4);
+        assert_eq!(concurrency.small_file_concurrency, 4);
+        assert_eq!(concurrency.large_file_concurrency, 2);
+    }
+
+    #[test]
+    fn directory_concurrency_keeps_at_least_one_worker() {
+        let concurrency = sftp_directory_concurrency(Some(2));
+
+        assert_eq!(concurrency.session_pool_size, 1);
+        assert_eq!(concurrency.small_file_concurrency, 1);
+        assert_eq!(concurrency.large_file_concurrency, 1);
+    }
+
+    #[test]
+    fn directory_worker_count_is_bounded_by_file_count() {
+        let concurrency = sftp_directory_concurrency(None);
+
+        assert_eq!(sftp_directory_file_concurrency(0, concurrency), 1);
+        assert_eq!(sftp_directory_file_concurrency(3, concurrency), 3);
+        assert_eq!(
+            sftp_directory_file_concurrency(10_000, concurrency),
+            concurrency.small_file_concurrency
+        );
+    }
+
+    #[test]
+    fn recursive_remove_rejects_dangerous_targets() {
+        assert!(!is_safe_recursive_remove_target(""));
+        assert!(!is_safe_recursive_remove_target("/"));
+        assert!(!is_safe_recursive_remove_target("."));
+        assert!(!is_safe_recursive_remove_target(".."));
+        assert!(!is_safe_recursive_remove_target("/tmp/../home"));
+    }
+
+    #[test]
+    fn recursive_remove_accepts_normal_remote_targets() {
+        assert!(is_safe_recursive_remove_target("/tmp/uploads"));
+        assert!(is_safe_recursive_remove_target("relative/uploads"));
+        assert!(is_safe_recursive_remove_target("/home/user/data/"));
     }
 }

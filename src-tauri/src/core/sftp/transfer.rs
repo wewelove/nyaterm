@@ -149,6 +149,12 @@ impl TransferController {
         runtime.item_count_total = Some(total);
     }
 
+    pub(crate) fn update_totals(&self, total_size: u64, item_count_total: u64) {
+        let mut runtime = self.runtime.lock().unwrap();
+        runtime.total_size = total_size;
+        runtime.item_count_total = Some(item_count_total);
+    }
+
     fn add_bytes_transferred(&self, delta: u64) {
         let mut runtime = self.runtime.lock().unwrap();
         runtime.bytes_transferred = runtime.bytes_transferred.saturating_add(delta);
