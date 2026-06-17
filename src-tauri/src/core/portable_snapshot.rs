@@ -5,6 +5,7 @@ use crate::config::{
 use crate::error::{AppError, AppResult};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
@@ -108,6 +109,22 @@ struct SnapshotHashInput<'a> {
     history: &'a [crate::core::history::HistoryEntry],
     master_key_token: &'a Option<String>,
     known_hosts: &'a str,
+}
+
+#[derive(Serialize)]
+struct SnapshotRawHashInput<'a> {
+    settings: &'a RawValue,
+    sessions: &'a RawValue,
+    keys: &'a RawValue,
+    passwords: &'a RawValue,
+    credentials: &'a RawValue,
+    otp: &'a RawValue,
+    proxies: &'a RawValue,
+    tunnels: &'a RawValue,
+    quick_commands: &'a RawValue,
+    history: &'a RawValue,
+    master_key_token: &'a RawValue,
+    known_hosts: &'a RawValue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,29 +280,14 @@ fn decode_portable_snapshot_redb(bytes: &[u8]) -> AppResult<PortableSnapshot> {
 
         if meta.schema_version == 2 {
             decode_v2_snapshot(&read, meta)?
-        } else {
+        } else if meta.schema_version == PORTABLE_SNAPSHOT_SCHEMA_VERSION {
             let entities = read_string_table(&read, SNAPSHOT_ENTITIES_TABLE)?;
-            PortableSnapshot {
-                schema_version: meta.schema_version,
-                snapshot_kind: meta.snapshot_kind,
-                revision_id: meta.revision_id,
-                device_id: meta.device_id,
-                created_at_ms: meta.created_at_ms,
-                payload_hash: meta.payload_hash,
-                app_version: meta.app_version,
-                settings: read_entity(&entities, "settings")?,
-                sessions: read_entity_or_default(&entities, "sessions")?,
-                keys: read_entity_or_default(&entities, "keys")?,
-                passwords: read_entity_or_default(&entities, "passwords")?,
-                credentials: read_entity_or_default(&entities, "credentials")?,
-                otp: read_entity_or_default(&entities, "otp")?,
-                proxies: read_entity_or_default(&entities, "proxies")?,
-                tunnels: read_entity_or_default(&entities, "tunnels")?,
-                quick_commands: read_entity_or_default(&entities, "quick_commands")?,
-                history: read_entity_or_default(&entities, "history")?,
-                master_key_token: read_entity_or_default(&entities, "master_key_token")?,
-                known_hosts: read_entity_or_default(&entities, "known_hosts")?,
-            }
+            decode_v3_snapshot(meta, &entities)?
+        } else {
+            return Err(AppError::Config(format!(
+                "Unsupported portable snapshot version {}",
+                meta.schema_version
+            )));
         }
     };
 
@@ -497,6 +499,73 @@ fn calculate_payload_hash(snapshot: &PortableSnapshot) -> AppResult<String> {
     Ok(hex::encode(Sha256::digest(&payload_bytes)))
 }
 
+fn decode_v3_snapshot(
+    meta: PortableSnapshotMeta,
+    entities: &BTreeMap<String, String>,
+) -> AppResult<PortableSnapshot> {
+    let expected = calculate_v3_raw_payload_hash(entities)?;
+    if expected != meta.payload_hash {
+        return Err(AppError::Crypto(
+            "Portable snapshot payload hash mismatch".to_string(),
+        ));
+    }
+
+    let mut snapshot = PortableSnapshot {
+        schema_version: meta.schema_version,
+        snapshot_kind: meta.snapshot_kind,
+        revision_id: meta.revision_id,
+        device_id: meta.device_id,
+        created_at_ms: meta.created_at_ms,
+        payload_hash: String::new(),
+        app_version: meta.app_version,
+        settings: read_entity(entities, "settings")?,
+        sessions: read_entity_or_default(entities, "sessions")?,
+        keys: read_entity_or_default(entities, "keys")?,
+        passwords: read_entity_or_default(entities, "passwords")?,
+        credentials: read_entity_or_default(entities, "credentials")?,
+        otp: read_entity_or_default(entities, "otp")?,
+        proxies: read_entity_or_default(entities, "proxies")?,
+        tunnels: read_entity_or_default(entities, "tunnels")?,
+        quick_commands: read_entity_or_default(entities, "quick_commands")?,
+        history: read_entity_or_default(entities, "history")?,
+        master_key_token: read_entity_or_default(entities, "master_key_token")?,
+        known_hosts: read_entity_or_default(entities, "known_hosts")?,
+    };
+    snapshot.payload_hash = calculate_payload_hash(&snapshot)?;
+    Ok(snapshot)
+}
+
+fn calculate_v3_raw_payload_hash(entities: &BTreeMap<String, String>) -> AppResult<String> {
+    let settings = read_raw_entity(entities, "settings")?;
+    let sessions = read_raw_entity(entities, "sessions")?;
+    let keys = read_raw_entity(entities, "keys")?;
+    let passwords = read_raw_entity(entities, "passwords")?;
+    let credentials = read_raw_entity(entities, "credentials")?;
+    let otp = read_raw_entity(entities, "otp")?;
+    let proxies = read_raw_entity(entities, "proxies")?;
+    let tunnels = read_raw_entity(entities, "tunnels")?;
+    let quick_commands = read_raw_entity(entities, "quick_commands")?;
+    let history = read_raw_entity(entities, "history")?;
+    let master_key_token = read_raw_entity(entities, "master_key_token")?;
+    let known_hosts = read_raw_entity(entities, "known_hosts")?;
+
+    let payload_bytes = serde_json::to_vec(&SnapshotRawHashInput {
+        settings: settings.as_ref(),
+        sessions: sessions.as_ref(),
+        keys: keys.as_ref(),
+        passwords: passwords.as_ref(),
+        credentials: credentials.as_ref(),
+        otp: otp.as_ref(),
+        proxies: proxies.as_ref(),
+        tunnels: tunnels.as_ref(),
+        quick_commands: quick_commands.as_ref(),
+        history: history.as_ref(),
+        master_key_token: master_key_token.as_ref(),
+        known_hosts: known_hosts.as_ref(),
+    })?;
+    Ok(hex::encode(Sha256::digest(&payload_bytes)))
+}
+
 #[derive(Deserialize, Default)]
 struct V2ProxiesConfig {
     #[serde(default)]
@@ -617,6 +686,13 @@ where
     serde_json::from_str(raw).map_err(Into::into)
 }
 
+fn read_raw_entity(entities: &BTreeMap<String, String>, key: &str) -> AppResult<Box<RawValue>> {
+    let raw = entities
+        .get(key)
+        .ok_or_else(|| AppError::Config(format!("portable snapshot missing entity '{key}'")))?;
+    serde_json::from_str(raw).map_err(Into::into)
+}
+
 fn read_entity_or_default<T>(entities: &BTreeMap<String, String>, key: &str) -> AppResult<T>
 where
     T: serde::de::DeserializeOwned + Default,
@@ -689,10 +765,13 @@ impl Drop for TempRedbFile {
 mod tests {
     use super::{
         PORTABLE_SNAPSHOT_SCHEMA_VERSION, PortableAppSettings, PortableSnapshot,
-        PortableSnapshotKind, PortableUiSettings, SNAPSHOT_ZIP_PAYLOAD_NAME,
-        calculate_payload_hash, encode_portable_snapshot, encode_portable_snapshot_redb,
+        PortableSnapshotKind, PortableSnapshotMeta, PortableUiSettings, SNAPSHOT_ENTITIES_TABLE,
+        SNAPSHOT_META_KEY, SNAPSHOT_META_TABLE, SNAPSHOT_ZIP_PAYLOAD_NAME, calculate_payload_hash,
+        calculate_v3_raw_payload_hash, encode_portable_snapshot, encode_portable_snapshot_redb,
     };
     use crate::config::{self, ActivityBarLayout, AppSettings};
+    use redb::Database;
+    use std::collections::BTreeMap;
     use std::io::Write;
 
     #[test]
@@ -803,6 +882,77 @@ mod tests {
     }
 
     #[test]
+    fn portable_snapshot_v3_accepts_older_entity_shape_before_normalizing_hash() {
+        let snapshot = sample_snapshot();
+        let mut settings = serde_json::to_value(&snapshot.settings).expect("settings json");
+        settings["appearance"]
+            .as_object_mut()
+            .expect("appearance object")
+            .remove("panel_multi_open");
+
+        let mut entities = BTreeMap::new();
+        entities.insert(
+            "settings".to_string(),
+            serde_json::to_string(&settings).expect("settings raw"),
+        );
+        entities.insert(
+            "sessions".to_string(),
+            serde_json::to_string(&snapshot.sessions).expect("sessions raw"),
+        );
+        entities.insert(
+            "keys".to_string(),
+            serde_json::to_string(&snapshot.keys).expect("keys raw"),
+        );
+        entities.insert(
+            "passwords".to_string(),
+            serde_json::to_string(&snapshot.passwords).expect("passwords raw"),
+        );
+        entities.insert(
+            "credentials".to_string(),
+            serde_json::to_string(&snapshot.credentials).expect("credentials raw"),
+        );
+        entities.insert(
+            "otp".to_string(),
+            serde_json::to_string(&snapshot.otp).expect("otp raw"),
+        );
+        entities.insert(
+            "proxies".to_string(),
+            serde_json::to_string(&snapshot.proxies).expect("proxies raw"),
+        );
+        entities.insert(
+            "tunnels".to_string(),
+            serde_json::to_string(&snapshot.tunnels).expect("tunnels raw"),
+        );
+        entities.insert(
+            "quick_commands".to_string(),
+            serde_json::to_string(&snapshot.quick_commands).expect("quick commands raw"),
+        );
+        entities.insert(
+            "history".to_string(),
+            serde_json::to_string(&snapshot.history).expect("history raw"),
+        );
+        entities.insert(
+            "master_key_token".to_string(),
+            serde_json::to_string(&snapshot.master_key_token).expect("master key raw"),
+        );
+        entities.insert(
+            "known_hosts".to_string(),
+            serde_json::to_string(&snapshot.known_hosts).expect("known hosts raw"),
+        );
+
+        let legacy_hash = calculate_v3_raw_payload_hash(&entities).expect("legacy hash");
+        assert_ne!(legacy_hash, snapshot.payload_hash);
+
+        let encoded = encode_v3_raw_snapshot_redb(&snapshot, &entities, legacy_hash.clone());
+        let decoded = super::decode_portable_snapshot(&encoded).expect("decode legacy v3 shape");
+
+        assert_eq!(decoded.revision_id, snapshot.revision_id);
+        assert!(!decoded.settings.appearance.panel_multi_open);
+        assert_eq!(decoded.payload_hash, snapshot.payload_hash);
+        assert_ne!(decoded.payload_hash, legacy_hash);
+    }
+
+    #[test]
     fn portable_snapshot_zip_rejects_oversized_payload() {
         let cursor = std::io::Cursor::new(Vec::new());
         let mut zip = zip::ZipWriter::new(cursor);
@@ -853,5 +1003,36 @@ mod tests {
             compressed.len() < legacy.len(),
             "compressed snapshot should be smaller than legacy redb"
         );
+    }
+
+    fn encode_v3_raw_snapshot_redb(
+        snapshot: &PortableSnapshot,
+        entities: &BTreeMap<String, String>,
+        payload_hash: String,
+    ) -> Vec<u8> {
+        let temp = super::TempRedbFile::new("portable-snapshot-legacy-test");
+        {
+            let db = Database::create(temp.path()).expect("create db");
+            let txn = db.begin_write().expect("begin write");
+            {
+                let mut meta = txn.open_table(SNAPSHOT_META_TABLE).expect("open meta");
+                let mut meta_value = PortableSnapshotMeta::from(snapshot);
+                meta_value.payload_hash = payload_hash;
+                let meta_content = serde_json::to_string(&meta_value).expect("meta json");
+                meta.insert(SNAPSHOT_META_KEY, meta_content.as_str())
+                    .expect("insert meta");
+            }
+            let mut table = txn
+                .open_table(SNAPSHOT_ENTITIES_TABLE)
+                .expect("open entities");
+            for (key, value) in entities {
+                table
+                    .insert(key.as_str(), value.as_str())
+                    .expect("insert entity");
+            }
+            drop(table);
+            txn.commit().expect("commit");
+        }
+        std::fs::read(temp.path()).expect("read redb")
     }
 }
