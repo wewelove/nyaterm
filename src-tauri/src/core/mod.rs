@@ -9,6 +9,7 @@ pub mod capture;
 pub mod cloud_sync;
 pub mod history;
 pub mod importer;
+pub(crate) mod input;
 mod output;
 pub mod portable_snapshot;
 pub(crate) mod pty;

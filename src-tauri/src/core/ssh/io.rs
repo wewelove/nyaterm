@@ -1,5 +1,6 @@
 use super::client::{SshHandle, SshHandler, SshPostLoginConfig};
 use crate::core::capture::OutputCaptureProcessor;
+use crate::core::input::remap_del_to_bs;
 use crate::core::ssh::osc::{self, OscStripper, ShellKind};
 use crate::core::zmodem::{
     ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemEvent, ZmodemTransfer,
@@ -291,7 +292,9 @@ pub(super) async fn ssh_io_loop(
     injection_script: Option<String>,
     ready_marker: String,
     post_login: Option<SshPostLoginConfig>,
+    backspace_mode: String,
 ) {
+    let backspace_as_bs = backspace_mode == "ctrl_h";
     let output_event = format!("terminal-output-{}", session_id);
     let cwd_event = format!("cwd-changed-{}", session_id);
     let closed_event = format!("session-closed-{}", session_id);
@@ -342,9 +345,12 @@ pub(super) async fn ssh_io_loop(
                     Some(SessionCommand::Attach) => {
                         output.attach();
                     }
-                    Some(SessionCommand::Write(data)) => {
+                    Some(SessionCommand::Write(mut data)) => {
                         if zmodem_transfer.is_some() {
                             continue;
+                        }
+                        if backspace_as_bs {
+                            remap_del_to_bs(&mut data);
                         }
                         if let Some(ref recorder) = recording_mgr {
                             recorder.write_input(&session_id, &data);

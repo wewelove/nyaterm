@@ -90,6 +90,7 @@ export default function NewSessionPage() {
   const [postLoginEnabled, setPostLoginEnabled] = useState(false);
   const [postLoginCommand, setPostLoginCommand] = useState("");
   const [postLoginDelayMs, setPostLoginDelayMs] = useState(DEFAULT_POST_LOGIN_DELAY_MS);
+  const [sshBackspaceMode, setSshBackspaceMode] = useState("del");
 
   // Serial Settings States
   const [serialPortName, setSerialPortName] = useState("");
@@ -160,6 +161,7 @@ export default function NewSessionPage() {
           setPostLoginEnabled(found.post_login?.enabled ?? false);
           setPostLoginCommand(found.post_login?.command ?? "");
           setPostLoginDelayMs(found.post_login?.delay_ms ?? DEFAULT_POST_LOGIN_DELAY_MS);
+          setSshBackspaceMode(found.backspace_mode || "del");
         } else if (found.type === "telnet") {
           setHost(found.host || "");
           setTelnetPort(found.port || 23);
@@ -224,6 +226,7 @@ export default function NewSessionPage() {
     setPostLoginEnabled(false);
     setPostLoginCommand("");
     setPostLoginDelayMs(DEFAULT_POST_LOGIN_DELAY_MS);
+    setSshBackspaceMode("del");
     setSerialPortName("");
     setSerialPorts([]);
     setSerialPortsLoading(false);
@@ -503,6 +506,7 @@ export default function NewSessionPage() {
               auth,
               network,
               post_login: postLogin,
+              backspace_mode: sshBackspaceMode,
             }
           : {}),
         ...(currentTab === "telnet"
@@ -826,6 +830,8 @@ export default function NewSessionPage() {
               setPostLoginDelayMs={setPostLoginDelayMs}
               minPostLoginDelayMs={MIN_POST_LOGIN_DELAY_MS}
               maxPostLoginDelayMs={MAX_POST_LOGIN_DELAY_MS}
+              backspaceMode={sshBackspaceMode}
+              setBackspaceMode={setSshBackspaceMode}
               connectionId={initialData?.id || editId}
             />
           </TabsContent>

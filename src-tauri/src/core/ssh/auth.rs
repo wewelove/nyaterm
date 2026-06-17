@@ -125,10 +125,18 @@ fn resolve_saved_ssh_config(
         port,
         username,
         auth,
+        backspace_mode: resolve_ssh_backspace_mode(conn),
         proxy,
         proxy_jump,
         post_login,
     })
+}
+
+fn resolve_ssh_backspace_mode(conn: &crate::config::SavedConnection) -> String {
+    match &conn.config {
+        crate::config::ConnectionType::Ssh { backspace_mode, .. } => backspace_mode.clone(),
+        _ => "del".to_string(),
+    }
 }
 
 fn resolve_post_login(conn: &crate::config::SavedConnection) -> Option<SshPostLoginConfig> {
@@ -149,6 +157,7 @@ fn resolve_ssh_target(conn: &crate::config::SavedConnection) -> AppResult<(Strin
             host,
             port,
             username,
+            ..
         } => Ok((host.clone(), *port, username.clone())),
         _ => Err(AppError::Auth(
             "Connection is not an SSH connection".to_string(),

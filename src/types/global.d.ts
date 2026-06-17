@@ -209,7 +209,7 @@ export interface SavedConnection {
   data_bits?: number;
   parity?: string;
   stop_bits?: string;
-  /** Backspace key mode for serial/telnet connections ("ctrl_h" or "del"). */
+  /** Backspace key mode for SSH/Telnet/Serial connections ("ctrl_h" or "del"). */
   backspace_mode?: string;
 }
 

@@ -22,6 +22,8 @@ pub struct SshConfig {
     pub username: String,
     pub auth: SshAuth,
     #[serde(default)]
+    pub backspace_mode: String,
+    #[serde(default)]
     pub proxy: Option<crate::config::ProxySettings>,
     #[serde(default)]
     pub proxy_jump: Option<Box<SshConfig>>,

@@ -9,6 +9,7 @@ use super::zmodem::{
 };
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
+use crate::core::input::remap_del_to_bs;
 use crate::core::{RecordingManager, SessionOutputCoalescer};
 use crate::error::AppResult;
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event, log_rate_limited};
@@ -110,15 +111,6 @@ fn strip_telnet_commands(data: &[u8], on_negotiate: &mut impl FnMut(u8, u8)) -> 
         }
     }
     visible
-}
-
-/// Replace DEL (0x7F) with BS (0x08) in-place.
-fn remap_del_to_bs(data: &mut [u8]) {
-    for byte in data.iter_mut() {
-        if *byte == 0x7f {
-            *byte = 0x08;
-        }
-    }
 }
 
 pub async fn create_telnet_session(

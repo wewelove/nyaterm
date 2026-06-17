@@ -32,6 +32,8 @@ pub enum ConnectionType {
         port: u16,
         #[serde(default = "default_ssh_user")]
         username: String,
+        #[serde(default = "default_backspace_mode_ssh")]
+        backspace_mode: String,
     },
     LocalTerminal {
         #[serde(default)]
@@ -74,6 +76,9 @@ fn default_ssh_port() -> u16 {
 }
 fn default_ssh_user() -> String {
     "root".to_string()
+}
+fn default_backspace_mode_ssh() -> String {
+    "del".to_string()
 }
 fn default_telnet_port() -> u16 {
     23
@@ -354,6 +359,43 @@ mod tests {
 
         assert!(matches!(connection.config, ConnectionType::Ssh { .. }));
         assert!(connection.post_login.is_none());
+    }
+
+    #[test]
+    fn ssh_connection_defaults_backspace_mode_to_del() {
+        let connection: SavedConnection = serde_json::from_value(serde_json::json!({
+            "id": "conn-1",
+            "name": "Test",
+            "type": "ssh",
+            "host": "example.com",
+            "port": 22,
+            "username": "root"
+        }))
+        .expect("connection");
+
+        let ConnectionType::Ssh { backspace_mode, .. } = connection.config else {
+            panic!("expected ssh connection");
+        };
+        assert_eq!(backspace_mode, "del");
+    }
+
+    #[test]
+    fn ssh_connection_preserves_backspace_mode() {
+        let connection: SavedConnection = serde_json::from_value(serde_json::json!({
+            "id": "conn-1",
+            "name": "Test",
+            "type": "ssh",
+            "host": "example.com",
+            "port": 22,
+            "username": "root",
+            "backspace_mode": "ctrl_h"
+        }))
+        .expect("connection");
+
+        let ConnectionType::Ssh { backspace_mode, .. } = connection.config else {
+            panic!("expected ssh connection");
+        };
+        assert_eq!(backspace_mode, "ctrl_h");
     }
 
     #[test]

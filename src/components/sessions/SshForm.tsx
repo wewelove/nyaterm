@@ -27,6 +27,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -73,6 +80,8 @@ interface SshFormProps {
   setPostLoginDelayMs: (v: number) => void;
   minPostLoginDelayMs: number;
   maxPostLoginDelayMs: number;
+  backspaceMode: string;
+  setBackspaceMode: (v: string) => void;
   connectionId?: string;
 }
 
@@ -244,6 +253,8 @@ export function SshForm({
   setPostLoginDelayMs,
   minPostLoginDelayMs,
   maxPostLoginDelayMs,
+  backspaceMode,
+  setBackspaceMode,
   connectionId,
 }: SshFormProps) {
   const { t } = useTranslation();
@@ -801,60 +812,102 @@ export function SshForm({
               </div>
             </TabsContent>
           </Tabs>
-          <div className="rounded-lg border bg-accent/25 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 space-y-0.5">
-                <div className="text-xs font-medium">{t("dialog.postLoginCommand")}</div>
-                <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-                  {t("dialog.postLoginCommandDesc")}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Switch checked={postLoginEnabled} onCheckedChange={setPostLoginEnabled} />
-                <span className="text-xs text-muted-foreground">
-                  {t("dialog.enabled", "Enabled")}
-                </span>
-              </div>
-            </div>
+          <Tabs defaultValue="post-login" className="w-full">
+            <TabsList className="grid h-8 w-full grid-cols-2 pointer-events-auto">
+              <TabsTrigger value="post-login" className="text-xs">
+                {t("dialog.commandExecution")}
+              </TabsTrigger>
+              <TabsTrigger value="backspace" className="text-xs">
+                {t("dialog.backspaceMode", "Backspace Mode")}
+              </TabsTrigger>
+            </TabsList>
 
-            <div
-              className={cn(
-                "mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]",
-                !postLoginEnabled && "pointer-events-none opacity-50",
-              )}
-            >
-              <div>
-                <Label className="text-xs font-medium text-foreground/80">
-                  {t("dialog.postLoginCommandContent")}
-                </Label>
-                <Textarea
-                  rows={4}
-                  className="mt-1 min-h-24 resize-y font-mono text-xs"
-                  placeholder={"cd /opt/app\nclear"}
-                  value={postLoginCommand}
-                  onChange={(event) => setPostLoginCommand(event.target.value)}
-                  disabled={!postLoginEnabled}
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-foreground/80">
-                  {t("dialog.postLoginDelay")}
-                </Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <NumberInput
-                    className="min-w-0 flex-1 [&_button]:h-8 [&_button]:w-8 [&_input]:h-8 [&_input]:text-xs"
-                    value={postLoginDelayMs}
-                    onChange={setPostLoginDelayMs}
-                    min={minPostLoginDelayMs}
-                    max={maxPostLoginDelayMs}
-                    step={100}
-                    disabled={!postLoginEnabled}
-                  />
-                  <span className="shrink-0 text-[0.625rem] text-muted-foreground">ms</span>
+            <TabsContent value="post-login" className="mt-3 border-0 outline-none">
+              <div className="rounded-lg border bg-accent/25 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-xs font-medium">{t("dialog.postLoginCommand")}</div>
+                    <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+                      {t("dialog.postLoginCommandDesc")}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Switch checked={postLoginEnabled} onCheckedChange={setPostLoginEnabled} />
+                    <span className="text-xs text-muted-foreground">
+                      {t("dialog.enabled", "Enabled")}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  className={cn(
+                    "mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]",
+                    !postLoginEnabled && "pointer-events-none opacity-50",
+                  )}
+                >
+                  <div>
+                    <Label className="text-xs font-medium text-foreground/80">
+                      {t("dialog.postLoginCommandContent")}
+                    </Label>
+                    <Textarea
+                      rows={4}
+                      className="mt-1 min-h-24 resize-y font-mono text-xs"
+                      placeholder={"cd /opt/app\nclear"}
+                      value={postLoginCommand}
+                      onChange={(event) => setPostLoginCommand(event.target.value)}
+                      disabled={!postLoginEnabled}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium text-foreground/80">
+                      {t("dialog.postLoginDelay")}
+                    </Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <NumberInput
+                        className="min-w-0 flex-1 [&_button]:h-8 [&_button]:w-8 [&_input]:h-8 [&_input]:text-xs"
+                        value={postLoginDelayMs}
+                        onChange={setPostLoginDelayMs}
+                        min={minPostLoginDelayMs}
+                        max={maxPostLoginDelayMs}
+                        step={100}
+                        disabled={!postLoginEnabled}
+                      />
+                      <span className="shrink-0 text-[0.625rem] text-muted-foreground">ms</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </TabsContent>
+
+            <TabsContent value="backspace" className="mt-3 border-0 outline-none">
+              <div className="rounded-lg border bg-accent/25 p-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">
+                    {t("dialog.backspaceMode", "Backspace Mode")}
+                  </div>
+                  <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+                    {t("dialog.sshBackspaceModeDesc")}
+                  </p>
+                </div>
+                <div className="mt-3 max-w-xs">
+                  <Label className="text-xs font-medium text-foreground/80">
+                    {t("dialog.backspaceMode", "Backspace Mode")}
+                  </Label>
+                  <Select value={backspaceMode} onValueChange={setBackspaceMode}>
+                    <SelectTrigger className="mt-1 h-8 text-xs font-normal">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="del">{t("dialog.backspaceDel", "DEL (0x7F)")}</SelectItem>
+                      <SelectItem value="ctrl_h">
+                        {t("dialog.backspaceCtrlH", "Ctrl+H (BS)")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </CollapsibleContent>
       </Collapsible>
 

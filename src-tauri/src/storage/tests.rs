@@ -35,6 +35,7 @@ fn sample_connection(id: &str, group_id: Option<&str>, sort_order: i32) -> Saved
             host: "example.com".to_string(),
             port: 22,
             username: "root".to_string(),
+            backspace_mode: "del".to_string(),
         },
         group_id: group_id.map(str::to_string),
         description: None,

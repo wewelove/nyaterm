@@ -9,6 +9,7 @@ use super::zmodem::{
 };
 use crate::config::AiExecutionProfile;
 use crate::core::capture::OutputCaptureProcessor;
+use crate::core::input::remap_del_to_bs;
 use crate::core::{RecordingManager, SessionOutputCoalescer};
 use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event, log_rate_limited};
@@ -27,15 +28,6 @@ pub struct SerialConfig {
     pub stop_bits: String,
     pub name: String,
     pub backspace_mode: String,
-}
-
-/// Replace DEL (0x7F) with BS (0x08) in-place.
-fn remap_del_to_bs(data: &mut [u8]) {
-    for byte in data.iter_mut() {
-        if *byte == 0x7f {
-            *byte = 0x08;
-        }
-    }
 }
 
 pub fn list_serial_ports() -> AppResult<Vec<String>> {
