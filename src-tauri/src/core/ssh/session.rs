@@ -16,8 +16,17 @@ use tokio::sync::{mpsc, oneshot};
 async fn create_authenticated_connection(
     app: &AppHandle,
     config: &SshConfig,
-) -> AppResult<SshHandle> {
+) -> AppResult<(
+    SshHandle,
+    Option<mpsc::UnboundedReceiver<super::x11_forwarding::X11ChannelOpen>>,
+)> {
     let ssh_client_config = Arc::new(build_client_config(app));
+    let (x11_tx, x11_rx) = if config.x11_forwarding {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
 
     if let Some(jump_config) = config.proxy_jump.as_deref() {
         tracing::info!(
@@ -67,12 +76,15 @@ async fn create_authenticated_connection(
             "ProxyJump direct-tcpip channel opened"
         );
 
-        let target_handler = SshHandler::new(
+        let mut target_handler = SshHandler::new(
             app.clone(),
             config.host.clone(),
             config.port,
             config.owner_window_label.clone(),
         );
+        if let Some(tx) = x11_tx.clone() {
+            target_handler = target_handler.with_x11_sender(tx);
+        }
         let mut target_handle =
             connect_via_stream(channel.into_stream(), ssh_client_config, target_handler).await?;
         authenticate_handle(
@@ -91,18 +103,21 @@ async fn create_authenticated_connection(
 
         let target_handle: SshRawHandle = Arc::new(tokio::sync::Mutex::new(target_handle));
         let jump_handle: SshRawHandle = Arc::new(tokio::sync::Mutex::new(jump_handle));
-        return Ok(Arc::new(SshConnectionHandles::new(
-            target_handle,
-            Some(jump_handle),
-        )));
+        return Ok((
+            Arc::new(SshConnectionHandles::new(target_handle, Some(jump_handle))),
+            x11_rx,
+        ));
     }
 
-    let handler = SshHandler::new(
+    let mut handler = SshHandler::new(
         app.clone(),
         config.host.clone(),
         config.port,
         config.owner_window_label.clone(),
     );
+    if let Some(tx) = x11_tx {
+        handler = handler.with_x11_sender(tx);
+    }
     let mut handle = connect_with_proxy(config, ssh_client_config, handler).await?;
     authenticate_handle(
         &mut handle,
@@ -119,7 +134,7 @@ async fn create_authenticated_connection(
     );
 
     let handle: SshRawHandle = Arc::new(tokio::sync::Mutex::new(handle));
-    Ok(Arc::new(SshConnectionHandles::new(handle, None)))
+    Ok((Arc::new(SshConnectionHandles::new(handle, None)), x11_rx))
 }
 
 fn set_owner_window_label(config: &mut SshConfig, owner_window_label: Option<String>) {
@@ -133,7 +148,7 @@ fn set_owner_window_label(config: &mut SshConfig, owner_window_label: Option<Str
 /// Used by tunnels to establish their own independent SSH connections.
 pub async fn create_ssh_handle(app: &AppHandle, connection_id: &str) -> AppResult<SshHandle> {
     let ssh_config = load_saved_ssh_config(app, connection_id)?;
-    let handle = create_authenticated_connection(app, &ssh_config).await?;
+    let (handle, _x11_rx) = create_authenticated_connection(app, &ssh_config).await?;
 
     tracing::info!(
         host = %ssh_config.host,
@@ -181,14 +196,27 @@ async fn create_ssh_session_inner(
     let session_id = uuid::Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
 
-    let ssh_connection = create_authenticated_connection(&app, &config).await?;
+    let x11_config = if config.x11_forwarding {
+        Some(super::x11_forwarding::prepare_x11_forwarding(&config.x11_display).await)
+    } else {
+        None
+    };
+    let (ssh_connection, x11_rx) = create_authenticated_connection(&app, &config).await?;
     let handle_mtx = ssh_connection.target_handle();
     let mut handle = handle_mtx.lock().await;
 
-    let (channel, injection_script, ready_marker) =
-        open_shell_channel(&mut handle, &session_id).await?;
+    let (channel, injection_script, ready_marker, initial_notice) = open_shell_channel(
+        &mut handle,
+        &session_id,
+        x11_config.as_ref().map(|cfg| cfg.fake_cookie_hex.as_str()),
+    )
+    .await?;
     drop(handle);
     let injection_active = injection_script.is_some();
+
+    if let (Some(rx), Some(x11_config)) = (x11_rx, x11_config) {
+        super::x11_forwarding::spawn_x11_forwarder(app.clone(), session_id.clone(), rx, x11_config);
+    }
 
     let session_info = SessionInfo {
         id: session_id.clone(),
@@ -247,6 +275,7 @@ async fn create_ssh_session_inner(
             ready_marker,
             post_login,
             backspace_mode,
+            initial_notice,
         )
         .await;
     });
@@ -306,10 +335,25 @@ pub async fn create_multiplexed_ssh_session(
     let session_id = uuid::Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
 
+    if config.x11_forwarding {
+        let connection_id = config.connection_id.clone().ok_or_else(|| {
+            AppError::Config("X11 forwarding requires a saved SSH connection".to_string())
+        })?;
+        return create_ssh_session(
+            app,
+            manager,
+            config,
+            Some(connection_id),
+            owner_window_label,
+            None,
+        )
+        .await;
+    }
+
     let handle_mtx = ssh_connection.target_handle();
     let mut handle = handle_mtx.lock().await;
-    let (channel, injection_script, ready_marker) =
-        open_shell_channel(&mut handle, &session_id).await?;
+    let (channel, injection_script, ready_marker, initial_notice) =
+        open_shell_channel(&mut handle, &session_id, None).await?;
     drop(handle);
     let injection_active = injection_script.is_some();
 
@@ -357,6 +401,7 @@ pub async fn create_multiplexed_ssh_session(
             ready_marker,
             post_login,
             backspace_mode,
+            initial_notice,
         )
         .await;
     });

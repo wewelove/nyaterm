@@ -51,6 +51,8 @@ pub struct TerminalSettings {
     pub scrollback_lines: u32,
     #[serde(default = "default_keep_alive")]
     pub keep_alive_interval: u32,
+    #[serde(default)]
+    pub x11_display: String,
     #[serde(default = "default_false")]
     pub hardware_acceleration: bool,
     #[serde(default = "default_false")]
@@ -87,6 +89,7 @@ impl Default for TerminalSettings {
         Self {
             scrollback_lines: default_scrollback(),
             keep_alive_interval: default_keep_alive(),
+            x11_display: String::new(),
             hardware_acceleration: false,
             keyword_highlights_enabled: false,
             keyword_highlights_across_wrapped_lines: false,

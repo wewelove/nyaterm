@@ -9,6 +9,7 @@ mod io;
 pub(crate) mod osc;
 mod session;
 mod tunnel;
+pub(crate) mod x11_forwarding;
 
 pub use auth::PendingAuthManager;
 pub(crate) use auth::load_saved_ssh_config;

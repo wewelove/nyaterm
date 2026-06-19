@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 /// Connection parameters for SSH (host, port, user, auth method).
 #[derive(Debug, Clone, Deserialize)]
@@ -23,6 +23,10 @@ pub struct SshConfig {
     pub auth: SshAuth,
     #[serde(default)]
     pub backspace_mode: String,
+    #[serde(default)]
+    pub x11_forwarding: bool,
+    #[serde(default)]
+    pub x11_display: String,
     #[serde(default)]
     pub proxy: Option<crate::config::ProxySettings>,
     #[serde(default)]
@@ -123,6 +127,7 @@ pub struct SshHandler {
     host: String,
     port: u16,
     owner_window_label: Option<String>,
+    x11_tx: Option<mpsc::UnboundedSender<super::x11_forwarding::X11ChannelOpen>>,
 }
 
 impl SshHandler {
@@ -137,7 +142,16 @@ impl SshHandler {
             host,
             port,
             owner_window_label,
+            x11_tx: None,
         }
+    }
+
+    pub fn with_x11_sender(
+        mut self,
+        x11_tx: mpsc::UnboundedSender<super::x11_forwarding::X11ChannelOpen>,
+    ) -> Self {
+        self.x11_tx = Some(x11_tx);
+        self
     }
 
     fn append_known_host(&self, host_entry: &str) {
@@ -482,6 +496,25 @@ impl client::Handler for SshHandler {
                 Err(error)
             }
         }
+    }
+
+    async fn server_channel_open_x11(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        originator_address: &str,
+        originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if let Some(tx) = &self.x11_tx {
+            let _ = tx.send(super::x11_forwarding::X11ChannelOpen {
+                channel,
+                originator_address: originator_address.to_string(),
+                originator_port,
+            });
+        } else {
+            let _ = channel.close().await;
+        }
+        Ok(())
     }
 }
 

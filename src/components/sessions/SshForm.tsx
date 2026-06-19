@@ -82,6 +82,8 @@ interface SshFormProps {
   maxPostLoginDelayMs: number;
   backspaceMode: string;
   setBackspaceMode: (v: string) => void;
+  x11Forwarding: boolean;
+  setX11Forwarding: (v: boolean) => void;
   connectionId?: string;
 }
 
@@ -255,6 +257,8 @@ export function SshForm({
   maxPostLoginDelayMs,
   backspaceMode,
   setBackspaceMode,
+  x11Forwarding,
+  setX11Forwarding,
   connectionId,
 }: SshFormProps) {
   const { t } = useTranslation();
@@ -813,9 +817,12 @@ export function SshForm({
             </TabsContent>
           </Tabs>
           <Tabs defaultValue="post-login" className="w-full">
-            <TabsList className="grid h-8 w-full grid-cols-2 pointer-events-auto">
+            <TabsList className="grid h-8 w-full grid-cols-3 pointer-events-auto">
               <TabsTrigger value="post-login" className="text-xs">
                 {t("dialog.commandExecution")}
+              </TabsTrigger>
+              <TabsTrigger value="x11" className="text-xs">
+                {t("dialog.x11Forwarding")}
               </TabsTrigger>
               <TabsTrigger value="backspace" className="text-xs">
                 {t("dialog.backspaceMode", "Backspace Mode")}
@@ -874,6 +881,25 @@ export function SshForm({
                       />
                       <span className="shrink-0 text-[0.625rem] text-muted-foreground">ms</span>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="x11" className="mt-3 border-0 outline-none">
+              <div className="rounded-lg border bg-accent/25 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-xs font-medium">{t("dialog.x11Forwarding")}</div>
+                    <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+                      {t("dialog.x11ForwardingDesc")}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Switch checked={x11Forwarding} onCheckedChange={setX11Forwarding} />
+                    <span className="text-xs text-muted-foreground">
+                      {t("dialog.enabled", "Enabled")}
+                    </span>
                   </div>
                 </div>
               </div>

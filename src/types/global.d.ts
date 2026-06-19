@@ -211,6 +211,8 @@ export interface SavedConnection {
   stop_bits?: string;
   /** Backspace key mode for SSH/Telnet/Serial connections ("ctrl_h" or "del"). */
   backspace_mode?: string;
+  /** SSH-only: enables X11 forwarding for remote graphical applications. */
+  x11_forwarding?: boolean;
 }
 
 /** Stored OTP entry for two-factor authentication. */
@@ -543,6 +545,7 @@ export type KeywordHighlightBuiltinRuleSettings = Record<string, boolean>;
 export interface TerminalSettings {
   scrollback_lines: number;
   keep_alive_interval: number;
+  x11_display?: string;
   hardware_acceleration: boolean;
   keyword_highlights_enabled: boolean;
   keyword_highlights_across_wrapped_lines: boolean;

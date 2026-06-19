@@ -34,6 +34,8 @@ pub enum ConnectionType {
         username: String,
         #[serde(default = "default_backspace_mode_ssh")]
         backspace_mode: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        x11_forwarding: bool,
     },
     LocalTerminal {
         #[serde(default)]
@@ -396,6 +398,24 @@ mod tests {
             panic!("expected ssh connection");
         };
         assert_eq!(backspace_mode, "ctrl_h");
+    }
+
+    #[test]
+    fn ssh_connection_defaults_x11_forwarding_to_false() {
+        let connection: SavedConnection = serde_json::from_value(serde_json::json!({
+            "id": "conn-1",
+            "name": "Test",
+            "type": "ssh",
+            "host": "example.com",
+            "port": 22,
+            "username": "root"
+        }))
+        .expect("connection");
+
+        let ConnectionType::Ssh { x11_forwarding, .. } = connection.config else {
+            panic!("expected ssh connection");
+        };
+        assert!(!x11_forwarding);
     }
 
     #[test]

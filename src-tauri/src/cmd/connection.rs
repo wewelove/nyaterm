@@ -197,6 +197,7 @@ mod tests {
                 port: 22,
                 username: "root".to_string(),
                 backspace_mode: "del".to_string(),
+                x11_forwarding: false,
             },
             group_id: None,
             description: None,

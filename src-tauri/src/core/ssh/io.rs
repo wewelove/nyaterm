@@ -65,11 +65,32 @@ async fn detect_shell_type(handle: &mut client::Handle<SshHandler>) -> Option<Sh
 pub(super) async fn open_shell_channel(
     handle: &mut client::Handle<SshHandler>,
     session_id: &str,
-) -> AppResult<(russh::Channel<client::Msg>, Option<String>, String)> {
+    x11_fake_cookie_hex: Option<&str>,
+) -> AppResult<(
+    russh::Channel<client::Msg>,
+    Option<String>,
+    String,
+    Option<String>,
+)> {
     let channel = handle
         .channel_open_session()
         .await
         .map_err(|error| AppError::Channel(format!("Failed to open channel: {}", error)))?;
+
+    let mut local_notice = None;
+    if let Some(fake_cookie_hex) = x11_fake_cookie_hex {
+        if let Err(error) = channel
+            .request_x11(true, false, "MIT-MAGIC-COOKIE-1", fake_cookie_hex, 0)
+            .await
+        {
+            tracing::warn!(
+                session_id = %session_id,
+                %error,
+                "Could not enable X11 forwarding"
+            );
+            local_notice = Some(super::x11_forwarding::enable_failed_message());
+        }
+    }
 
     channel
         .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
@@ -110,7 +131,7 @@ pub(super) async fn open_shell_channel(
         }
     };
 
-    Ok((channel, injection_script, ready_marker))
+    Ok((channel, injection_script, ready_marker, local_notice))
 }
 
 /// Injection phase state machine.
@@ -293,6 +314,7 @@ pub(super) async fn ssh_io_loop(
     ready_marker: String,
     post_login: Option<SshPostLoginConfig>,
     backspace_mode: String,
+    initial_notice: Option<String>,
 ) {
     let backspace_as_bs = backspace_mode == "ctrl_h";
     let output_event = format!("terminal-output-{}", session_id);
@@ -303,6 +325,9 @@ pub(super) async fn ssh_io_loop(
         .try_state::<Arc<RecordingManager>>()
         .map(|state| state.inner().clone());
     let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
+    if let Some(notice) = initial_notice {
+        output.push_owned(notice);
+    }
     let mut stripper = OscStripper::new(&ready_marker);
 
     let mut capture_processor = OutputCaptureProcessor::new();

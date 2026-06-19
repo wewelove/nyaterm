@@ -10,7 +10,13 @@ import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/context/ThemeContext";
 import { getBuiltinRules, hexLuminance } from "@/lib/keywordHighlightPresets";
 import type { KeywordHighlightRule } from "@/types/global";
-import { SettingNumberInput, SettingRow, SettingSection, SettingSwitch } from "./SettingFormItems";
+import {
+  SettingInput,
+  SettingNumberInput,
+  SettingRow,
+  SettingSection,
+  SettingSwitch,
+} from "./SettingFormItems";
 
 const DEFAULT_ACTION_LINK_MATCHERS = {
   ipv4: true,
@@ -107,6 +113,20 @@ export function TerminalTab() {
           onChange={(v) =>
             updateAppSettings({
               terminal: { ...appSettings.terminal, keep_alive_interval: v || 0 },
+            })
+          }
+        />
+
+        <SettingInput
+          label={t("settings.x11Display")}
+          desc={t("settings.x11DisplayDesc")}
+          className="h-8 font-mono text-sm"
+          controlClassName="max-w-lg"
+          value={appSettings.terminal.x11_display ?? ""}
+          placeholder={t("settings.x11DisplayPlaceholder")}
+          onChange={(event) =>
+            updateAppSettings({
+              terminal: { ...appSettings.terminal, x11_display: event.target.value },
             })
           }
         />

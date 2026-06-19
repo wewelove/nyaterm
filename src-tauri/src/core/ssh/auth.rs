@@ -116,6 +116,10 @@ fn resolve_saved_ssh_config(
         None
     };
     let post_login = resolve_post_login(conn);
+    let x11_forwarding = resolve_x11_forwarding(conn);
+    let x11_display = crate::config::load_app_settings(app)
+        .map(|settings| settings.terminal.x11_display)
+        .unwrap_or_default();
 
     Ok(SshConfig {
         connection_id,
@@ -126,10 +130,19 @@ fn resolve_saved_ssh_config(
         username,
         auth,
         backspace_mode: resolve_ssh_backspace_mode(conn),
+        x11_forwarding,
+        x11_display,
         proxy,
         proxy_jump,
         post_login,
     })
+}
+
+fn resolve_x11_forwarding(conn: &crate::config::SavedConnection) -> bool {
+    match &conn.config {
+        crate::config::ConnectionType::Ssh { x11_forwarding, .. } => *x11_forwarding,
+        _ => false,
+    }
 }
 
 fn resolve_ssh_backspace_mode(conn: &crate::config::SavedConnection) -> String {
