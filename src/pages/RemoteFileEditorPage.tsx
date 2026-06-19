@@ -68,25 +68,33 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MdClose, MdDoneAll, MdOpenInNew, MdRefresh, MdSave } from "react-icons/md";
+import {
+  MdClose,
+  MdDescription,
+  MdDoneAll,
+  MdKeyboardArrowDown,
+  MdOpenInNew,
+  MdRefresh,
+  MdSave,
+} from "react-icons/md";
 import { toast } from "sonner";
+import ReloadDirtyDialog from "@/components/dialog/remote-file-editor/ReloadDirtyDialog";
+import RemoteFileConflictDialog from "@/components/dialog/remote-file-editor/RemoteFileConflictDialog";
+import UnsavedChangesDialog from "@/components/dialog/remote-file-editor/UnsavedChangesDialog";
 import ChildWindowHeader from "@/components/layout/ChildWindowHeader";
 import { languageFromFilename, type RemoteTextFile } from "@/components/panel/file-explorer/model";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/context/AppContext";
 import { getErrorMessage } from "@/lib/errors";
 import { invoke } from "@/lib/invoke";
-import { parseJsonSearchParam } from "@/lib/utils";
+import { cn, formatSize, parseJsonSearchParam } from "@/lib/utils";
 
 const MAX_EDITOR_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -198,6 +206,11 @@ interface WriteRemoteFileTextResult {
   size?: number;
 }
 
+interface CursorPosition {
+  line: number;
+  column: number;
+}
+
 function languageExtension(language: string) {
   switch (language) {
     case "batch":
@@ -292,6 +305,37 @@ function tabId(data: Pick<RemoteFileEditorData, "sessionId" | "remotePath">) {
   return `${data.sessionId}\n${data.remotePath}`;
 }
 
+function getParentDirectoryName(path: string) {
+  const normalized = path.replace(/\/+$/, "");
+  if (!normalized || normalized === "/") return "/";
+  const parent = normalized.slice(0, normalized.lastIndexOf("/"));
+  if (!parent || parent === "/") return "/";
+  return parent.slice(parent.lastIndexOf("/") + 1) || "/";
+}
+
+function getTabBaseLabel(tab: EditorTab) {
+  return tab.name || tab.remotePath.split("/").pop() || tab.remotePath;
+}
+
+function getDisplayLanguage(language: string) {
+  return language === "plaintext" ? "Plain Text" : language.toLocaleUpperCase();
+}
+
+function getCursorPosition(state: EditorState): CursorPosition {
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  return { line: line.number, column: head - line.from + 1 };
+}
+
+function formatRemoteMtime(mtime?: number) {
+  if (!mtime) return "";
+  const timestamp = mtime < 10_000_000_000 ? mtime * 1000 : mtime;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
 function createTab(data: RemoteFileEditorData): EditorTab {
   return {
     ...data,
@@ -327,6 +371,8 @@ export default function RemoteFileEditorPage() {
   const [conflictTabId, setConflictTabId] = useState<string | null>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
+  const [reloadConfirmTabId, setReloadConfirmTabId] = useState<string | null>(null);
+  const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null,
@@ -334,13 +380,19 @@ export default function RemoteFileEditorPage() {
   );
   const dirtyTabs = useMemo(() => tabs.filter((tab) => tab.dirty), [tabs]);
   const savingTabs = useMemo(() => tabs.filter((tab) => tab.saving), [tabs]);
+  const duplicateTabNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tab of tabs) {
+      const label = getTabBaseLabel(tab);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return counts;
+  }, [tabs]);
 
   const updateTabs = useCallback((updater: (tabs: EditorTab[]) => EditorTab[]) => {
-    setTabs((current) => {
-      const next = updater(current);
-      tabsRef.current = next;
-      return next;
-    });
+    const next = updater(tabsRef.current);
+    tabsRef.current = next;
+    setTabs(next);
   }, []);
 
   const updateTab = useCallback(
@@ -388,6 +440,9 @@ export default function RemoteFileEditorPage() {
             const id = activeTabIdRef.current;
             if (!id) return;
             editorStatesRef.current[id] = update.state;
+            if (update.docChanged || update.selectionSet) {
+              setCursorPosition(getCursorPosition(update.state));
+            }
             if (!update.docChanged || suppressEditorUpdateRef.current) return;
             const next = update.state.doc.toString();
             updateTab(id, (tab) => ({ ...tab, content: next, dirty: true }));
@@ -422,9 +477,9 @@ export default function RemoteFileEditorPage() {
               overflow: "auto",
             },
             ".cm-gutters": {
-              backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
+              backgroundColor: "color-mix(in srgb, var(--muted) 18%, transparent)",
               color: "var(--muted-foreground)",
-              borderRightColor: "var(--border)",
+              borderRightColor: "color-mix(in srgb, var(--border) 70%, transparent)",
             },
             ".cm-foldGutter": {
               width: "1.1rem",
@@ -432,12 +487,17 @@ export default function RemoteFileEditorPage() {
             ".cm-foldGutter span": {
               cursor: "pointer",
               color: "var(--muted-foreground)",
+              opacity: "0.45",
+              transition: "opacity 120ms ease, color 120ms ease",
+            },
+            ".cm-foldGutter:hover span": {
+              opacity: "0.8",
             },
             ".cm-activeLine": {
-              backgroundColor: "color-mix(in srgb, var(--muted) 35%, transparent)",
+              backgroundColor: "color-mix(in srgb, var(--muted) 22%, transparent)",
             },
             ".cm-activeLineGutter": {
-              backgroundColor: "color-mix(in srgb, var(--muted) 55%, transparent)",
+              backgroundColor: "color-mix(in srgb, var(--muted) 32%, transparent)",
             },
             ".cm-tooltip": {
               borderColor: "var(--border)",
@@ -486,8 +546,25 @@ export default function RemoteFileEditorPage() {
     } finally {
       suppressEditorUpdateRef.current = false;
     }
+    setCursorPosition(getCursorPosition(state));
     window.requestAnimationFrame(() => view.focus());
   }, []);
+
+  const rememberCurrentEditorState = useCallback(() => {
+    const id = activeTabIdRef.current;
+    const view = viewRef.current;
+    if (!id || !view) return;
+    editorStatesRef.current[id] = view.state;
+  }, []);
+
+  const activateTab = useCallback(
+    (id: string) => {
+      rememberCurrentEditorState();
+      activeTabIdRef.current = id;
+      setActiveTabId(id);
+    },
+    [rememberCurrentEditorState],
+  );
 
   const loadFile = useCallback(
     async (id: string, fallbackTab?: EditorTab) => {
@@ -506,6 +583,8 @@ export default function RemoteFileEditorPage() {
           content: result.content,
           baseSize: result.size,
           baseMtime: result.mtime ?? current.mtime ?? 0,
+          size: result.size,
+          mtime: result.mtime ?? current.mtime ?? 0,
           loading: false,
           dirty: false,
           error: "",
@@ -536,10 +615,9 @@ export default function RemoteFileEditorPage() {
         updateTabs((current) => [...current, nextTab]);
         void loadFile(id, nextTab);
       }
-      activeTabIdRef.current = id;
-      setActiveTabId(id);
+      activateTab(id);
     },
-    [loadFile, updateTabs],
+    [activateTab, loadFile, updateTabs],
   );
 
   useEffect(() => {
@@ -639,6 +717,17 @@ export default function RemoteFileEditorPage() {
       .close()
       .catch(() => {});
   }, []);
+
+  const requestReloadTab = useCallback(
+    (tab: EditorTab) => {
+      if (tab.dirty) {
+        setReloadConfirmTabId(tab.id);
+        return;
+      }
+      void loadFile(tab.id);
+    },
+    [loadFile],
+  );
 
   const saveFile = useCallback(
     async (id: string, force = false) => {
@@ -809,12 +898,13 @@ export default function RemoteFileEditorPage() {
   const pendingCloseHasSaving = pendingCloseTabId
     ? Boolean(tabs.find((tab) => tab.id === pendingCloseTabId)?.saving)
     : savingTabs.length > 0;
+  const activeMtimeText = formatRemoteMtime(activeTab?.mtime);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <ChildWindowHeader
         title={`${dirtyTabs.length > 0 ? "* " : ""}${activeTab?.name || t("fileEditor.title")}`}
-        icon={<MdSave className="text-base" />}
+        icon={<MdDescription className="text-base" />}
         windowControls
         onClose={() => {
           if (dirtyTabs.length > 0) setCloseConfirmOpen(true);
@@ -823,68 +913,117 @@ export default function RemoteFileEditorPage() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-9 shrink-0 items-end overflow-x-auto border-b bg-muted/20 px-2">
-          {tabs.map((tab) => (
-            <div
-              role="tab"
-              tabIndex={0}
-              aria-selected={tab.id === activeTabId}
-              key={tab.id}
-              className={`group flex h-8 max-w-[220px] shrink-0 cursor-default items-center gap-1.5 border-x border-t px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                tab.id === activeTabId
-                  ? "bg-background text-foreground"
-                  : "bg-muted/30 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              }`}
-              title={tab.remotePath}
-              onClick={() => {
-                activeTabIdRef.current = tab.id;
-                setActiveTabId(tab.id);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                activeTabIdRef.current = tab.id;
-                setActiveTabId(tab.id);
-              }}
-            >
-              <span className="truncate font-mono">
-                {tab.dirty ? "* " : ""}
-                {tab.name || tab.remotePath}
-              </span>
-              <button
-                type="button"
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={t("common.close")}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeTab(tab.id);
-                }}
-              >
-                <MdClose className="text-xs" />
-              </button>
-            </div>
-          ))}
+        <div className="flex h-10 shrink-0 overflow-hidden border-b bg-muted/15">
+          <div role="tablist" className="flex min-w-0 flex-1 items-stretch overflow-hidden">
+            {tabs.map((tab) => {
+              const baseLabel = getTabBaseLabel(tab);
+              const hasDuplicateName = (duplicateTabNames.get(baseLabel) ?? 0) > 1;
+              const tabLabel = hasDuplicateName
+                ? `${baseLabel} · ${getParentDirectoryName(tab.remotePath)}`
+                : baseLabel;
+              const isActive = tab.id === activeTabId;
+
+              return (
+                <div
+                  role="tab"
+                  tabIndex={0}
+                  aria-selected={isActive}
+                  key={tab.id}
+                  className={cn(
+                    "group flex h-full min-w-[96px] max-w-[240px] shrink-0 cursor-default items-center gap-2 border-r px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50",
+                    isActive
+                      ? "border-t border-t-primary/50 border-r-border border-b border-b-background bg-background text-foreground"
+                      : "border-r-border/70 border-b border-b-border bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+                  )}
+                  title={tab.remotePath}
+                  onClick={() => activateTab(tab.id)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    activateTab(tab.id);
+                  }}
+                >
+                  {tab.dirty && <span className="sr-only">{t("fileEditor.unsaved")}</span>}
+                  {tab.dirty && (
+                    <span
+                      aria-hidden="true"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                    />
+                  )}
+                  <span className="min-w-0 flex-1 truncate font-mono">{tabLabel}</span>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-muted hover:text-foreground",
+                      isActive ? "opacity-70" : "opacity-0 group-hover:opacity-70",
+                    )}
+                    aria-label={t("common.close")}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                  >
+                    <MdClose className="text-sm" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {tabs.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-full w-9 shrink-0 items-center justify-center border-l bg-muted/10 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
+                  aria-label={t("terminal.openTabs")}
+                >
+                  <MdKeyboardArrowDown className="text-lg" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                {tabs.map((tab) => {
+                  const baseLabel = getTabBaseLabel(tab);
+                  const hasDuplicateName = (duplicateTabNames.get(baseLabel) ?? 0) > 1;
+                  const tabLabel = hasDuplicateName
+                    ? `${baseLabel} · ${getParentDirectoryName(tab.remotePath)}`
+                    : baseLabel;
+                  const isActive = tab.id === activeTabId;
+
+                  return (
+                    <DropdownMenuItem
+                      key={tab.id}
+                      className={cn("items-start gap-2 py-2", isActive && "bg-accent/60")}
+                      onClick={() => activateTab(tab.id)}
+                    >
+                      <span
+                        className={cn(
+                          "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                          tab.dirty ? "bg-primary" : "bg-transparent",
+                        )}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-mono text-xs text-foreground">
+                          {tabLabel}
+                        </span>
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                          {tab.remotePath}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
-        <div className="flex min-h-0 shrink-0 flex-col gap-2 border-b bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div
-              className="truncate font-mono text-xs text-muted-foreground"
-              title={activeTab?.remotePath}
-            >
-              {activeTab?.remotePath}
-            </div>
-            <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-              <span>{activeTab?.language ?? "plaintext"}</span>
-              <span aria-hidden="true">·</span>
-              <span>{statusText}</span>
-              {dirtyTabs.length > 1 ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>{t("fileEditor.unsavedFilesDesc", { count: dirtyTabs.length })}</span>
-                </>
-              ) : null}
-            </div>
+        <div className="flex min-h-0 shrink-0 flex-col gap-2 border-b bg-muted/10 px-3 py-1.5 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            className="min-w-0 truncate font-mono text-xs text-muted-foreground"
+            title={activeTab?.remotePath}
+          >
+            {activeTab?.remotePath}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button
@@ -892,21 +1031,28 @@ export default function RemoteFileEditorPage() {
               size="sm"
               className="h-8 gap-1.5"
               disabled={!activeTab || activeTab.loading}
-              onClick={() => activeTab && void loadFile(activeTab.id)}
+              onClick={() => activeTab && requestReloadTab(activeTab)}
             >
               <MdRefresh className="text-sm" />
               {t("fileEditor.reload")}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5"
-              disabled={!activeTab}
-              onClick={() => activeTab && openExternal(activeTab)}
-            >
-              <MdOpenInNew className="text-sm" />
-              {t("fileEditor.openExternal")}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    disabled={!activeTab || activeTab.loading}
+                    onClick={() => activeTab && openExternal(activeTab)}
+                  >
+                    <MdOpenInNew className="text-sm" />
+                    {t("fileEditor.openExternal")}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("fileEditor.openExternalTooltip")}</TooltipContent>
+            </Tooltip>
             <Button
               size="sm"
               className="h-8 gap-1.5"
@@ -943,64 +1089,90 @@ export default function RemoteFileEditorPage() {
           )}
           <div ref={editorParentRef} className="h-full min-h-0" />
         </div>
+
+        <div className="flex h-6 shrink-0 items-center justify-between gap-3 border-t bg-muted/15 px-3 font-mono text-[11px] text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+            <span className="shrink-0">
+              {getDisplayLanguage(activeTab?.language ?? "plaintext")}
+            </span>
+            <span aria-hidden="true" className="shrink-0">
+              ·
+            </span>
+            <span className="shrink-0">
+              {t("fileEditor.lineColumn", {
+                line: cursorPosition.line,
+                column: cursorPosition.column,
+              })}
+            </span>
+            <span aria-hidden="true" className="shrink-0">
+              ·
+            </span>
+            <span className="shrink-0">{statusText}</span>
+            {dirtyTabs.length > 1 ? (
+              <>
+                <span aria-hidden="true" className="shrink-0">
+                  ·
+                </span>
+                <span className="truncate">
+                  {t("fileEditor.unsavedFilesDesc", { count: dirtyTabs.length })}
+                </span>
+              </>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span>{formatSize(activeTab?.size ?? 0)}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t("fileEditor.encodingUtf8")}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t("fileEditor.lineEndingLf")}</span>
+            {activeMtimeText ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{t("fileEditor.modifiedAt", { time: activeMtimeText })}</span>
+              </>
+            ) : null}
+          </div>
+        </div>
       </div>
 
-      <AlertDialog open={!!conflictTabId} onOpenChange={(open) => !open && setConflictTabId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("fileEditor.conflictTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("fileEditor.conflictDesc")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const id = conflictTabId;
-                setConflictTabId(null);
-                if (id) void loadFile(id);
-              }}
-            >
-              {t("fileEditor.reload")}
-            </Button>
-            <AlertDialogAction
-              onClick={() => {
-                const id = conflictTabId;
-                setConflictTabId(null);
-                if (id) void saveFile(id, true);
-              }}
-            >
-              {t("fileEditor.forceSave")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RemoteFileConflictDialog
+        open={!!conflictTabId}
+        onOpenChange={(open) => {
+          if (!open) setConflictTabId(null);
+        }}
+        onReload={() => {
+          const id = conflictTabId;
+          setConflictTabId(null);
+          if (id) void loadFile(id);
+        }}
+        onForceSave={() => {
+          const id = conflictTabId;
+          setConflictTabId(null);
+          if (id) void saveFile(id, true);
+        }}
+      />
 
-      <AlertDialog open={closeConfirmOpen} onOpenChange={setCloseConfirmOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("fileEditor.unsavedTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingCloseTabId
-                ? t("fileEditor.unsavedDesc")
-                : t("fileEditor.unsavedFilesDesc", { count: dirtyTabs.length })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="group-data-[size=sm]/alert-dialog-content:grid-cols-3">
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <Button
-              variant="outline"
-              disabled={pendingCloseHasSaving}
-              onClick={() => void handleSaveAndClose()}
-            >
-              {pendingCloseTabId ? t("fileEditor.saveAndClose") : t("fileEditor.saveAllAndClose")}
-            </Button>
-            <AlertDialogAction variant="destructive" onClick={handleDiscard}>
-              {t("fileEditor.discard")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ReloadDirtyDialog
+        open={!!reloadConfirmTabId}
+        onOpenChange={(open) => {
+          if (!open) setReloadConfirmTabId(null);
+        }}
+        onConfirm={() => {
+          const id = reloadConfirmTabId;
+          setReloadConfirmTabId(null);
+          if (id) void loadFile(id);
+        }}
+      />
+
+      <UnsavedChangesDialog
+        open={closeConfirmOpen}
+        dirtyCount={dirtyTabs.length}
+        hasPendingTab={!!pendingCloseTabId}
+        saving={pendingCloseHasSaving}
+        onOpenChange={setCloseConfirmOpen}
+        onSaveAndClose={handleSaveAndClose}
+        onDiscard={handleDiscard}
+      />
     </div>
   );
 }

@@ -281,6 +281,61 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   zsh: "shell",
 };
 
+export const TEXT_EXTENSIONS = new Set([
+  ...Object.keys(LANGUAGE_BY_EXTENSION).map((extension) => extension.toLocaleLowerCase()),
+  "asc",
+  "csv",
+  "env",
+  "gitignore",
+  "gitattributes",
+  "gitmodules",
+  "pem",
+  "pub",
+  "service",
+  "socket",
+  "timer",
+]);
+
+const SHELL_TEXT_BASENAMES = new Set([
+  "bash_profile",
+  "bash_login",
+  "bash_logout",
+  "bashrc",
+  "profile",
+  "zprofile",
+  "zshenv",
+  "zshrc",
+  "zlogin",
+  "zlogout",
+  "kshrc",
+  "cshrc",
+  "tcshrc",
+]);
+
+const CONFIG_TEXT_BASENAMES = new Set([
+  "env",
+  "env.local",
+  "env.development",
+  "env.production",
+  "env.test",
+  "gitconfig",
+  "editorconfig",
+  "npmrc",
+  "yarnrc",
+  "curlrc",
+  "wgetrc",
+]);
+
+const SPECIAL_TEXT_BASENAMES = new Set([
+  ...SHELL_TEXT_BASENAMES,
+  ...CONFIG_TEXT_BASENAMES,
+  "cmakelists.txt",
+  "dockerfile",
+  "makefile",
+  "gnumakefile",
+  "justfile",
+]);
+
 export function getLocalPathName(path: string, fallback: string) {
   return path.split(/[\\/]/).pop() || fallback;
 }
@@ -298,45 +353,40 @@ export function isKnownBinaryFile(name: string) {
   return !!ext && BINARY_EXTENSIONS.has(ext);
 }
 
+function getNormalizedBaseName(name: string) {
+  return name.split(/[\\/]/).pop()?.toLocaleLowerCase() || name.toLocaleLowerCase();
+}
+
+export function isKnownTextFile(name: string) {
+  const baseName = getNormalizedBaseName(name);
+  const normalized = baseName.replace(/^\.+/, "");
+  const ext = getFileExtension(name);
+
+  return (
+    (!!ext && TEXT_EXTENSIONS.has(ext)) ||
+    SPECIAL_TEXT_BASENAMES.has(normalized) ||
+    baseName.endsWith(".dockerfile") ||
+    baseName.endsWith(".nginx.conf") ||
+    baseName === "docker-compose.yml" ||
+    baseName === "docker-compose.yaml"
+  );
+}
+
+export function getRemoteFileTextKind(name: string): "text" | "binary" | "unknown" {
+  if (isKnownTextFile(name)) return "text";
+  if (isKnownBinaryFile(name)) return "binary";
+  return "unknown";
+}
+
 export function languageFromFilename(name: string) {
-  const baseName = name.split(/[\\/]/).pop()?.toLocaleLowerCase() || name.toLocaleLowerCase();
+  const baseName = getNormalizedBaseName(name);
   const normalized = baseName.replace(/^\.+/, "");
 
-  if (
-    [
-      "bash_profile",
-      "bash_login",
-      "bash_logout",
-      "bashrc",
-      "profile",
-      "zprofile",
-      "zshenv",
-      "zshrc",
-      "zlogin",
-      "zlogout",
-      "kshrc",
-      "cshrc",
-      "tcshrc",
-    ].includes(normalized)
-  ) {
+  if (SHELL_TEXT_BASENAMES.has(normalized)) {
     return "shell";
   }
 
-  if (
-    [
-      "env",
-      "env.local",
-      "env.development",
-      "env.production",
-      "env.test",
-      "gitconfig",
-      "editorconfig",
-      "npmrc",
-      "yarnrc",
-      "curlrc",
-      "wgetrc",
-    ].includes(normalized)
-  ) {
+  if (CONFIG_TEXT_BASENAMES.has(normalized)) {
     return "ini";
   }
 

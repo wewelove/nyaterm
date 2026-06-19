@@ -88,9 +88,9 @@ import {
   type FileSortMode,
   fileExplorerSessionCacheStore,
   getLocalPathName,
+  getRemoteFileTextKind,
   getRemoteParentDirectory,
   type InlineRenameState,
-  isKnownBinaryFile,
   isParentDirectoryEntry,
   type LoadDirectoryOptions,
   MIN_FILE_LIST_COLUMN_WIDTHS,
@@ -150,6 +150,7 @@ function FileExplorer({
   const [propertiesDialogData, setPropertiesDialogData] = useState<PropertiesDialogData | null>(
     null,
   );
+  const [unknownEditorEntry, setUnknownEditorEntry] = useState<FileEntry | null>(null);
   const [cwdTrackingActive, setCwdTrackingActive] = useState(false);
   const [visitedHistory, setVisitedHistory] = useState<string[]>([]);
   const alwaysUploadFilesRef = useRef<Set<string>>(new Set());
@@ -1580,14 +1581,8 @@ function FileExplorer({
     }
   };
 
-  const handleOpenInternal = async (entry: FileEntry) => {
+  const openInternalEditor = async (entry: FileEntry) => {
     if (!activeSessionId || entry.is_dir) return;
-    if (isKnownBinaryFile(entry.name)) {
-      toast.info(t("fileExplorer.binaryOpenExternal"));
-      await handleOpenExternal(entry);
-      return;
-    }
-
     try {
       await openRemoteFileEditor({
         sessionId: activeSessionId,
@@ -1600,6 +1595,36 @@ function FileExplorer({
       toast.error(getErrorMessage(error) || t("fileExplorer.openInternalFailed"));
       await handleOpenExternal(entry);
     }
+  };
+
+  const handleOpenInternal = async (entry: FileEntry) => {
+    if (!activeSessionId || entry.is_dir) return;
+
+    const textKind = getRemoteFileTextKind(entry.name);
+    if (textKind === "text") {
+      await openInternalEditor(entry);
+      return;
+    }
+
+    if (textKind === "binary") {
+      toast.info(t("fileExplorer.binaryOpenExternal"));
+      await handleOpenExternal(entry);
+      return;
+    }
+
+    setUnknownEditorEntry(entry);
+  };
+
+  const handleOpenUnknownExternal = async () => {
+    const entry = unknownEditorEntry;
+    setUnknownEditorEntry(null);
+    if (entry) await handleOpenExternal(entry);
+  };
+
+  const handleOpenUnknownInternal = async () => {
+    const entry = unknownEditorEntry;
+    setUnknownEditorEntry(null);
+    if (entry) await openInternalEditor(entry);
   };
 
   const handleOpenDefault = async (entry: FileEntry) => {
@@ -2086,11 +2111,13 @@ function FileExplorer({
         newItemDialogData={newItemDialogData}
         newSymlinkDialogData={newSymlinkDialogData}
         propertiesDialogData={propertiesDialogData}
+        unknownFileTypeEntry={unknownEditorEntry}
         onDeleteClose={() => setDeleteDialogData(null)}
         onMoveClose={() => setMoveDialogData(null)}
         onNewItemClose={() => setNewItemDialogData(null)}
         onNewSymlinkClose={() => setNewSymlinkDialogData(null)}
         onPropertiesClose={() => setPropertiesDialogData(null)}
+        onUnknownFileTypeClose={() => setUnknownEditorEntry(null)}
         onDeleteSuccess={() => {
           setSelectedFiles(new Set());
           lastSelectedRef.current = null;
@@ -2099,6 +2126,8 @@ function FileExplorer({
         onRefresh={refreshCurrentDirectory}
         onOpenDirectoryEntry={handleItemClick}
         onOpenDefault={(entry) => void handleOpenDefault(entry)}
+        onOpenUnknownFileExternal={() => void handleOpenUnknownExternal()}
+        onOpenUnknownFileInternal={() => void handleOpenUnknownInternal()}
       />
     </aside>
   );

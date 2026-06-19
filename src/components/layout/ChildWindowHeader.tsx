@@ -60,14 +60,9 @@ export default function ChildWindowHeader({
   };
 
   const handleToggleMaximize = async () => {
+    await appWindow.toggleMaximize().catch(() => {});
     const maximized = await appWindow.isMaximized().catch(() => false);
-    if (maximized) {
-      await appWindow.unmaximize().catch(() => {});
-      setIsMaximized(false);
-    } else {
-      await appWindow.maximize().catch(() => {});
-      setIsMaximized(true);
-    }
+    setIsMaximized(maximized);
   };
 
   return (

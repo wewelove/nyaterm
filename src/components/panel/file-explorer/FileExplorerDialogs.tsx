@@ -11,6 +11,7 @@ import NewSymlinkDialog, {
 import PropertiesDialog, {
   type PropertiesDialogData,
 } from "@/components/dialog/file-explorer/PropertiesDialog";
+import UnknownFileTypeDialog from "@/components/dialog/remote-file-editor/UnknownFileTypeDialog";
 import type { FileEntry } from "@/types/global";
 
 interface FileExplorerDialogsProps {
@@ -19,15 +20,19 @@ interface FileExplorerDialogsProps {
   newItemDialogData: NewItemDialogData | null;
   newSymlinkDialogData: NewSymlinkDialogData | null;
   propertiesDialogData: PropertiesDialogData | null;
+  unknownFileTypeEntry: FileEntry | null;
   onDeleteClose: () => void;
   onMoveClose: () => void;
   onNewItemClose: () => void;
   onNewSymlinkClose: () => void;
   onPropertiesClose: () => void;
+  onUnknownFileTypeClose: () => void;
   onDeleteSuccess: () => void;
   onRefresh: () => Promise<unknown> | unknown;
   onOpenDirectoryEntry: (entry: FileEntry) => void;
   onOpenDefault: (entry: FileEntry) => void;
+  onOpenUnknownFileExternal: () => void;
+  onOpenUnknownFileInternal: () => void;
 }
 
 export function FileExplorerDialogs({
@@ -36,15 +41,19 @@ export function FileExplorerDialogs({
   newItemDialogData,
   newSymlinkDialogData,
   propertiesDialogData,
+  unknownFileTypeEntry,
   onDeleteClose,
   onMoveClose,
   onNewItemClose,
   onNewSymlinkClose,
   onPropertiesClose,
+  onUnknownFileTypeClose,
   onDeleteSuccess,
   onRefresh,
   onOpenDirectoryEntry,
   onOpenDefault,
+  onOpenUnknownFileExternal,
+  onOpenUnknownFileInternal,
 }: FileExplorerDialogsProps) {
   return (
     <>
@@ -100,6 +109,15 @@ export function FileExplorerDialogs({
           data={newSymlinkDialogData}
           onClose={onNewSymlinkClose}
           onSuccess={() => void onRefresh()}
+        />
+      )}
+
+      {unknownFileTypeEntry && (
+        <UnknownFileTypeDialog
+          entry={unknownFileTypeEntry}
+          onClose={onUnknownFileTypeClose}
+          onOpenExternal={onOpenUnknownFileExternal}
+          onOpenInternal={onOpenUnknownFileInternal}
         />
       )}
     </>
