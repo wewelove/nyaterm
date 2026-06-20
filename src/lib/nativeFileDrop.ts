@@ -40,12 +40,11 @@ export function isDropPositionInsideElement(
   }
 
   const rect = element.getBoundingClientRect();
-  const scale = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  const candidates =
-    scale === 1 ? [position] : [position, { x: position.x / scale, y: position.y / scale }];
-
-  return candidates.some(
-    ({ x, y }) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
+  return (
+    position.x >= rect.left &&
+    position.x <= rect.right &&
+    position.y >= rect.top &&
+    position.y <= rect.bottom
   );
 }
 
