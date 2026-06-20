@@ -326,11 +326,16 @@ export function keyEventToHotkeyString(e: KeyboardEvent): string {
   return parts.join("+");
 }
 
+/** Check whether the keyboard event is only a modifier key press/release. */
+export function isModifierOnlyKeyEvent(e: KeyboardEvent): boolean {
+  return /^(Control|Meta|Alt|Shift)(Left|Right)?$/.test(e.code);
+}
+
 /** Capture a numbered-tab shortcut prefix, including a modifier key pressed on its own. */
 export function keyEventToIndexedHotkeyString(e: KeyboardEvent): string {
   const combo = keyEventToHotkeyString(e);
   if (combo) return combo;
-  if (!/^(Control|Meta|Alt|Shift)(Left|Right)?$/.test(e.code)) return "";
+  if (!isModifierOnlyKeyEvent(e)) return "";
 
   const parts: string[] = [];
   if (e.ctrlKey) parts.push("ctrl");

@@ -36,7 +36,11 @@ import {
   sendSessionInput,
   sendSessionInputWithSync,
 } from "@/lib/sessionInput";
-import { matchesKeyEvent, resolveIndexedKeys } from "@/lib/shortcutRegistry";
+import {
+  isModifierOnlyKeyEvent,
+  matchesKeyEvent,
+  resolveIndexedKeys,
+} from "@/lib/shortcutRegistry";
 import { registerTerminalContextProvider } from "@/lib/terminalContext";
 import { getTerminalDropOverlayCopy, handleTerminalFileDrop } from "@/lib/terminalFileDrop";
 import {
@@ -704,6 +708,12 @@ export default function XTerminal({
 
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
+
+      if (isModifierOnlyKeyEvent(e)) {
+        e.preventDefault();
+        return false;
+      }
+
       const kb = terminalAppSettingsRef.current.keybindings;
 
       if (
