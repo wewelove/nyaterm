@@ -26,6 +26,7 @@ const GITEE_REMOTE_FILE_SUFFIX: &str = ".blob";
 const GITEE_REMOTE_TIMEOUT: Duration = Duration::from_secs(30);
 const GITHUB_GIST_API_ENDPOINT: &str = "https://api.github.com";
 const GITHUB_GIST_REMOTE_TIMEOUT: Duration = Duration::from_secs(30);
+const GITHUB_GIST_CONFLICT_RETRY_DELAY: Duration = Duration::from_millis(750);
 const GITHUB_API_VERSION: &str = "2022-11-28";
 
 pub(super) enum CloudRemote {
@@ -167,7 +168,7 @@ fn build_webdav_operator(settings: &CloudSyncSettings) -> AppResult<Operator> {
         .layer(storage_timeout_layer())
         .layer(HttpClientLayer::new(HttpClient::with(digest_client)))
         .layer(RetryLayer::new().with_max_times(3))
-        .layer(TracingLayer)
+        .layer(TracingLayer::new())
         .finish())
 }
 
@@ -341,7 +342,7 @@ fn finish_opendal_operator(builder: impl opendal::Builder) -> AppResult<Operator
         .map_err(map_storage_error)?
         .layer(storage_timeout_layer())
         .layer(RetryLayer::new().with_max_times(3))
-        .layer(TracingLayer)
+        .layer(TracingLayer::new())
         .finish())
 }
 
@@ -677,6 +678,8 @@ struct GithubGistFile {
     content: Option<String>,
     #[serde(default)]
     raw_url: Option<String>,
+    #[serde(default)]
+    truncated: bool,
 }
 
 impl GithubGistRemote {
@@ -721,13 +724,17 @@ impl GithubGistRemote {
         let Some(file) = gist.files.get(&filename) else {
             return Ok(None);
         };
-        let content = match file
-            .content
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            Some(content) => content.to_string(),
-            None => self.fetch_raw_file(file).await?,
+        let content = if file.truncated {
+            self.fetch_raw_file(file).await?
+        } else {
+            match file
+                .content
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+            {
+                Some(content) => content.to_string(),
+                None => self.fetch_raw_file(file).await?,
+            }
         };
         decode_github_gist_file_content(&content).map(Some)
     }
@@ -797,6 +804,24 @@ impl GithubGistRemote {
     async fn patch_files(
         &self,
         files: serde_json::Map<String, serde_json::Value>,
+    ) -> AppResult<()> {
+        match self.patch_files_once(&files).await {
+            Ok(()) => Ok(()),
+            Err(error) if is_github_gist_update_conflict(&error) => {
+                tracing::warn!(
+                    gist_id = %self.gist_id,
+                    "GitHub Gist update conflict; retrying once"
+                );
+                tokio::time::sleep(GITHUB_GIST_CONFLICT_RETRY_DELAY).await;
+                self.patch_files_once(&files).await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn patch_files_once(
+        &self,
+        files: &serde_json::Map<String, serde_json::Value>,
     ) -> AppResult<()> {
         let body = serde_json::json!({ "files": files });
         let response = self
@@ -875,6 +900,15 @@ fn map_github_gist_client_error(error: reqwest::Error) -> AppError {
     } else {
         AppError::Config(format!("GitHub Gist request failed: {error}"))
     }
+}
+
+fn is_github_gist_update_conflict(error: &AppError) -> bool {
+    matches!(
+        error,
+        AppError::Config(message)
+            if message.contains("GitHub Gist request failed (409 Conflict)")
+                && message.contains("Gist cannot be updated")
+    )
 }
 
 #[derive(Clone)]
@@ -1227,6 +1261,35 @@ mod tests {
         assert!(filename.ends_with(GITEE_REMOTE_FILE_SUFFIX));
         assert!(!filename.contains('/'));
         assert_eq!(github_gist_remote_path(&filename).as_deref(), Some(path));
+    }
+
+    #[test]
+    fn github_gist_file_deserializes_truncated_flag() {
+        let file: GithubGistFile = serde_json::from_str(
+            r#"{"content":"partial","raw_url":"https://gist.githubusercontent.com/raw","truncated":true}"#,
+        )
+        .expect("deserialize gist file");
+
+        assert!(file.truncated);
+    }
+
+    #[test]
+    fn github_gist_update_conflict_is_retryable() {
+        let error = AppError::Config(
+            "GitHub Gist request failed (409 Conflict): {\"message\":\"Gist cannot be updated.\"}"
+                .to_string(),
+        );
+
+        assert!(is_github_gist_update_conflict(&error));
+    }
+
+    #[test]
+    fn github_gist_non_conflict_error_is_not_retryable() {
+        let error = AppError::Config(
+            "GitHub Gist request failed (404 Not Found): {\"message\":\"Not Found\"}".to_string(),
+        );
+
+        assert!(!is_github_gist_update_conflict(&error));
     }
 
     #[test]

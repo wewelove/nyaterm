@@ -74,6 +74,14 @@ function getValidationMessage(
   }
 }
 
+function getGithubGistAuthErrorMessage(error: unknown, t: ReturnType<typeof useTranslation>["t"]) {
+  const message = getErrorMessage(error);
+  if (message.includes("GitHub Gist OAuth Client ID is not configured at build time")) {
+    return t("settings.githubGistClientIdMissing");
+  }
+  return message;
+}
+
 type GithubGistAuthState = {
   flow: GithubGistDeviceFlowStart | null;
   login: string | null;
@@ -246,7 +254,7 @@ export function SyncBackupTab({ onNavigateSecurity }: SyncBackupTabProps) {
       });
       await openUrl(flow.verification_uri);
     } catch (error) {
-      toast.error(getErrorMessage(error));
+      toast.error(getGithubGistAuthErrorMessage(error, t));
     } finally {
       setRunningAction(null);
     }
@@ -326,12 +334,13 @@ export function SyncBackupTab({ onNavigateSecurity }: SyncBackupTabProps) {
           }));
           void poll(result.interval ?? flow.interval);
         } catch (error) {
+          const message = getGithubGistAuthErrorMessage(error, t);
           setGithubAuth({
             flow: null,
             login: null,
-            message: getErrorMessage(error),
+            message,
           });
-          toast.error(getErrorMessage(error));
+          toast.error(message);
         }
       }, delaySeconds * 1000);
     };

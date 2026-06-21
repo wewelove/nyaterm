@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! Tauri app entry point: state construction, plugin registration, and command routing.
 
 mod app;

@@ -1,3 +1,4 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -112,19 +113,35 @@ fn decode_redb_json_doc<T: DeserializeOwned>(
     table: TableDefinition<&str, &str>,
     key: &str,
 ) -> AppResult<T> {
-    let temp = TempRedbFile::new("cloud-meta-decode");
-    std::fs::write(temp.path(), bytes)?;
-    let content = {
-        let db = Database::open(temp.path()).map_err(storage_error)?;
-        let read = db.begin_read().map_err(storage_error)?;
-        let docs = read.open_table(table).map_err(storage_error)?;
-        docs.get(key)
-            .map_err(storage_error)?
-            .ok_or_else(|| AppError::Config("remote redb metadata is missing".to_string()))?
-            .value()
-            .to_string()
-    };
+    let content = read_redb_json_doc(bytes, table, key)?;
     serde_json::from_str(&content).map_err(Into::into)
+}
+
+fn read_redb_json_doc(
+    bytes: &[u8],
+    table: TableDefinition<&str, &str>,
+    key: &str,
+) -> AppResult<String> {
+    catch_unwind(AssertUnwindSafe(|| {
+        let temp = TempRedbFile::new("cloud-meta-decode");
+        std::fs::write(temp.path(), bytes)?;
+        let content = {
+            let db = Database::open(temp.path()).map_err(storage_error)?;
+            let read = db.begin_read().map_err(storage_error)?;
+            let docs = read.open_table(table).map_err(storage_error)?;
+            docs.get(key)
+                .map_err(storage_error)?
+                .ok_or_else(|| AppError::Config("remote redb metadata is missing".to_string()))?
+                .value()
+                .to_string()
+        };
+        Ok(content)
+    }))
+    .unwrap_or_else(|_| {
+        Err(AppError::Storage(
+            "Remote redb metadata is corrupt or incomplete".to_string(),
+        ))
+    })
 }
 
 fn storage_error(error: impl std::fmt::Display) -> AppError {
@@ -209,5 +226,17 @@ mod tests {
 
         assert_eq!(decoded.revision_id, pointer.revision_id);
         assert_eq!(decoded.payload_hash, pointer.payload_hash);
+    }
+
+    #[test]
+    fn corrupt_remote_redb_metadata_returns_error() {
+        let error = decode_redb_json_doc::<RemoteSyncPointer>(
+            b"not a redb file",
+            REMOTE_SYNC_POINTER_TABLE,
+            REMOTE_SYNC_POINTER_KEY,
+        )
+        .expect_err("corrupt metadata should fail");
+
+        assert!(matches!(error, AppError::Storage(_)));
     }
 }

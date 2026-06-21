@@ -98,6 +98,18 @@ impl CloudSyncManager {
 
         let settings = self.settings.lock().await.clone();
         if settings.enabled && settings.auto_check_on_startup {
+            if should_skip_startup_network_check(&settings) {
+                self.set_status(
+                    "idle",
+                    "Startup cloud sync check skipped for GitHub Gist; sync will run on demand"
+                        .to_string(),
+                    None,
+                    None,
+                )
+                .await;
+                return Ok(());
+            }
+
             let manager = Arc::clone(self);
             async_runtime::spawn(async move {
                 if let Err(error) = with_operation_timeout(
@@ -798,6 +810,8 @@ impl CloudSyncManager {
             );
             settings.github_gist.gist_id = resolved_gist_id;
             self.persist_recovered_settings(settings.clone()).await?;
+            self.refresh_status_after_recovered_settings(&settings)
+                .await;
         }
 
         build_remote(&settings)
@@ -819,6 +833,23 @@ impl CloudSyncManager {
         let _ = app.emit("settings-changed", ());
         crate::tray::schedule_refresh(&app);
         Ok(())
+    }
+
+    async fn refresh_status_after_recovered_settings(&self, settings: &CloudSyncSettings) {
+        let app = self.app().ok();
+        let state = self.state.lock().await.clone();
+        let status = {
+            let mut status = self.status.lock().await;
+            status.enabled = settings.enabled;
+            status.provider = settings.provider.clone();
+            status.last_checked_at_ms = state.last_checked_at_ms;
+            status.last_synced_at_ms = state.last_synced_at_ms;
+            status.clone()
+        };
+        if let Some(app) = app {
+            let _ = app.emit("cloud-sync-status-changed", &status);
+            crate::tray::schedule_refresh(&app);
+        }
     }
 
     async fn set_status(
@@ -980,6 +1011,10 @@ fn should_record_startup_check_failure(error: &AppError) -> bool {
     !matches!(error, AppError::Io(_))
 }
 
+fn should_skip_startup_network_check(settings: &CloudSyncSettings) -> bool {
+    settings.provider == "github_gist"
+}
+
 pub async fn notify_config_changed(app: &tauri::AppHandle) {
     let manager = app.state::<Arc<CloudSyncManager>>();
     manager.inner().notify_config_changed().await;
@@ -1121,5 +1156,15 @@ mod tests {
         assert!(should_record_startup_check_failure(&AppError::Auth(
             "bad credentials".to_string()
         )));
+    }
+
+    #[test]
+    fn github_gist_skips_startup_network_check() {
+        let mut settings = CloudSyncSettings::default();
+        settings.provider = "github_gist".to_string();
+        assert!(should_skip_startup_network_check(&settings));
+
+        settings.provider = "webdav".to_string();
+        assert!(!should_skip_startup_network_check(&settings));
     }
 }

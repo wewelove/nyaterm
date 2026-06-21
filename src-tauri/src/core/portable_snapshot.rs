@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -287,10 +288,15 @@ pub fn decode_portable_snapshot(bytes: &[u8]) -> AppResult<PortableSnapshot> {
 }
 
 fn decode_portable_snapshot_redb(bytes: &[u8]) -> AppResult<PortableSnapshot> {
-    let temp = TempRedbFile::new("portable-snapshot-decode");
-    fs::write(temp.path(), bytes)?;
+    let snapshot = read_portable_snapshot_redb(bytes)?;
+    validate_portable_snapshot(&snapshot)?;
+    Ok(snapshot)
+}
 
-    let snapshot = {
+fn read_portable_snapshot_redb(bytes: &[u8]) -> AppResult<PortableSnapshot> {
+    catch_unwind(AssertUnwindSafe(|| -> AppResult<PortableSnapshot> {
+        let temp = TempRedbFile::new("portable-snapshot-decode");
+        fs::write(temp.path(), bytes)?;
         let db = Database::open(temp.path()).map_err(storage_error)?;
         let read = db.begin_read().map_err(storage_error)?;
         let meta_table = read
@@ -305,20 +311,22 @@ fn decode_portable_snapshot_redb(bytes: &[u8]) -> AppResult<PortableSnapshot> {
         let meta: PortableSnapshotMeta = serde_json::from_str(&meta_raw)?;
 
         if meta.schema_version == 2 {
-            decode_v2_snapshot(&read, meta)?
+            decode_v2_snapshot(&read, meta)
         } else if meta.schema_version == PORTABLE_SNAPSHOT_SCHEMA_VERSION {
             let entities = read_string_table(&read, SNAPSHOT_ENTITIES_TABLE)?;
-            decode_v3_snapshot(meta, &entities)?
+            decode_v3_snapshot(meta, &entities)
         } else {
-            return Err(AppError::Config(format!(
+            Err(AppError::Config(format!(
                 "Unsupported portable snapshot version {}",
                 meta.schema_version
-            )));
+            )))
         }
-    };
-
-    validate_portable_snapshot(&snapshot)?;
-    Ok(snapshot)
+    }))
+    .unwrap_or_else(|_| {
+        Err(AppError::Storage(
+            "Portable snapshot redb payload is corrupt or incomplete".to_string(),
+        ))
+    })
 }
 
 pub fn encode_portable_snapshot(snapshot: &PortableSnapshot) -> AppResult<Vec<u8>> {
@@ -830,6 +838,7 @@ mod tests {
         calculate_v3_raw_payload_hash, encode_portable_snapshot, encode_portable_snapshot_redb,
     };
     use crate::config::{self, ActivityBarLayout, AppSettings};
+    use crate::error::AppError;
     use redb::Database;
     use std::collections::BTreeMap;
     use std::io::Write;
@@ -928,6 +937,14 @@ mod tests {
         assert_eq!(decoded.payload_hash, snapshot.payload_hash);
         assert_eq!(decoded.master_key_token, snapshot.master_key_token);
         assert_eq!(decoded.known_hosts, snapshot.known_hosts);
+    }
+
+    #[test]
+    fn corrupt_portable_snapshot_redb_returns_error() {
+        let error = super::decode_portable_snapshot(b"not a redb file")
+            .expect_err("corrupt snapshot should fail");
+
+        assert!(matches!(error, AppError::Storage(_)));
     }
 
     #[test]
