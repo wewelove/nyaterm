@@ -161,8 +161,6 @@ src-tauri/src/cmd/
 - 启动时同步检查
 - 手动推送 / 拉取
 - 自动推送防抖
-- 定时备份
-- 远程备份列表与恢复
 - 冲突检测与事件广播
 
 它通过 `src-tauri/src/cmd/cloud_sync.rs` 暴露给前端的 commands 包括：
@@ -171,17 +169,14 @@ src-tauri/src/cmd/
 - `get_cloud_sync_status`
 - `sync_push_now`
 - `sync_pull_now`
-- `run_cloud_backup_now`
 - `list_cloud_sync_history`
-- `list_remote_backups`
-- `restore_remote_backup`
 - `resolve_cloud_sync_conflict`
 
 `src-tauri/src/core/portable_snapshot.rs` 则定义了“哪些数据应该进入可移植快照”。这层很重要，因为它决定了：
 
 - 哪些设置适合跨设备同步
 - 哪些数据只应该保留在本机
-- 备份快照和同步快照的范围差异
+- 同步快照和本地 `.nya` 导出快照的范围差异
 
 当前实现里，portable snapshot 会覆盖连接、凭据配置、OTP、代理、隧道、快捷命令、大部分应用设置，以及必要的文本密钥材料；但设备本地的运行态 UI 状态不会被无差别漫游。
 
@@ -194,7 +189,7 @@ src-tauri/src/cmd/
 - `cmd::log` — 收集前端日志并导出诊断包
 - `cmd::app` — 应用级退出等控制命令
 
-如果你修改的是迁移、备份恢复或故障排查工具链，这几组模块通常比 session / ssh 更关键。
+如果你修改的是迁移、配置导入导出或故障排查工具链，这几组模块通常比 session / ssh 更关键。
 
 ## 配置与加密
 

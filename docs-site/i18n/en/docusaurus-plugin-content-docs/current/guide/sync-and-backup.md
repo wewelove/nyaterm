@@ -2,56 +2,60 @@
 sidebar_position: 8
 ---
 
-# Sync & Backup
+# Cloud Sync
 
-NyaTerm's **Sync & Backup** capability is not about remote file transfer. It is about **syncing portable application configuration across devices and keeping recoverable backups of that data**.
+NyaTerm's **Cloud Sync** capability is not remote file transfer. It syncs portable application configuration through one encrypted current snapshot in remote storage.
 
-It helps to think of it as two related but different workflows:
+The remote side is intentionally current-state oriented:
 
-- **Sync** — push the current device's portable configuration snapshot to the cloud, or pull the latest snapshot back from the cloud
-- **Backup** — save the current state as a recoverable encrypted backup snapshot, either manually or on a schedule
+- `sync/current.redb.enc` stores the encrypted current core snapshot
+- `sync/latest.redb` stores revision, device, timestamp, and hash metadata
+- legacy `sync/snapshots/` objects are only used for compatibility reads and cleanup
 
-NyaTerm currently supports three remote storage provider types:
+Local `.nya` export / import remains the backup and migration path. Cloud Sync no longer creates remote multi-version backups, and it does not automatically delete any old `backups/` objects that may already exist in user storage.
+
+NyaTerm currently supports these remote storage provider types:
 
 - **WebDAV**
 - **S3-compatible** storage
 - **Gitee Snippet**
+- **GitHub Gist**
+- **Google Drive**
+- **OneDrive**
+- **AliyunDrive**
 
 ## Prerequisite: set a master password first
 
-Before using **Settings → Sync & Backup**, you must first set a **Master Password** in **Settings → Security**.
+Before using **Settings → Cloud Sync**, you must first set a **Master Password** in **Settings → Security**.
 
-In the current implementation this is a prerequisite, not an optional recommendation. Without a master password:
+Without a master password:
 
-- Sync & Backup cannot be enabled
-- Manual actions such as test, push, pull, and backup cannot be run
-- Scheduled encrypted backups cannot be used
+- Cloud Sync cannot be enabled
+- Manual actions such as test, push, and pull cannot be run
 
-That requirement exists because NyaTerm uploads **encrypted portable snapshots**, not plain-text config files.
+That requirement exists because NyaTerm uploads encrypted portable snapshots, not plain-text config files.
 
 ## Where to access it
 
 This feature has two main entry points.
 
-### 1. Settings → Sync & Backup
+### 1. Settings → Cloud Sync
 
-This is the primary configuration page. Use it to:
+Use the settings page to:
 
 - choose a provider
 - configure the remote namespace and provider root
 - define automatic sync behavior
-- define scheduled backup behavior
-- run manual actions
-- inspect remote backups
+- run test connection, push now, and pull now
 - resolve conflicts when they happen
 
-### 2. The Sync & Backup panel in the workspace
+### 2. The Cloud Sync panel in the workspace
 
-The main workspace also includes a **Sync & Backup** panel in the side UI. It is useful for checking:
+The workspace **Cloud Sync** panel is useful for checking:
 
 - current status
-- recent sync / backup activity
-- last check, sync, and backup times
+- recent sync activity
+- last check and sync times
 - conflict state and quick resolution actions
 
 Use the settings page to configure the feature, and the workspace panel to watch its live state.
@@ -62,7 +66,7 @@ Use the settings page to configure the feature, and the workspace panel to watch
 
 No matter which provider you use, start by checking these fields:
 
-- **Enable Sync & Backup**
+- **Enable Cloud Sync**
 - **Provider Configuration**
 - **Device Name**
 - **Remote Namespace**
@@ -70,7 +74,7 @@ No matter which provider you use, start by checking these fields:
 These have specific meanings:
 
 - **Device Name** is written into snapshot metadata so you can tell which device uploaded it
-- **Remote Namespace** is the top-level path prefix NyaTerm uses for sync and backup snapshots inside the selected provider
+- **Remote Namespace** is the top-level path prefix NyaTerm uses for the cloud sync snapshot inside the selected provider
 
 ### WebDAV
 
@@ -81,12 +85,7 @@ When the provider is **WebDAV**, you will typically configure:
 - **Username**
 - **Password**
 
-This is a good fit when:
-
-- you already have a NAS, private cloud, or WebDAV gateway
-- you want to reuse existing document or object-storage infrastructure
-
-WebDAV authentication supports both **Basic** and **Digest** auth, and NyaTerm switches to Digest when the server requires it, improving compatibility with NAS / gateways that mandate Digest.
+WebDAV authentication supports both **Basic** and **Digest** auth. NyaTerm switches to Digest when the server requires it, improving compatibility with NAS / gateways that mandate Digest.
 
 ### S3-compatible storage
 
@@ -101,24 +100,40 @@ When the provider is **S3-compatible**, you will typically configure:
 - **Session Token** (optional)
 - **Virtual Host Style** (enable only if your provider requires it)
 
-This is a good fit when:
-
-- you already use object storage for operational assets
-- you want NyaTerm config and backups to live in the same storage ecosystem
-
 ### Gitee Snippet
 
-When the provider is **Gitee Snippet**, NyaTerm stores the encrypted portable snapshot as a Gitee code snippet (a Gitee snippet, similar to a Gist). This is a convenient option for users in regions where Gitee is fast and who would rather not run their own WebDAV or S3.
+When the provider is **Gitee Snippet**, NyaTerm stores encrypted cloud sync objects in a Gitee code snippet.
 
 You will typically configure:
 
-- **Gitee Personal Access Token** (with snippet / gist permission)
-- **Snippet Identifier / Description** (optional, to help you recognize the snapshot on Gitee)
+- **Gitee Personal Access Token**
+- **Snippet ID**
 
-This is a good fit when:
+### GitHub Gist
 
-- you have no NAS, private cloud, or object storage, but want the snapshot stored somewhere with fast regional access
-- you want one Gitee account to cover cross-device sync without maintaining a separate storage service
+When the provider is **GitHub Gist**, NyaTerm authorizes GitHub with device flow and stores encrypted cloud sync objects in a private Gist.
+
+You will typically:
+
+- click **Connect GitHub**
+- enter the device code on the GitHub authorization page
+- grant the `gist` scope
+
+If no Gist ID is configured, NyaTerm creates a private Gist after authorization succeeds. If a Gist ID is already configured, NyaTerm reuses it.
+
+### Google Drive / OneDrive / AliyunDrive
+
+When the provider is **Google Drive**, **OneDrive**, or **AliyunDrive**, NyaTerm uses OpenDAL to access the selected drive service.
+
+The current implementation expects OAuth credentials to be entered manually:
+
+- **Refresh Token**
+- **Client ID**
+- **Client Secret**
+- **Access Token** (optional; refresh token is recommended for long-term sync)
+- **Provider Root** (optional)
+
+AliyunDrive also requires **Drive Type**, usually `resource`.
 
 ### Validation rules
 
@@ -127,12 +142,12 @@ The current implementation performs basic provider validation before actions are
 - WebDAV requires an endpoint
 - S3 requires both an endpoint and a bucket
 - `Access Key ID` and `Secret Access Key` must be provided together
+- GitHub Gist requires GitHub authorization and a Gist ID
+- Google Drive / OneDrive / AliyunDrive require Refresh Token, Client ID, and Client Secret
 
 A good habit is to run **Test Connection** before enabling any automatic strategy.
 
 ## Automatic sync strategy
-
-The **Automatic Sync Strategy** section controls two behaviors.
 
 ### Check on startup
 
@@ -145,7 +160,7 @@ Typical outcomes include:
 - local changes are pending upload
 - both local and remote changed, so a conflict is detected
 
-This is not real-time remote watching. It is a **startup check of the current state**.
+This is not real-time remote watching. It is a startup check of the current state.
 
 ### Auto-push after local changes
 
@@ -155,26 +170,9 @@ You can control:
 
 - **Sync Debounce Seconds**
 
-That makes the behavior closer to “push shortly after save” than to real-time bidirectional sync.
-
-## Scheduled backup strategy
-
-Sync and backup solve different problems:
-
-- **Sync** helps another device get the latest portable state
-- **Backup** preserves a recoverable history of snapshots
-
-In **Scheduled Backup Strategy**, you can configure:
-
-- **Enable Scheduled Backups**
-- **Backup Interval (hours)**
-- **Retention Count**
-
-The current implementation creates **encrypted backup snapshots** on the configured schedule and deletes older remote backup entries once they exceed the retention limit.
+That makes the behavior closer to "push shortly after save" than to real-time bidirectional sync.
 
 ## Manual actions
-
-The **Manual Actions** section is useful during first-time setup, troubleshooting, or cautious rollout.
 
 ### Test Connection
 
@@ -198,44 +196,9 @@ Useful when:
 - another device has already pushed an update
 - the current device needs to align with the latest remote state on demand
 
-### Run Backup Now
-
-Immediately create a new remote encrypted backup snapshot.
-
-Useful when:
-
-- you want a recovery point before making larger changes
-- you are about to migrate devices, reinstall, or do risky troubleshooting
-
-## Remote backups and restore
-
-The **Remote Backups & Conflict** section lists the backup entries currently available in the cloud. For each entry you can inspect details such as:
-
-- backup time
-- revision
-- device identifier
-- payload hash
-- app version
-
-### Restore a remote backup
-
-When you restore a remote backup, NyaTerm applies that backup snapshot to the current device.
-
-Useful scenarios include:
-
-- bringing a new device up with familiar configuration quickly
-- rolling back after a bad change
-- returning to a known baseline during troubleshooting
-
-Important boundaries:
-
-- restore overwrites the **portable local data** included in the snapshot
-- it is not a field-by-field merge
-- it is better understood as restoring a complete snapshot
-
 ## How conflicts happen
 
-In the current implementation, a conflict occurs when **both local state and remote state changed since the last sync baseline**.
+A conflict occurs when both local state and remote state changed since the last sync baseline.
 
 A typical example looks like this:
 
@@ -278,27 +241,28 @@ The important boundary is:
 - this is not collaborative conflict resolution
 - it is effectively a choice between the local snapshot and the remote snapshot
 
-## What gets synced or backed up?
+## What gets synced?
 
-The current implementation is built on **portable snapshots**. These cover NyaTerm's portable configuration data, such as:
+Cloud Sync is built on portable snapshots. These cover NyaTerm's portable configuration data, such as:
 
 - saved connections and groups
 - key, password, and OTP configuration
 - proxies and tunnels
 - quick commands
 - most application settings
+- known_hosts and the master-key token
 
-Backup snapshots also include additional command-history data so recovery can bring back a fuller working environment.
+Command history is not included in the cloud sync core snapshot. Use local `.nya` export / import when you need an offline backup or migration package.
 
-But you should not think of this as “every piece of UI state roams across devices.” The current implementation deliberately preserves some device-local UI state, such as:
+The current implementation deliberately preserves some device-local UI state, such as:
 
 - currently open tabs
 - live panel open/close and sizing state
 
 So the feature is best understood as:
 
-- **syncing portable configuration**
-- **recovering the core configuration layer of a working environment**
+- syncing portable configuration
+- letting multiple devices share the current core configuration state
 
 not as a full desktop-session image.
 
@@ -307,15 +271,14 @@ not as a full desktop-session image.
 If you are enabling this for the first time, this order works well:
 
 1. Set a master password in **Settings → Security**
-2. Open **Settings → Sync & Backup**
+2. Open **Settings → Cloud Sync**
 3. Choose the provider, then fill in endpoint / bucket / root / credentials
 4. Set the device name and remote namespace
 5. Run **Test Connection** first
 6. Then decide whether to enable:
    - check on startup
    - auto-push
-   - scheduled backups
-7. Finally run **Push Now** or **Run Backup Now** once to verify the full path works
+7. Finally run **Push Now** once to verify the full path works
 
 ## Troubleshooting hints
 
@@ -326,10 +289,10 @@ If buttons are disabled or actions are blocked, check these first:
 - whether provider-required fields are complete
 - whether the remote namespace, provider root, and endpoint values are correct
 
-If your main question is “what happened recently?”, start with the workspace **Sync & Backup** panel. If your main goal is “change config or restore a backup”, go back to the settings page.
+If your main question is "what happened recently?", start with the workspace **Cloud Sync** panel. If your main goal is changing config, go back to the settings page.
 
 :::tip Practical advice
 - When connecting a new provider for the first time, run **Test Connection** before enabling automatic strategies.
-- If you are about to make large changes to connections, OTP, or quick commands, create a manual backup first.
+- Before making large changes to connections, OTP, or quick commands, use local `.nya` export if you need a rollback point.
 - If you switch between devices often, keep a clear device-name convention and a predictable remote-namespace strategy.
 :::

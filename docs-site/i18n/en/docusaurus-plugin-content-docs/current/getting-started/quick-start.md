@@ -92,17 +92,17 @@ In **Settings → Terminal**, you can enable:
 
 These features are intentionally conservative by default, so you can enable them only where they help your workflow.
 
-## Step 5: Optionally configure sync and backup
+## Step 5: Optionally configure Cloud Sync
 
-If you want cross-device configuration sync or recoverable encrypted backups for this device, continue with:
+If you want cross-device configuration sync, continue with:
 
 1. Open **Settings → Security** and set a **Master Password**
-2. Open **Settings → Sync & Backup**
-3. Choose **WebDAV** or an **S3-compatible** storage provider
+2. Open **Settings → Cloud Sync**
+3. Choose WebDAV, S3-compatible storage, Gist, or a drive provider
 4. Fill in the connection details and run **Test Connection** first
-5. Then decide whether to enable automatic sync and scheduled backup
+5. Then decide whether to enable startup checks and auto-push
 
-If you are just evaluating NyaTerm for the first time, this step is optional. For the full workflow, see [Sync & Backup](../guide/sync-and-backup).
+If you are just evaluating NyaTerm for the first time, this step is optional. For the full workflow, see [Cloud Sync](../guide/sync-and-backup).
 
 ## Step 6: Keep exploring by use case
 
@@ -111,4 +111,4 @@ If you are just evaluating NyaTerm for the first time, this step is optional. Fo
 - Want to manage files and auto-upload? See [SFTP File Transfer](../guide/file-transfer)
 - Want to learn terminal enhancements and recording? See [Terminal Features](../guide/terminal)
 - Want to configure OTP? See [OTP and Authentication](../guide/otp-and-auth)
-- Want to enable cloud sync and encrypted backups? See [Sync & Backup](../guide/sync-and-backup)
+- Want to enable cloud sync? See [Cloud Sync](../guide/sync-and-backup)

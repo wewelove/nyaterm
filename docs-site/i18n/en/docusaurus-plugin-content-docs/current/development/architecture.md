@@ -161,7 +161,7 @@ Core backend capabilities are mainly organized under these modules:
 - `src-tauri/src/core/watcher.rs` — local file watching and auto-upload workflows
 - `src-tauri/src/core/importer.rs` — Xshell / MobaXterm / WindTerm session import
 - `src-tauri/src/core/recording.rs` — session recording
-- `src-tauri/src/core/cloud_sync.rs` — cloud sync, remote backups, status events, and conflict handling
+- `src-tauri/src/core/cloud_sync.rs` — cloud sync, status events, and conflict handling
 - `src-tauri/src/core/portable_snapshot.rs` — portable snapshot build/apply logic and sync scope control
 
 ## Configuration and persistence

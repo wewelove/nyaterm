@@ -105,7 +105,7 @@ const sessionId = await invoke<string>('create_ssh_session', {
 - `cloud-sync-conflict`
 - AI 相关流式事件
 
-终端、文件浏览器、资源监控、传输队列、AI Assistant，以及同步与备份的状态 / 历史 / 冲突提示都建立在这些事件之上。
+终端、文件浏览器、资源监控、传输队列、AI Assistant，以及云同步的状态 / 历史 / 冲突提示都建立在这些事件之上。
 
 ## 工作区模型
 
@@ -155,14 +155,14 @@ const sessionId = await invoke<string>('create_ssh_session', {
 
 这条链路和当前活跃会话耦合较深，改动时要留意 pane / connection 上下文、模型可用性和执行审批状态。
 
-## Sync & Backup 前端落点
+## Cloud Sync 前端落点
 
-如果你改的是同步与备份相关 UI，优先查看这些文件：
+如果你改的是云同步相关 UI，优先查看这些文件：
 
 - `src/pages/SettingsPage.tsx` — 设置页 tab 结构、保存拦截和主密码前置逻辑
-- `src/components/settings/SyncBackupTab.tsx` — provider 配置、自动策略、手动操作、远程备份与冲突处理
+- `src/components/settings/SyncBackupTab.tsx` — provider 配置、自动策略、手动操作与冲突处理
 - `src/components/panel/SyncBackupHistoryPanel.tsx` — 工作区历史面板与冲突快速处理入口
-- `src/App.tsx` — 云同步与备份面板在主工作区中的接入方式
+- `src/App.tsx` — 云同步面板在主工作区中的接入方式
 - `src/lib/cloudSync.ts` — 前端默认值、格式化和 provider 校验工具
 
 这些文件之间通过设置状态、Tauri commands 和 cloud-sync 事件一起驱动完整体验。

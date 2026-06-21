@@ -18,10 +18,10 @@
     "message": "Manage multiple SSH and local terminal sessions simultaneously. WebGL hardware-accelerated rendering, custom fonts, keyword highlighting, and fuzzy command history search."
   },
   "加密同步与备份": {
-    "message": "Encrypted Sync & Backup"
+    "message": "Encrypted Cloud Sync"
   },
   "通过 WebDAV 或 S3 兼容存储同步 NyaTerm 的可移植配置，并为连接、凭据和常用设置创建可恢复的加密备份快照。": {
-    "message": "Sync NyaTerm's portable configuration through WebDAV or S3-compatible storage, and create recoverable encrypted backup snapshots for connections, credentials, and common settings."
+    "message": "Sync NyaTerm's portable configuration through WebDAV, S3-compatible storage, Gist, or drive providers."
   },
   "高度可定制": {
     "message": "Highly Customizable"
@@ -114,7 +114,7 @@
     "message": "Browse guides by feature"
   },
   "查看 SSH、SFTP、终端操作、OTP、主题、代理和同步备份的具体用法。": {
-    "message": "See detailed guides for SSH, SFTP, terminal operations, OTP, themes, proxies, and sync & backup."
+    "message": "See detailed guides for SSH, SFTP, terminal operations, OTP, themes, proxies, and cloud sync."
   },
   "查看文档": {
     "message": "View docs"
@@ -150,7 +150,7 @@
     "message": "Includes SFTP, OTP, proxies, jump hosts, port forwarding, and host key verification."
   },
   "配置同步与备份": {
-    "message": "Config sync and backup"
+    "message": "Cloud config sync"
   },
   "可通过 WebDAV 或 S3 兼容存储保存加密配置快照。": {
     "message": "Save encrypted configuration snapshots through WebDAV or S3-compatible storage."
@@ -246,19 +246,19 @@
     "message": "Configure proxies, jump hosts, local forwarding, remote forwarding, and dynamic forwarding"
   },
   "同步与备份": {
-    "message": "Sync and backup"
+    "message": "Cloud Sync"
   },
   "同步和恢复可移植配置": {
-    "message": "Sync and restore portable configuration"
+    "message": "Sync portable configuration"
   },
   "NyaTerm 可将连接、凭据配置和常用设置打包为加密快照，用于备份、迁移或在多台设备之间同步。": {
-    "message": "NyaTerm can package connections, credential settings, and common preferences into encrypted snapshots for backup, migration, or sync across devices."
+    "message": "NyaTerm can package connections, credential settings, and common preferences into encrypted snapshots for sync across devices."
   },
   "支持 WebDAV 和 S3 兼容存储": {
     "message": "Supports WebDAV and S3-compatible storage"
   },
   "使用主密码保护同步和备份数据": {
-    "message": "Protect sync and backup data with a master password"
+    "message": "Protect cloud sync data with a master password"
   },
   "支持 `.nya` 导入导出，并处理远端与本地版本冲突": {
     "message": "Supports `.nya` import/export and handles version conflicts between remote and local data"
@@ -267,7 +267,7 @@
     "message": "Loading preview"
   },
   "支持 SSH、串口、本地 shell、SFTP 和配置备份的桌面终端客户端": {
-    "message": "A desktop terminal client for SSH, serial, local shell, SFTP, and configuration backups"
+    "message": "A desktop terminal client for SSH, serial, local shell, SFTP, and cloud-synced configuration"
   },
   "更新日志": {
     "message": "Changelog"

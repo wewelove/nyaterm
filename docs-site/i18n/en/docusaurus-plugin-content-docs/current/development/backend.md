@@ -139,8 +139,6 @@ This flow involves:
 - startup sync checks
 - manual push / pull
 - debounced auto-push
-- scheduled backups
-- remote backup listing and restore
 - conflict detection and event emission
 
 The frontend reaches it through `src-tauri/src/cmd/cloud_sync.rs`, which exposes commands such as:
@@ -149,17 +147,14 @@ The frontend reaches it through `src-tauri/src/cmd/cloud_sync.rs`, which exposes
 - `get_cloud_sync_status`
 - `sync_push_now`
 - `sync_pull_now`
-- `run_cloud_backup_now`
 - `list_cloud_sync_history`
-- `list_remote_backups`
-- `restore_remote_backup`
 - `resolve_cloud_sync_conflict`
 
 `src-tauri/src/core/portable_snapshot.rs` defines which data belongs in a portable snapshot. That matters because it controls:
 
 - which settings are suitable for cross-device sync
 - which data should remain local to the device
-- how backup snapshots differ in scope from sync snapshots
+- how sync snapshots differ in scope from local `.nya` export snapshots
 
 In the current implementation, portable snapshots cover connections, credential config, OTP, proxies, tunnels, quick commands, and most application settings; they do not blindly roam all live UI state.
 

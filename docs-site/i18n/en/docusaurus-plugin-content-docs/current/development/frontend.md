@@ -103,7 +103,7 @@ Many frontend features rely on Tauri events, for example:
 - `cloud-sync-history-changed`
 - `cloud-sync-conflict`
 
-Terminal rendering, file browsing, resource monitoring, transfer queues, and the Sync & Backup status / history / conflict UI all sit on top of these events.
+Terminal rendering, file browsing, resource monitoring, transfer queues, and the Cloud Sync status / history / conflict UI all sit on top of these events.
 
 ## Workspace model
 
@@ -141,14 +141,14 @@ When editing tabs, splits, or multi-area terminal layout behavior, first decide 
 
 If you are changing terminal presentation, this is usually the first file to inspect.
 
-## Sync & Backup frontend entry points
+## Cloud Sync frontend entry points
 
-If you are changing sync / backup UI flows, start with these files:
+If you are changing Cloud Sync UI flows, start with these files:
 
 - `src/pages/SettingsPage.tsx` — settings-tab structure, save blocking, and master-password prerequisites
-- `src/components/settings/SyncBackupTab.tsx` — provider config, automatic strategies, manual actions, remote backups, and conflict handling
+- `src/components/settings/SyncBackupTab.tsx` — provider config, automatic strategies, manual actions, and conflict handling
 - `src/components/panel/SyncBackupHistoryPanel.tsx` — workspace history panel and quick conflict actions
-- `src/App.tsx` — how the Sync & Backup panel is wired into the main workspace
+- `src/App.tsx` — how the Cloud Sync panel is wired into the main workspace
 - `src/lib/cloudSync.ts` — frontend defaults, formatting helpers, and provider validation utilities
 
 Together these files define the full user flow through settings state, Tauri commands, and cloud-sync events.

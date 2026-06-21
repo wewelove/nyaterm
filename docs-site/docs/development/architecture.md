@@ -163,7 +163,7 @@ NyaTerm 的终端工作区有两个容易混淆、但职责不同的层次：
 - `src-tauri/src/core/watcher.rs` — 本地文件监听与自动上传流程
 - `src-tauri/src/core/importer.rs` — Xshell / MobaXterm / WindTerm 导入
 - `src-tauri/src/core/recording.rs` — 会话录制
-- `src-tauri/src/core/cloud_sync.rs` — 云同步、远程备份、状态事件、冲突处理
+- `src-tauri/src/core/cloud_sync.rs` — 云同步、状态事件、冲突处理
 - `src-tauri/src/core/portable_snapshot.rs` — 可移植快照构建 / 应用与同步范围控制
 - `src-tauri/src/core/ai.rs` — provider 调用、流式响应、结构化输出、命令卡片与审计历史
 

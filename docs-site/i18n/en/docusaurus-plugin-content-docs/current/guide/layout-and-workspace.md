@@ -11,7 +11,7 @@ NyaTerm is built around a composable workspace rather than a single terminal tab
 A typical workspace is made up of these areas:
 
 - **Center area** — tabs and terminal panes
-- **Left activity bar / panels** — file explorer, network, Security/Auth, Sync & Backup
+- **Left activity bar / panels** — file explorer, network, Security/Auth, Cloud Sync
 - **Right activity bar / panels** — saved connections, active sessions, command history, resource monitor
 - **Bottom helper area** — quick commands, serial send, recording, lock actions
 
@@ -82,9 +82,9 @@ The left side is mainly for capability entry points:
 - File explorer
 - Network
 - Security/Auth
-- Sync & Backup
+- Cloud Sync
 
-The **Sync & Backup** panel is a runtime entry point for cross-device config sync and backup recovery. It surfaces current status, recent sync / backup activity, and direct conflict-handling actions when a conflict is detected.
+The **Cloud Sync** panel is a runtime entry point for cross-device config sync. It surfaces current status, recent sync activity, and direct conflict-handling actions when a conflict is detected.
 
 ### Right side
 
