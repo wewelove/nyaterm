@@ -1051,6 +1051,8 @@
     "aliyunDriveRefreshTokenDesc": "Long-lived AliyunDrive refresh token used by OpenDAL to refresh access.",
     "aliyunDriveType": "Drive Type",
     "aliyunDriveTypeDesc": "Usually resource. Use backup when your AliyunDrive app is configured for backup drive access.",
+    "altAsMeta": "Use Option as Meta/Alt",
+    "altAsMetaDesc": "On macOS, send ESC + key for Option shortcuts like Option+f instead of entering special characters such as ƒ.",
     "apiKey": "API Key",
     "appId": "App ID",
     "appKey": "App Key",
