@@ -980,6 +980,13 @@ fn pty_session_thread(
                             manager_reader
                                 .confirm_command_submission(&sid_for_rec_reader, command.clone()),
                         );
+                        let _ = app_read.emit(
+                            "session-command-accepted",
+                            serde_json::json!({
+                                "sessionId": &sid_for_rec_reader,
+                                "command": command,
+                            }),
+                        );
                     }
 
                     if !should_emit_visible_output(&mut suppress_visible, result.ready) {

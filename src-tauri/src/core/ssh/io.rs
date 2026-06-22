@@ -695,6 +695,13 @@ async fn emit_metadata(
         manager
             .confirm_command_submission(session_id, command.clone())
             .await;
+        let _ = app.emit(
+            "session-command-accepted",
+            serde_json::json!({
+                "sessionId": session_id,
+                "command": command,
+            }),
+        );
     }
 }
 

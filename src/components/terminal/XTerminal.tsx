@@ -23,6 +23,11 @@ import { emitAIErrorDetected } from "@/lib/aiEvents";
 import { renderAiCommandEnd, renderAiCommandStart } from "@/lib/aiTerminalRenderer";
 import { buildTerminalThemeColors, isTerminalTransparencyEnabled } from "@/lib/backgroundImage";
 import { readClipboardText } from "@/lib/clipboard";
+import {
+  commandStartsSuggestionSuppressingProgram,
+  isPagerSearchOrCommandInput,
+  isPagerSingleKeyInput,
+} from "@/lib/commandSuggestionSuppression";
 import { detectCredentialPromptKind } from "@/lib/credentialAutofill";
 import { invoke } from "@/lib/invoke";
 import { hexLuminance } from "@/lib/keywordHighlightPresets";
@@ -83,6 +88,11 @@ import { createZmodemEventHandler, type ZmodemEventPayload } from "./zmodemTermi
 import "@xterm/xterm/css/xterm.css";
 
 const BACKSPACE_INPUT = "\x7f";
+
+interface SessionCommandAcceptedEvent {
+  sessionId: string;
+  command: string;
+}
 
 function serializeTerminalText(terminal: Terminal): string {
   const buffer = terminal.buffer.active;
@@ -187,6 +197,7 @@ export default function XTerminal({
   const lastErrorNoticeAtRef = useRef(0);
   const credentialPromptBufferRef = useRef("");
   const credentialPromptInputUntilRef = useRef(0);
+  const commandSuggestionSuppressedRef = useRef(false);
 
   useEffect(() => {
     sessionTypeRef.current = sessionType;
@@ -293,7 +304,15 @@ export default function XTerminal({
       return false;
     }
 
-    return canSuggestFromTracker(inputStateRef.current);
+    const inputState = inputStateRef.current;
+    if (commandSuggestionSuppressedRef.current) {
+      return false;
+    }
+    if (isPagerSearchOrCommandInput(inputState.value)) {
+      return false;
+    }
+
+    return canSuggestFromTracker(inputState);
   }, [shellIntegrationRef]);
 
   const applySuggestion = useCallback(
@@ -309,6 +328,9 @@ export default function XTerminal({
           : { kind: "replace", value: command },
         registerSubmission: execute ? command : null,
       }).catch(() => {});
+      if (execute && commandStartsSuggestionSuppressingProgram(command)) {
+        commandSuggestionSuppressedRef.current = true;
+      }
     },
     [sessionId],
   );
@@ -1021,6 +1043,7 @@ export default function XTerminal({
 
       if (data.startsWith("B")) {
         si.enabled = true;
+        resetCommandSuggestionSuppression();
         return false;
       }
 
@@ -1028,6 +1051,7 @@ export default function XTerminal({
         si.enabled = true;
         si.commandRunning = true;
         inputStateRef.current = createTerminalInputState();
+        resetCommandSuggestionSuppression();
         dismissSuggestions();
         return false;
       }
@@ -1035,6 +1059,7 @@ export default function XTerminal({
       if (data.startsWith("D")) {
         si.enabled = true;
         si.commandRunning = false;
+        resetCommandSuggestionSuppression();
         return false;
       }
 
@@ -1060,6 +1085,7 @@ export default function XTerminal({
     let focusUnlisten: UnlistenFn | null = null;
     let captureUnlisten: UnlistenFn | null = null;
     let zmodemUnlisten: UnlistenFn | null = null;
+    let commandAcceptedUnlisten: UnlistenFn | null = null;
 
     const clearCredentialPromptInputMode = () => {
       credentialPromptBufferRef.current = "";
@@ -1080,6 +1106,22 @@ export default function XTerminal({
       if (/[\r\n]/u.test(payload)) {
         credentialPromptInputUntilRef.current = 0;
       }
+    };
+
+    const setCommandSuggestionSuppressed = (suppressed: boolean) => {
+      if (commandSuggestionSuppressedRef.current === suppressed) return;
+      commandSuggestionSuppressedRef.current = suppressed;
+      if (suppressed) {
+        dismissSuggestions();
+      }
+    };
+
+    const noteShellCommand = (command: string) => {
+      setCommandSuggestionSuppressed(commandStartsSuggestionSuppressingProgram(command));
+    };
+
+    const resetCommandSuggestionSuppression = () => {
+      setCommandSuggestionSuppressed(false);
     };
 
     const refreshGutter = () => {
@@ -1387,6 +1429,20 @@ export default function XTerminal({
       }
       outputUnlisten = nextOutputUnlisten;
 
+      const nextCommandAcceptedUnlisten = await listen<SessionCommandAcceptedEvent>(
+        "session-command-accepted",
+        (event) => {
+          if (!isTerminalAlive()) return;
+          if (event.payload.sessionId !== sessionIdRef.current) return;
+          noteShellCommand(event.payload.command);
+        },
+      );
+      if (disposed) {
+        nextCommandAcceptedUnlisten();
+        return;
+      }
+      commandAcceptedUnlisten = nextCommandAcceptedUnlisten;
+
       const nextErrorUnlisten = await listen<string>(`session-error-${sessionId}`, (event) => {
         if (!isTerminalAlive()) return;
         const message = String(event.payload || tRef.current("terminal.connectionFailed"));
@@ -1397,6 +1453,7 @@ export default function XTerminal({
         onConnectionErrorRef.current?.(sessionIdRef.current, message);
         inputStateRef.current = createTerminalInputState();
         clearCredentialPromptInputMode();
+        resetCommandSuggestionSuppression();
         dismissSuggestions();
       });
       if (disposed) {
@@ -1414,6 +1471,7 @@ export default function XTerminal({
         }
         inputStateRef.current = createTerminalInputState();
         clearCredentialPromptInputMode();
+        resetCommandSuggestionSuppression();
         dismissSuggestions();
       });
       if (disposed) {
@@ -1603,6 +1661,16 @@ export default function XTerminal({
         }
       }
 
+      if (commandSuggestionSuppressedRef.current) {
+        dismissSuggestions();
+        if (data === "\u0003" || data === "q") {
+          resetCommandSuggestionSuppression();
+          inputStateRef.current = createTerminalInputState();
+        }
+        sendRawInput(data, null);
+        return;
+      }
+
       if (isPlainTextInputData(data)) {
         const selectedInputRange = getSmartCursorSelectedInputRange();
         if (selectedInputRange) {
@@ -1616,7 +1684,17 @@ export default function XTerminal({
       if (data === "\r" || data === "\u0003") {
         clearCredentialPromptInputMode();
       }
-      syncSuggestionsWithInputState();
+      if (data === "\r" && command) {
+        noteShellCommand(command);
+        dismissSuggestions();
+      } else if (
+        isPagerSingleKeyInput(data) ||
+        isPagerSearchOrCommandInput(inputStateRef.current.value)
+      ) {
+        dismissSuggestions();
+      } else {
+        syncSuggestionsWithInputState();
+      }
       sendRawInput(data, data === "\r" && command ? command : null);
     });
 
@@ -1771,6 +1849,7 @@ export default function XTerminal({
       if (focusUnlisten) focusUnlisten();
       if (captureUnlisten) captureUnlisten();
       if (zmodemUnlisten) zmodemUnlisten();
+      if (commandAcceptedUnlisten) commandAcceptedUnlisten();
       zmodemHandler.dispose();
       if (pendingOutputFlushRef.current !== null) {
         cancelAnimationFrame(pendingOutputFlushRef.current);
