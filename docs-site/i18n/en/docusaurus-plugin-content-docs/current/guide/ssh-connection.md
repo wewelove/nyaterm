@@ -163,6 +163,41 @@ NyaTerm can import session definitions from other terminal clients. Current supp
 - **Xshell** (`.xts`)
 - **MobaXterm** (`.mxtsessions`)
 - **WindTerm** (`.sessions`)
+- **NyaTerm JSON** (`.json`)
+
+### Import from NyaTerm JSON
+
+If you need to organize connection inventories in bulk, choose **NyaTerm JSON** and import a `.json` file. This format is useful when session data is generated from scripts, asset inventories, or other systems.
+
+Sample file: [session-import-sample.json](/examples/session-import-sample.json)
+
+Top-level JSON fields:
+
+- `version`: currently `1`
+- `groups`: session groups to create in advance, using `path` to represent nesting
+- `passwords`: reusable saved-password entries, referenced within this file by `ref`
+- `ssh_keys`: reusable saved-key entries, referenced within this file by `ref`
+- `sessions`: session definitions to import
+
+Supported session types:
+
+- `ssh`
+- `local_terminal`
+- `telnet`
+- `serial`
+
+Supported SSH authentication forms:
+
+- Direct password: `"auth": { "mode": "password", "password": "replace-me" }`
+- Saved password: `"auth": { "mode": "password", "password_ref": "prod-root-password" }`
+- Saved key: `"auth": { "mode": "key", "key_ref": "ops-ed25519" }`
+- No authentication: `"auth": { "mode": "none" }`
+
+Use either `password` or `password_ref`, but not both. `key` mode must provide `key_ref`. A `ref` is only valid inside the current JSON file; after import, NyaTerm generates real local IDs.
+
+:::warning
+Passwords and private keys in the JSON file are plaintext. Delete the file after importing, or at least treat it as a sensitive file.
+:::
 
 After importing, it is a good idea to verify:
 
