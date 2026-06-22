@@ -132,6 +132,13 @@ export function InteractionTab() {
           controlClassName="max-w-2xl"
           onChange={(e) => updateInteraction({ word_separators: e.target.value })}
         />
+
+        <SettingRow label={t("settings.altAsMeta")} desc={t("settings.altAsMetaDesc")}>
+          <SettingSwitch
+            checked={interaction.alt_as_meta}
+            onChange={(v) => updateInteraction({ alt_as_meta: v })}
+          />
+        </SettingRow>
       </SettingSection>
 
       <SettingSection

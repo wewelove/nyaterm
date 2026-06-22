@@ -116,6 +116,7 @@ export function useTerminalSettings(
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.options.wordSeparator = interaction.word_separators;
+      terminalRef.current.options.macOptionIsMeta = interaction.alt_as_meta;
     }
-  }, [interaction.word_separators, terminalRef]);
+  }, [interaction.word_separators, interaction.alt_as_meta, terminalRef]);
 }

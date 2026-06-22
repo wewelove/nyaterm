@@ -385,6 +385,7 @@ export default function XTerminal({
       fontFamily: appearance.font_family,
       minimumContrastRatio: appearance.minimum_contrast_ratio,
       wordSeparator: interaction.word_separators,
+      macOptionIsMeta: interaction.alt_as_meta,
       theme: { ...terminalThemeColors },
       allowTransparency: terminalTransparencyEnabled,
       allowProposedApi: true,

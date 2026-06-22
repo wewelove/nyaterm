@@ -86,6 +86,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     command_suggestion_min_chars: DEFAULT_COMMAND_SUGGESTION_MIN_CHARS,
     command_suggestion_max_chars: DEFAULT_COMMAND_SUGGESTION_MAX_CHARS,
     word_separators: " ()[]{}\"':=,;|&<>",
+    alt_as_meta: false,
     default_encoding: "UTF-8",
     tab_double_click_action: DEFAULT_TAB_DOUBLE_CLICK_ACTION,
     tab_middle_click_action: DEFAULT_TAB_MIDDLE_CLICK_ACTION,

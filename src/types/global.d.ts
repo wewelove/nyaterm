@@ -823,6 +823,7 @@ export interface InteractionSettings {
   command_suggestion_min_chars: number;
   command_suggestion_max_chars: number;
   word_separators: string;
+  alt_as_meta: boolean;
   default_encoding: string;
   tab_double_click_action: import("@/lib/interactionSettings").TabMouseAction;
   tab_middle_click_action: import("@/lib/interactionSettings").TabMouseAction;

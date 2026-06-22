@@ -14,6 +14,8 @@ pub struct InteractionSettings {
     pub command_suggestion_max_chars: usize,
     #[serde(default = "default_word_separators")]
     pub word_separators: String,
+    #[serde(default)]
+    pub alt_as_meta: bool,
     #[serde(default = "default_encoding")]
     pub default_encoding: String,
     #[serde(default = "default_tab_double_click_action")]
@@ -64,6 +66,7 @@ impl Default for InteractionSettings {
             command_suggestion_min_chars: default_command_suggestion_min_chars(),
             command_suggestion_max_chars: default_command_suggestion_max_chars(),
             word_separators: default_word_separators(),
+            alt_as_meta: false,
             default_encoding: default_encoding(),
             tab_double_click_action: default_tab_double_click_action(),
             tab_middle_click_action: default_tab_middle_click_action(),
@@ -83,6 +86,7 @@ mod tests {
         assert_eq!(settings.tab_double_click_action, "disconnect_session");
         assert_eq!(settings.tab_middle_click_action, "rename_tab");
         assert_eq!(settings.tab_right_click_action, "none");
+        assert!(!settings.alt_as_meta);
     }
 
     #[test]
@@ -101,5 +105,6 @@ mod tests {
         assert_eq!(settings.tab_double_click_action, "disconnect_session");
         assert_eq!(settings.tab_middle_click_action, "rename_tab");
         assert_eq!(settings.tab_right_click_action, "none");
+        assert!(!settings.alt_as_meta);
     }
 }
