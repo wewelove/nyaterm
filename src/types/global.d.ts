@@ -565,6 +565,7 @@ export type KeywordHighlightBuiltinRuleSettings = Record<string, boolean>;
 export interface TerminalSettings {
   scrollback_lines: number;
   keep_alive_interval: number;
+  font_size_delta: number;
   x11_display?: string;
   hardware_acceleration: boolean;
   keyword_highlights_enabled: boolean;

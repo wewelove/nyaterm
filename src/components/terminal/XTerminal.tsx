@@ -48,6 +48,7 @@ import {
 } from "@/lib/shortcutRegistry";
 import { registerTerminalContextProvider } from "@/lib/terminalContext";
 import { getTerminalDropOverlayCopy, handleTerminalFileDrop } from "@/lib/terminalFileDrop";
+import { resolveTerminalFontSize } from "@/lib/terminalFontSize";
 import {
   applyTerminalInputData,
   applyTerminalInputPreview,
@@ -405,7 +406,7 @@ export default function XTerminal({
       scrollback: terminalSettings.scrollback_lines,
       cursorBlink: appearance.cursor_blink,
       cursorStyle: appearance.cursor_style as "block" | "underline" | "bar",
-      fontSize: appearance.font_size,
+      fontSize: resolveTerminalFontSize(appearance.font_size, terminalSettings.font_size_delta),
       fontFamily: appearance.font_family,
       minimumContrastRatio: appearance.minimum_contrast_ratio,
       wordSeparator: interaction.word_separators,

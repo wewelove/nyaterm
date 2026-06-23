@@ -49,9 +49,9 @@ import { invoke } from "@/lib/invoke";
 import { logger } from "@/lib/logger";
 import { isMacOS } from "@/lib/platform";
 import {
-  DEFAULT_TERMINAL_FONT_SIZE,
-  decreaseTerminalFontSize,
-  increaseTerminalFontSize,
+  decreaseTerminalFontSizeDelta,
+  increaseTerminalFontSizeDelta,
+  resetTerminalFontSizeDelta,
 } from "@/lib/terminalFontSize";
 import { getActivePane, getTabDisplayName } from "@/lib/workspaceTabs";
 import type { SavedConnection, Tab } from "@/types/global";
@@ -208,19 +208,25 @@ export default function Header({
 
   const handleZoom = (delta: number) => {
     updateAppSettings((prev) => ({
-      appearance: {
-        ...prev.appearance,
-        font_size:
+      terminal: {
+        ...prev.terminal,
+        font_size_delta:
           delta > 0
-            ? increaseTerminalFontSize(prev.appearance.font_size)
-            : decreaseTerminalFontSize(prev.appearance.font_size),
+            ? increaseTerminalFontSizeDelta(
+                prev.appearance.font_size,
+                prev.terminal.font_size_delta,
+              )
+            : decreaseTerminalFontSizeDelta(
+                prev.appearance.font_size,
+                prev.terminal.font_size_delta,
+              ),
       },
     }));
   };
 
   const handleResetZoom = () =>
     updateAppSettings((prev) => ({
-      appearance: { ...prev.appearance, font_size: DEFAULT_TERMINAL_FONT_SIZE },
+      terminal: { ...prev.terminal, font_size_delta: resetTerminalFontSizeDelta() },
     }));
 
   const menuKeys = [

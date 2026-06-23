@@ -3,6 +3,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import type { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef } from "react";
 import { isTerminalTransparencyEnabled } from "@/lib/backgroundImage";
+import { resolveTerminalFontSize } from "@/lib/terminalFontSize";
 import type { TerminalColors } from "@/lib/themes";
 import { installMacImeCompatibilityPatch } from "@/lib/xtermMacImeCompatibility";
 import type { AppSettings } from "@/types/global";
@@ -95,7 +96,10 @@ export function useTerminalSettings(
     if (terminalRef.current) {
       const options = terminalRef.current.options;
       options.fontFamily = appearance.font_family;
-      options.fontSize = appearance.font_size;
+      options.fontSize = resolveTerminalFontSize(
+        appearance.font_size,
+        terminalSettings.font_size_delta,
+      );
       options.cursorBlink = appearance.cursor_blink;
       options.cursorStyle = appearance.cursor_style as "block" | "underline" | "bar";
       options.minimumContrastRatio = appearance.minimum_contrast_ratio;
@@ -106,7 +110,13 @@ export function useTerminalSettings(
         requestAnimationFrame(() => fitAddonRef.current?.fit());
       }
     }
-  }, [appearance, terminalRef, fitAddonRef, scheduleTextureRefresh]);
+  }, [
+    appearance,
+    terminalSettings.font_size_delta,
+    terminalRef,
+    fitAddonRef,
+    scheduleTextureRefresh,
+  ]);
 
   // React to terminal core settings changes: scrollback
   useEffect(() => {

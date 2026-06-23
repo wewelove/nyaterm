@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef } from "react";
 import { resolveShortcutKeys } from "@/hooks/useShortcutMap";
 import { matchesKeyEvent } from "@/lib/shortcutRegistry";
 import {
-  DEFAULT_TERMINAL_FONT_SIZE,
-  decreaseTerminalFontSize,
-  increaseTerminalFontSize,
+  decreaseTerminalFontSizeDelta,
+  increaseTerminalFontSizeDelta,
+  resetTerminalFontSizeDelta,
 } from "@/lib/terminalFontSize";
 import type { AppSettings } from "@/types/global";
 
@@ -22,25 +22,31 @@ export function useTerminalZoom(
 
   const handleZoomIn = useCallback(() => {
     updateAppSettings((prev) => ({
-      appearance: {
-        ...prev.appearance,
-        font_size: increaseTerminalFontSize(prev.appearance.font_size),
+      terminal: {
+        ...prev.terminal,
+        font_size_delta: increaseTerminalFontSizeDelta(
+          prev.appearance.font_size,
+          prev.terminal.font_size_delta,
+        ),
       },
     }));
   }, [updateAppSettings]);
 
   const handleZoomOut = useCallback(() => {
     updateAppSettings((prev) => ({
-      appearance: {
-        ...prev.appearance,
-        font_size: decreaseTerminalFontSize(prev.appearance.font_size),
+      terminal: {
+        ...prev.terminal,
+        font_size_delta: decreaseTerminalFontSizeDelta(
+          prev.appearance.font_size,
+          prev.terminal.font_size_delta,
+        ),
       },
     }));
   }, [updateAppSettings]);
 
   const handleResetZoom = useCallback(() => {
     updateAppSettings((prev) => ({
-      appearance: { ...prev.appearance, font_size: DEFAULT_TERMINAL_FONT_SIZE },
+      terminal: { ...prev.terminal, font_size_delta: resetTerminalFontSizeDelta() },
     }));
   }, [updateAppSettings]);
 

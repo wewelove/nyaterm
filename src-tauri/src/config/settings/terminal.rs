@@ -52,6 +52,8 @@ pub struct TerminalSettings {
     #[serde(default = "default_keep_alive")]
     pub keep_alive_interval: u32,
     #[serde(default)]
+    pub font_size_delta: f64,
+    #[serde(default)]
     pub x11_display: String,
     #[serde(default = "default_false")]
     pub hardware_acceleration: bool,
@@ -91,6 +93,7 @@ impl Default for TerminalSettings {
         Self {
             scrollback_lines: default_scrollback(),
             keep_alive_interval: default_keep_alive(),
+            font_size_delta: 0.0,
             x11_display: String::new(),
             hardware_acceleration: false,
             keyword_highlights_enabled: false,
