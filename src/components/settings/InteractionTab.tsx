@@ -139,6 +139,16 @@ export function InteractionTab() {
             onChange={(v) => updateInteraction({ alt_as_meta: v })}
           />
         </SettingRow>
+
+        <SettingRow
+          label={t("settings.macImeCompatibility")}
+          desc={t("settings.macImeCompatibilityDesc")}
+        >
+          <SettingSwitch
+            checked={interaction.mac_ime_compatibility}
+            onChange={(v) => updateInteraction({ mac_ime_compatibility: v })}
+          />
+        </SettingRow>
       </SettingSection>
 
       <SettingSection

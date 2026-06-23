@@ -1887,6 +1887,8 @@ export default function XTerminal({
     terminalSettings,
     interaction,
     visible && active,
+    terminalInstance,
+    sessionId,
   );
 
   // isDark is derived from the terminal theme background so built-in rule colors

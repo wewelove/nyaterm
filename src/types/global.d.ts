@@ -826,6 +826,7 @@ export interface InteractionSettings {
   command_suggestion_max_chars: number;
   word_separators: string;
   alt_as_meta: boolean;
+  mac_ime_compatibility: boolean;
   default_encoding: string;
   tab_double_click_action: import("@/lib/interactionSettings").TabMouseAction;
   tab_middle_click_action: import("@/lib/interactionSettings").TabMouseAction;

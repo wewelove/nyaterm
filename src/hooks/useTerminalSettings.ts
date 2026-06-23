@@ -4,6 +4,7 @@ import type { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef } from "react";
 import { isTerminalTransparencyEnabled } from "@/lib/backgroundImage";
 import type { TerminalColors } from "@/lib/themes";
+import { installMacImeCompatibilityPatch } from "@/lib/xtermMacImeCompatibility";
 import type { AppSettings } from "@/types/global";
 
 export function useTerminalSettings(
@@ -14,6 +15,8 @@ export function useTerminalSettings(
   terminalSettings: AppSettings["terminal"],
   interaction: AppSettings["interaction"],
   rendererVisible = true,
+  terminalInstance: Terminal | null = null,
+  sessionId?: string,
 ) {
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const webglFailedRef = useRef(false);
@@ -119,4 +122,16 @@ export function useTerminalSettings(
       terminalRef.current.options.macOptionIsMeta = interaction.alt_as_meta;
     }
   }, [interaction.word_separators, interaction.alt_as_meta, terminalRef]);
+
+  useEffect(() => {
+    const terminal = terminalInstance ?? terminalRef.current;
+    if (!terminal) return;
+
+    const patch = installMacImeCompatibilityPatch(
+      terminal,
+      interaction.mac_ime_compatibility,
+      sessionId,
+    );
+    return () => patch.dispose();
+  }, [interaction.mac_ime_compatibility, terminalInstance, terminalRef, sessionId]);
 }

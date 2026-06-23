@@ -9,6 +9,7 @@ type LogDomain =
   | "ui.error"
   | "tauri.invoke"
   | "settings.persistence"
+  | "terminal.input"
   | "session.lifecycle"
   | "ssh.auth"
   | "transfer.lifecycle"
