@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { createContext, useContext } from "react";
 import type { NewSessionTarget } from "@/lib/windowManager";
 import type { Group, SavedConnection } from "@/types/global";
@@ -29,6 +29,7 @@ export const naturalCompare = (a: string, b: string) =>
 export interface SavedConnectionsContextValue {
   // UI state
   isDragEnabled: boolean;
+  isPointerDragEnabled: boolean;
   dragTarget: DragTarget | null;
   expandedGroups: Set<string>;
   selectedConnectionIds: Set<string>;
@@ -68,6 +69,10 @@ export interface SavedConnectionsContextValue {
     id: string,
     tgtType: "connection" | "group",
   ) => Promise<void>;
+  handlePointerDragStart: (e: ReactPointerEvent, type: "connection" | "group", id: string) => void;
+  handlePointerDragMove: (e: ReactPointerEvent) => void;
+  handlePointerDragEnd: (e: ReactPointerEvent) => void;
+  handlePointerDragCancel: (e: ReactPointerEvent) => void;
 
   t: TFunction;
 }

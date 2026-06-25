@@ -3,6 +3,7 @@ import {
   type DragEvent,
   type MouseEvent,
   memo,
+  type PointerEvent,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -92,6 +93,20 @@ interface ConnectionGroupNode {
 
 const TAB_STRIP_SCROLL_DURATION_MS = 180;
 const TAB_STRIP_SCROLL_PADDING = 12;
+const POINTER_TAB_DRAG_THRESHOLD_PX = 4;
+
+interface PointerTabDragState {
+  tabId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+}
+
+function shouldUsePointerTabDrag() {
+  if (typeof navigator === "undefined") return false;
+  return /Mac/.test(navigator.platform) && /AppleWebKit/.test(navigator.userAgent);
+}
 
 function easeOutCubic(progress: number): number {
   return 1 - (1 - progress) ** 3;
@@ -264,8 +279,12 @@ function TabBar({
   const tabButtonRefs = useRef(new Map<string, HTMLDivElement>());
   const draggedTabIdRef = useRef<string | null>(null);
   const droppedTabRef = useRef(false);
+  const completedDropRef = useRef(false);
+  const pointerDragRef = useRef<PointerTabDragState | null>(null);
+  const suppressTabClickRef = useRef(false);
   const tabStripAnimatingRef = useRef(false);
   const tabStripScrollAnimationRef = useRef<(() => void) | null>(null);
+  const usePointerTabDrag = shouldUsePointerTabDrag();
   const [tabStripScroll, setTabStripScroll] = useState({
     hasOverflow: false,
   });
@@ -733,6 +752,7 @@ function TabBar({
       if (!effectiveTabId) return;
 
       droppedTabRef.current = true;
+      completedDropRef.current = true;
       const fromIndex = tabs.findIndex((tab) => tab.id === effectiveTabId);
       if (fromIndex === -1) {
         if (onMoveTabHere) {
@@ -746,6 +766,11 @@ function TabBar({
       }
 
       const nextIndex = insertionIndex > fromIndex ? insertionIndex - 1 : insertionIndex;
+      if (nextIndex === fromIndex) {
+        resetDragState();
+        return;
+      }
+
       onReorderTabs(effectiveTabId, nextIndex);
       requestAnimationFrame(() => {
         window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
@@ -761,16 +786,89 @@ function TabBar({
     event.dataTransfer.setData("application/nyaterm-tab", tabId);
     draggedTabIdRef.current = tabId;
     droppedTabRef.current = false;
+    completedDropRef.current = false;
     setDraggedTabId(tabId);
     setDropIndex(tabs.findIndex((tab) => tab.id === tabId));
   };
 
-  const handleDragEnd = (event: DragEvent<HTMLDivElement>) => {
-    if (droppedTabRef.current) {
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>, tabId: string) => {
+    if (!usePointerTabDrag) return;
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+      return;
+    }
+
+    pointerDragRef.current = {
+      tabId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!usePointerTabDrag) return;
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    const moved =
+      Math.abs(event.clientX - state.startX) >= POINTER_TAB_DRAG_THRESHOLD_PX ||
+      Math.abs(event.clientY - state.startY) >= POINTER_TAB_DRAG_THRESHOLD_PX;
+    if (!state.dragging) {
+      if (!moved) return;
+      state.dragging = true;
+      suppressTabClickRef.current = true;
+      draggedTabIdRef.current = state.tabId;
+      droppedTabRef.current = false;
+      setDraggedTabId(state.tabId);
+    }
+
+    setDropIndex(getInsertionIndexFromClientX(event.clientX));
+    event.preventDefault();
+  };
+
+  const handlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    if (!usePointerTabDrag) return;
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    pointerDragRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (state.dragging && isDragEndFallbackNearTabStrip(event.clientX, event.clientY)) {
+      handleDropAtIndex(getInsertionIndexFromClientX(event.clientX));
+    } else {
       resetDragState();
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
-      });
+    }
+
+    event.preventDefault();
+    window.setTimeout(() => {
+      suppressTabClickRef.current = false;
+    }, 0);
+  };
+
+  const handlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (!usePointerTabDrag) return;
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointerDragRef.current = null;
+    resetDragState();
+    window.setTimeout(() => {
+      suppressTabClickRef.current = false;
+    }, 0);
+  };
+
+  const handleDragEnd = (event: DragEvent<HTMLDivElement>) => {
+    if (droppedTabRef.current || completedDropRef.current) {
+      completedDropRef.current = false;
+      resetDragState();
       return;
     }
 
@@ -781,9 +879,6 @@ function TabBar({
     }
 
     resetDragState();
-    requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
-    });
   };
 
   const renderTabIcon = (tab: Tab) => {
@@ -944,7 +1039,7 @@ function TabBar({
 
     const tabButton = (
       <div
-        draggable
+        draggable={!usePointerTabDrag}
         className={`group relative flex items-center gap-2 border-r pl-3 pr-2 text-xs transition-[color,background-color,opacity] duration-200 ${
           isActive ? "font-semibold" : "font-medium df-hover"
         } ${draggedTabId === tab.id ? "opacity-60" : ""}`}
@@ -959,7 +1054,13 @@ function TabBar({
               : "transparent",
           color: isActive ? "var(--df-text)" : "var(--df-text-muted)",
         }}
-        onClick={() => onTabChange(tab.id)}
+        onClick={() => {
+          if (suppressTabClickRef.current) {
+            suppressTabClickRef.current = false;
+            return;
+          }
+          onTabChange(tab.id);
+        }}
         onDoubleClick={(event) => {
           handleConfiguredTabMouseAction(event, tab, doubleClickAction);
         }}
@@ -982,6 +1083,10 @@ function TabBar({
 
           handleConfiguredTabMouseAction(event, tab, rightClickAction);
         }}
+        onPointerDown={(event) => handlePointerDown(event, tab.id)}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerCancel}
         onDragStart={(event) => handleDragStart(event, tab.id)}
         onDragEnd={(event) => {
           handleDragEnd(event);

@@ -27,6 +27,7 @@ interface GroupNodeItemProps {
 export default function GroupNodeItem({ node, depth }: GroupNodeItemProps) {
   const {
     isDragEnabled,
+    isPointerDragEnabled,
     dragTarget,
     expandedGroups,
     toggleGroup,
@@ -41,6 +42,10 @@ export default function GroupNodeItem({ node, depth }: GroupNodeItemProps) {
     handleDragOverItem,
     handleDragLeaveItem,
     handleDropItem,
+    handlePointerDragStart,
+    handlePointerDragMove,
+    handlePointerDragEnd,
+    handlePointerDragCancel,
     t,
   } = useSavedConnectionsContext();
 
@@ -56,7 +61,15 @@ export default function GroupNodeItem({ node, depth }: GroupNodeItemProps) {
       <ContextMenuTrigger asChild>
         <div
           className="relative"
-          draggable={isDragEnabled}
+          draggable={isDragEnabled && !isPointerDragEnabled}
+          onPointerDown={
+            isPointerDragEnabled
+              ? (e) => handlePointerDragStart(e, "group", node.group.id)
+              : undefined
+          }
+          onPointerMove={isPointerDragEnabled ? handlePointerDragMove : undefined}
+          onPointerUp={isPointerDragEnabled ? handlePointerDragEnd : undefined}
+          onPointerCancel={isPointerDragEnabled ? handlePointerDragCancel : undefined}
           onDragStart={
             isDragEnabled ? (e) => handleDragStart(e, "group", node.group.id) : undefined
           }
@@ -70,6 +83,8 @@ export default function GroupNodeItem({ node, depth }: GroupNodeItemProps) {
           )}
           <div
             data-group-header
+            data-saved-drop-type="group"
+            data-saved-drop-id={node.group.id}
             className={`flex items-center gap-1.5 py-1.5 px-2 rounded cursor-pointer transition-colors select-none df-hover ${isInside ? "ring-1 ring-primary/60 bg-primary/10" : ""}`}
             style={{ paddingLeft: indentPx }}
             onClick={() => toggleGroup(node.group.id)}

@@ -71,6 +71,21 @@ type HeaderActionButtonProps = ComponentProps<typeof Button> & {
 };
 
 const SAVED_CONNECTIONS_DRAG_MIME = "application/x-nyaterm-saved-connections";
+const POINTER_SAVED_DRAG_THRESHOLD_PX = 4;
+
+interface PointerSavedDragState {
+  type: "connection" | "group";
+  id: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+}
+
+function shouldUsePointerSavedConnectionsDrag() {
+  if (typeof navigator === "undefined") return false;
+  return /Mac/.test(navigator.platform) && /AppleWebKit/.test(navigator.userAgent);
+}
 
 function HeaderActionButton({ tooltip, children, ...props }: HeaderActionButtonProps) {
   return (
@@ -138,6 +153,7 @@ export default function SavedConnections({
   const [dragTarget, _setDragTarget] = useState<DragTarget | null>(null);
   const dragTargetRef = useRef<DragTarget | null>(null);
   const dragSourceRef = useRef<{ type: "connection" | "group"; id: string } | null>(null);
+  const pointerDragRef = useRef<PointerSavedDragState | null>(null);
   const connectionsRef = useRef(savedConnections);
   const groupsRef = useRef(savedGroups);
   connectionsRef.current = savedConnections;
@@ -145,6 +161,7 @@ export default function SavedConnections({
 
   const keyword = filterText.trim().toLowerCase();
   const isDragEnabled = sortMode === "default";
+  const isPointerDragEnabled = isDragEnabled && shouldUsePointerSavedConnectionsDrag();
   const connectionById = useMemo(
     () => new Map(savedConnections.map((connection) => [connection.id, connection])),
     [savedConnections],
@@ -766,6 +783,64 @@ export default function SavedConnections({
     return y < rect.height * 0.5 ? "before" : "after";
   };
 
+  const computeDropPositionFromPoint = (
+    element: HTMLElement,
+    clientY: number,
+    itemType: "connection" | "group",
+    srcType: "connection" | "group",
+  ): DragTarget["position"] => {
+    const rect = element.getBoundingClientRect();
+    const y = clientY - rect.top;
+    if (itemType === "group") {
+      if (srcType === "connection") return "inside";
+      if (y < rect.height * 0.25) return "before";
+      if (y > rect.height * 0.75) return "after";
+      return "inside";
+    }
+    return y < rect.height * 0.5 ? "before" : "after";
+  };
+
+  const resolvePointerItemTarget = (
+    clientX: number,
+    clientY: number,
+    source: { type: "connection" | "group"; id: string },
+  ): DragTarget | null => {
+    const elements = document.elementsFromPoint(clientX, clientY);
+    for (const element of elements) {
+      const target = element.closest<HTMLElement>("[data-saved-drop-type][data-saved-drop-id]");
+      if (!target) continue;
+
+      const type = target.dataset.savedDropType;
+      const id = target.dataset.savedDropId;
+      if ((type !== "connection" && type !== "group") || !id) continue;
+      if (!canDropOnItem(source, id, type)) return null;
+
+      return {
+        id,
+        type,
+        position: computeDropPositionFromPoint(target, clientY, type, source.type),
+      };
+    }
+
+    const background = panelRootRef.current?.querySelector<HTMLElement>("[data-saved-drop-bg]");
+    if (!background) return null;
+    const rect = background.getBoundingClientRect();
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      return null;
+    }
+
+    const isAtRoot =
+      source.type === "connection"
+        ? !connectionsRef.current.find((c) => c.id === source.id)?.group_id
+        : !groupsRef.current.find((g) => g.id === source.id)?.parent_id;
+    return isAtRoot ? null : { id: null, type: "background", position: "inside" };
+  };
+
   const handleDragStart = (e: React.DragEvent, type: "connection" | "group", id: string) => {
     e.stopPropagation();
     // WebKit-based runtimes may ignore HTML5 drops unless the drag carries real data.
@@ -778,6 +853,89 @@ export default function SavedConnections({
   const handleDragEnd = () => {
     setDragTarget(null);
     dragSourceRef.current = null;
+  };
+
+  const handlePointerDragStart = (
+    e: React.PointerEvent,
+    type: "connection" | "group",
+    id: string,
+  ) => {
+    if (!isPointerDragEnabled) return;
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+
+    pointerDragRef.current = {
+      type,
+      id,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      dragging: false,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerDragMove = (e: React.PointerEvent) => {
+    if (!isPointerDragEnabled) return;
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== e.pointerId) return;
+
+    const moved =
+      Math.abs(e.clientX - state.startX) >= POINTER_SAVED_DRAG_THRESHOLD_PX ||
+      Math.abs(e.clientY - state.startY) >= POINTER_SAVED_DRAG_THRESHOLD_PX;
+    if (!state.dragging) {
+      if (!moved) return;
+      state.dragging = true;
+      dragSourceRef.current = { type: state.type, id: state.id };
+    }
+
+    const source = { type: state.type, id: state.id } as const;
+    const target = resolvePointerItemTarget(e.clientX, e.clientY, source);
+    const prev = dragTargetRef.current;
+    if (
+      prev?.id !== target?.id ||
+      prev?.type !== target?.type ||
+      prev?.position !== target?.position
+    ) {
+      setDragTarget(target);
+    }
+    e.preventDefault();
+  };
+
+  const handlePointerDragEnd = (e: React.PointerEvent) => {
+    if (!isPointerDragEnabled) return;
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== e.pointerId) return;
+    pointerDragRef.current = null;
+
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    const source = { type: state.type, id: state.id } as const;
+    const target = state.dragging ? resolvePointerItemTarget(e.clientX, e.clientY, source) : null;
+    setDragTarget(null);
+    dragSourceRef.current = null;
+
+    if ((target?.type === "connection" || target?.type === "group") && target.id) {
+      void submitItemDrop(source, target.id, target.type, target.position);
+    } else if (target?.type === "background") {
+      void dropSourceToRoot(source);
+    }
+
+    if (state.dragging) e.preventDefault();
+  };
+
+  const handlePointerDragCancel = (e: React.PointerEvent) => {
+    if (!isPointerDragEnabled) return;
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== e.pointerId) return;
+
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    pointerDragRef.current = null;
+    dragSourceRef.current = null;
+    setDragTarget(null);
   };
 
   const updateItemDragTarget = (e: React.DragEvent, id: string, type: "connection" | "group") => {
@@ -811,22 +969,17 @@ export default function SavedConnections({
     if (cur?.id === id && cur.type === type) setDragTarget(null);
   };
 
-  const handleDropItem = async (
-    e: React.DragEvent,
+  const submitItemDrop = async (
+    source: { type: "connection" | "group"; id: string },
     id: string,
     tgtType: "connection" | "group",
+    position: DragTarget["position"],
   ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const source = resolveDragSource(e.dataTransfer);
-    setDragTarget(null);
-    dragSourceRef.current = null;
-    if (!source || !canDropOnItem(source, id, tgtType)) return;
+    if (!canDropOnItem(source, id, tgtType)) return;
 
     const connections = connectionsRef.current;
     const groups = groupsRef.current;
     const { id: srcId, type: srcType } = source;
-    const position = computeDropPosition(e, tgtType, srcType);
 
     try {
       if (position === "inside" && tgtType === "group") {
@@ -933,6 +1086,21 @@ export default function SavedConnections({
     }
   };
 
+  const handleDropItem = async (
+    e: React.DragEvent,
+    id: string,
+    tgtType: "connection" | "group",
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const source = resolveDragSource(e.dataTransfer);
+    setDragTarget(null);
+    dragSourceRef.current = null;
+    if (!source || !canDropOnItem(source, id, tgtType)) return;
+
+    await submitItemDrop(source, id, tgtType, computeDropPosition(e, tgtType, source.type));
+  };
+
   const handleDragOverBg = (e: React.DragEvent) => {
     e.preventDefault();
     const source = resolveDragSource(e.dataTransfer);
@@ -951,12 +1119,7 @@ export default function SavedConnections({
       setDragTarget({ id: null, type: "background", position: "inside" });
   };
 
-  const handleDropBg = async (e: React.DragEvent) => {
-    e.preventDefault();
-    const source = resolveDragSource(e.dataTransfer);
-    setDragTarget(null);
-    dragSourceRef.current = null;
-    if (!source) return;
+  async function dropSourceToRoot(source: { type: "connection" | "group"; id: string }) {
     try {
       if (source.type === "connection") {
         const conn = connectionsRef.current.find((c) => c.id === source.id);
@@ -995,6 +1158,15 @@ export default function SavedConnections({
         error: err,
       });
     }
+  }
+
+  const handleDropBg = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const source = resolveDragSource(e.dataTransfer);
+    setDragTarget(null);
+    dragSourceRef.current = null;
+    if (!source) return;
+    await dropSourceToRoot(source);
   };
 
   // ── Sort button helpers ───────────────────────────────────────────────────
@@ -1015,6 +1187,7 @@ export default function SavedConnections({
   // ── Context value ─────────────────────────────────────────────────────────
   const ctxValue: SavedConnectionsContextValue = {
     isDragEnabled,
+    isPointerDragEnabled,
     dragTarget,
     expandedGroups,
     selectedConnectionIds,
@@ -1040,6 +1213,10 @@ export default function SavedConnections({
     handleDragOverItem,
     handleDragLeaveItem,
     handleDropItem,
+    handlePointerDragStart,
+    handlePointerDragMove,
+    handlePointerDragEnd,
+    handlePointerDragCancel,
     t,
   };
 
@@ -1169,6 +1346,7 @@ export default function SavedConnections({
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <div
+              data-saved-drop-bg
               className={`flex-1 overflow-x-auto overflow-y-auto p-1.5 text-xs space-y-0.5 terminal-scroll ${dragTarget?.type === "background" ? "ring-inset ring-2 ring-primary/20" : ""}`}
               onMouseDown={(event) => {
                 if (event.button !== 0 || event.target !== event.currentTarget) return;

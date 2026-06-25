@@ -162,6 +162,7 @@ function ConnectionDetailsTooltip({ conn, t }: ConnectionDetailsTooltipProps) {
 export default function ConnectionItem({ conn, indented, depth = 0 }: ConnectionItemProps) {
   const {
     isDragEnabled,
+    isPointerDragEnabled,
     dragTarget,
     selectedConnectionIds,
     handleConnect,
@@ -180,6 +181,10 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
     handleDragOverItem,
     handleDragLeaveItem,
     handleDropItem,
+    handlePointerDragStart,
+    handlePointerDragMove,
+    handlePointerDragEnd,
+    handlePointerDragCancel,
     t,
   } = useSavedConnectionsContext();
 
@@ -242,9 +247,22 @@ export default function ConnectionItem({ conn, indented, depth = 0 }: Connection
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          data-saved-drop-type="connection"
+          data-saved-drop-id={conn.id}
           className="relative min-w-full w-max"
-          draggable={isDragEnabled}
+          draggable={isDragEnabled && !isPointerDragEnabled}
           onWheel={closeAndSuppressDetails}
+          onPointerDown={
+            isPointerDragEnabled
+              ? (e) => {
+                  closeAndSuppressDetails();
+                  handlePointerDragStart(e, "connection", conn.id);
+                }
+              : undefined
+          }
+          onPointerMove={isPointerDragEnabled ? handlePointerDragMove : undefined}
+          onPointerUp={isPointerDragEnabled ? handlePointerDragEnd : undefined}
+          onPointerCancel={isPointerDragEnabled ? handlePointerDragCancel : undefined}
           onDragStart={
             isDragEnabled
               ? (e) => {
