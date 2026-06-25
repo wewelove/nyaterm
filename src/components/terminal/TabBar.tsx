@@ -710,6 +710,22 @@ function TabBar({
     [tabs],
   );
 
+  const isDragEndFallbackNearTabStrip = useCallback((clientX: number, clientY: number) => {
+    const strip = tabStripRef.current;
+    if (!strip || clientX === 0) return false;
+
+    const rect = strip.getBoundingClientRect();
+    const horizontalTolerance = 48;
+    const verticalTolerance = Math.max(96, rect.height * 3);
+    const isWithinHorizontalRange =
+      clientX >= rect.left - horizontalTolerance && clientX <= rect.right + horizontalTolerance;
+    if (!isWithinHorizontalRange) return false;
+
+    if (clientY === 0) return true;
+
+    return clientY >= rect.top - verticalTolerance && clientY <= rect.bottom + verticalTolerance;
+  }, []);
+
   const handleDropAtIndex = useCallback(
     (insertionIndex: number, event?: DragEvent<HTMLDivElement>) => {
       const externalTabId = event?.dataTransfer.getData("application/nyaterm-tab");
@@ -759,20 +775,9 @@ function TabBar({
     }
 
     const fallbackTabId = draggedTabIdRef.current;
-    const strip = tabStripRef.current;
-    if (fallbackTabId && strip && event.clientX !== 0) {
-      const rect = strip.getBoundingClientRect();
-      const horizontalTolerance = 48;
-      const verticalTolerance = 16;
-      const isNearTabStrip =
-        event.clientX >= rect.left - horizontalTolerance &&
-        event.clientX <= rect.right + horizontalTolerance &&
-        event.clientY >= rect.top - verticalTolerance &&
-        event.clientY <= rect.bottom + verticalTolerance;
-      if (isNearTabStrip) {
-        handleDropAtIndex(getInsertionIndexFromClientX(event.clientX));
-        return;
-      }
+    if (fallbackTabId && isDragEndFallbackNearTabStrip(event.clientX, event.clientY)) {
+      handleDropAtIndex(getInsertionIndexFromClientX(event.clientX));
+      return;
     }
 
     resetDragState();

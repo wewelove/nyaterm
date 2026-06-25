@@ -326,6 +326,22 @@ function DropZone({
     [requestPointerDrop, resetDragState],
   );
 
+  const handlePointerCancel = useCallback(
+    (event: PointerEvent) => {
+      const state = pointerDragRef.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      resetDragState();
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    },
+    [resetDragState],
+  );
+
   const handleDragStart = useCallback(
     (e: DragEvent, itemId: string) => {
       dragItemIdRef.current = itemId;
@@ -402,6 +418,7 @@ function DropZone({
           onPointerDown={(e) => handlePointerDown(e, item.id)}
           onPointerMove={handlePointerMove}
           onPointerEnd={handlePointerEnd}
+          onPointerCancel={handlePointerCancel}
           draggable={!usePointerDrag}
           suppressClickRef={suppressClickRef}
           showDropIndicator={dropIndex === idx}
@@ -439,6 +456,7 @@ function ActivityBarButton({
   onPointerDown,
   onPointerMove,
   onPointerEnd,
+  onPointerCancel,
   draggable,
   suppressClickRef,
   showDropIndicator,
@@ -461,6 +479,7 @@ function ActivityBarButton({
   onPointerDown: (e: PointerEvent) => void;
   onPointerMove: (e: PointerEvent) => void;
   onPointerEnd: (e: PointerEvent) => void;
+  onPointerCancel: (e: PointerEvent) => void;
   draggable: boolean;
   suppressClickRef: MutableRefObject<boolean>;
   showDropIndicator: boolean;
@@ -483,7 +502,7 @@ function ActivityBarButton({
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerEnd}
-              onPointerCancel={onPointerEnd}
+              onPointerCancel={onPointerCancel}
               className={`relative flex flex-col items-center justify-center w-full transition-colors ${showLabel ? "min-h-12 gap-0.5 py-1" : "h-9"}`}
               style={{
                 color: active ? "var(--df-primary)" : "var(--df-text-muted)",
