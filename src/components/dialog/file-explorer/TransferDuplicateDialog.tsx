@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MdArrowDropDown } from "react-icons/md";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,6 +11,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { invoke } from "@/lib/invoke";
 import { logger } from "@/lib/logger";
 import {
@@ -18,6 +26,7 @@ import {
   setBackendTransferDuplicatePrompt,
   subscribeTransferDuplicatePrompt,
   type TransferDuplicateChoice,
+  type TransferDuplicatePromptChoice,
   type TransferDuplicateRequest,
 } from "@/lib/transferDuplicatePrompt";
 
@@ -30,15 +39,17 @@ export function TransferDuplicateDialog() {
 
   useEffect(() => subscribeTransferDuplicatePrompt(setRequest), []);
 
-  const handleChoice = async (choice: TransferDuplicateChoice) => {
+  const handleChoice = async (choice: TransferDuplicatePromptChoice) => {
     if (!request || submitting) return;
     setSubmitting(true);
 
     try {
       if (request.respondViaBackend) {
+        const backendChoice: TransferDuplicateChoice =
+          choice === "overwriteAllForTask" ? "overwrite" : choice;
         await invoke("respond_transfer_duplicate", {
           requestId: request.requestId,
-          action: choice,
+          action: backendChoice,
         });
       } else {
         resolveTransferDuplicatePrompt(choice);
@@ -72,6 +83,7 @@ export function TransferDuplicateDialog() {
   const kindLabel = request?.isDirectory
     ? t("fileTransfer.duplicateKindFolder")
     : t("fileTransfer.duplicateKindFile");
+  const canApplyToTask = !!request?.allowApplyToTask && !request.respondViaBackend;
 
   return (
     <AlertDialog
@@ -113,9 +125,9 @@ export function TransferDuplicateDialog() {
           </div>
         )}
 
-        <AlertDialogFooter className="gap-3">
+        <AlertDialogFooter className="grid grid-cols-2 gap-3 sm:grid sm:justify-stretch">
           <AlertDialogCancel
-            className="text-xs"
+            className="w-full text-xs"
             disabled={submitting}
             onClick={(event) => {
               event.preventDefault();
@@ -124,16 +136,46 @@ export function TransferDuplicateDialog() {
           >
             {t("fileTransfer.duplicateSkip")}
           </AlertDialogCancel>
-          <AlertDialogAction
-            className="text-xs"
-            disabled={submitting}
-            onClick={(event) => {
-              event.preventDefault();
-              void handleChoice("overwrite");
-            }}
-          >
-            {t("fileTransfer.duplicateOverwrite")}
-          </AlertDialogAction>
+          <div className="flex min-w-0 items-center gap-0">
+            <AlertDialogAction
+              className={
+                canApplyToTask ? "min-w-0 flex-1 rounded-r-none text-xs" : "w-full text-xs"
+              }
+              disabled={submitting}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleChoice("overwrite");
+              }}
+            >
+              {t("fileTransfer.duplicateOverwrite")}
+            </AlertDialogAction>
+            {canApplyToTask && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    className="h-9 w-9 rounded-l-none border-l border-primary-foreground/25 px-0 text-xs"
+                    disabled={submitting}
+                  >
+                    <MdArrowDropDown className="text-base" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuItem
+                    className="flex-col items-start gap-0.5"
+                    onSelect={() => {
+                      void handleChoice("overwriteAllForTask");
+                    }}
+                  >
+                    <span>{t("fileTransfer.duplicateOverwriteAllForTask")}</span>
+                    <span className="text-[0.6875rem] leading-4 text-muted-foreground">
+                      {t("fileTransfer.duplicateOverwriteAllForTaskDesc")}
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

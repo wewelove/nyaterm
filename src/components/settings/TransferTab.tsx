@@ -112,6 +112,19 @@ export function TransferTab() {
         </SettingRow>
 
         <SettingSelect
+          label={t("settings.duplicateStrategy")}
+          desc={t("settings.duplicateStrategyDesc")}
+          value={transfer.duplicate_strategy}
+          controlClassName="max-w-sm"
+          onValueChange={(v) => update({ duplicate_strategy: v })}
+        >
+          <SelectItem value="overwrite">{t("settings.strategyOverwrite")}</SelectItem>
+          <SelectItem value="skip">{t("settings.strategySkip")}</SelectItem>
+          <SelectItem value="rename">{t("settings.strategyRename")}</SelectItem>
+          <SelectItem value="ask">{t("settings.strategyAsk")}</SelectItem>
+        </SettingSelect>
+
+        <SettingSelect
           label={t("settings.editorType")}
           desc={t("settings.editorTypeDesc")}
           value={transfer.editor_type || "external"}
@@ -212,19 +225,6 @@ export function TransferTab() {
             controlClassName="max-w-sm"
             onChange={(v) => update({ upload_threads: v })}
           />
-
-          <SettingSelect
-            label={t("settings.duplicateStrategy")}
-            desc={t("settings.duplicateStrategyDesc")}
-            value={transfer.duplicate_strategy}
-            controlClassName="max-w-sm"
-            onValueChange={(v) => update({ duplicate_strategy: v })}
-          >
-            <SelectItem value="overwrite">{t("settings.strategyOverwrite")}</SelectItem>
-            <SelectItem value="skip">{t("settings.strategySkip")}</SelectItem>
-            <SelectItem value="rename">{t("settings.strategyRename")}</SelectItem>
-            <SelectItem value="ask">{t("settings.strategyAsk")}</SelectItem>
-          </SettingSelect>
 
           <SettingNumberInput
             label={t("settings.maxTransferRetries")}

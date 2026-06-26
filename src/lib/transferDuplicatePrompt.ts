@@ -1,4 +1,5 @@
 export type TransferDuplicateChoice = "skip" | "overwrite";
+export type TransferDuplicatePromptChoice = TransferDuplicateChoice | "overwriteAllForTask";
 
 export interface TransferDuplicateRequest {
   requestId: string;
@@ -8,12 +9,13 @@ export interface TransferDuplicateRequest {
   isDirectory: boolean;
   targetWindowLabel?: string | null;
   respondViaBackend?: boolean;
+  allowApplyToTask?: boolean;
 }
 
 type TransferDuplicateListener = (request: TransferDuplicateRequest | null) => void;
 
 let activeRequest: TransferDuplicateRequest | null = null;
-let localResolver: ((choice: TransferDuplicateChoice) => void) | null = null;
+let localResolver: ((choice: TransferDuplicatePromptChoice) => void) | null = null;
 const listeners = new Set<TransferDuplicateListener>();
 
 function notifyListeners() {
@@ -32,7 +34,7 @@ export function subscribeTransferDuplicatePrompt(listener: TransferDuplicateList
 
 export function showTransferDuplicatePrompt(
   request: TransferDuplicateRequest,
-): Promise<TransferDuplicateChoice> {
+): Promise<TransferDuplicatePromptChoice> {
   if (localResolver) {
     localResolver("skip");
   }
@@ -44,7 +46,7 @@ export function showTransferDuplicatePrompt(
   });
 }
 
-export function resolveTransferDuplicatePrompt(choice: TransferDuplicateChoice) {
+export function resolveTransferDuplicatePrompt(choice: TransferDuplicatePromptChoice) {
   const resolver = localResolver;
   localResolver = null;
   activeRequest = null;
@@ -54,7 +56,7 @@ export function resolveTransferDuplicatePrompt(choice: TransferDuplicateChoice) 
 
 export function setBackendTransferDuplicatePrompt(request: TransferDuplicateRequest | null) {
   if (request) {
-    activeRequest = { ...request, respondViaBackend: true };
+    activeRequest = { ...request, respondViaBackend: true, allowApplyToTask: false };
     notifyListeners();
     return;
   }

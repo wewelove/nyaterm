@@ -3,7 +3,7 @@ import type { EnqueueUploadRequest } from "@/context/TransferContext";
 import { invoke } from "@/lib/invoke";
 import {
   showTransferDuplicatePrompt,
-  type TransferDuplicateChoice,
+  type TransferDuplicatePromptChoice,
 } from "@/lib/transferDuplicatePrompt";
 import type { FileEntry, FileProperties } from "@/types/global";
 
@@ -47,8 +47,10 @@ async function resolveDuplicateChoice(params: {
   fileName: string;
   isDirectory: boolean;
   duplicateStrategy: string;
-}): Promise<TransferDuplicateChoice | "proceed" | "skip"> {
-  const { sessionId, remotePath, fileName, isDirectory, duplicateStrategy } = params;
+  allowApplyToTask?: boolean;
+}): Promise<TransferDuplicatePromptChoice | "proceed" | "skip"> {
+  const { sessionId, remotePath, fileName, isDirectory, duplicateStrategy, allowApplyToTask } =
+    params;
 
   switch (duplicateStrategy) {
     case "skip":
@@ -63,6 +65,7 @@ async function resolveDuplicateChoice(params: {
         remotePath,
         fileName,
         isDirectory,
+        allowApplyToTask,
       });
     default:
       return "proceed";
@@ -75,7 +78,8 @@ async function resolveRemoteUploadConflict(params: {
   fileName: string;
   isDirectory: boolean;
   duplicateStrategy: string;
-}): Promise<"include" | "skip"> {
+  allowApplyToTask?: boolean;
+}): Promise<"include" | "skip" | "includeAndOverwriteRemaining"> {
   const { exists, isDirectory } = await remotePathExists(params.sessionId, params.remotePath);
   if (!exists) {
     return "include";
@@ -87,10 +91,14 @@ async function resolveRemoteUploadConflict(params: {
     fileName: params.fileName,
     isDirectory: exists ? isDirectory : params.isDirectory,
     duplicateStrategy: params.duplicateStrategy,
+    allowApplyToTask: params.allowApplyToTask,
   });
 
   if (choice === "skip") {
     return "skip";
+  }
+  if (choice === "overwriteAllForTask") {
+    return "includeAndOverwriteRemaining";
   }
 
   return "include";
@@ -105,18 +113,29 @@ export async function filterEnqueueUploadRequests(
   }
 
   const filtered: EnqueueUploadRequest[] = [];
+  const allowApplyToTask = duplicateStrategy === "ask" && requests.length > 1;
+  let overwriteRemainingForTask = false;
 
   for (const request of requests) {
+    if (overwriteRemainingForTask) {
+      filtered.push({ ...request, duplicateStrategyOverride: "overwrite" });
+      continue;
+    }
+
     const decision = await resolveRemoteUploadConflict({
       sessionId: request.sessionId,
       remotePath: request.remotePath,
       fileName: request.fileName,
       isDirectory: request.kind === "directory",
       duplicateStrategy,
+      allowApplyToTask,
     });
 
     if (decision === "skip") {
       continue;
+    }
+    if (decision === "includeAndOverwriteRemaining") {
+      overwriteRemainingForTask = true;
     }
 
     filtered.push(
