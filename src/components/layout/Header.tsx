@@ -18,6 +18,7 @@ import {
   MdMenuBook,
   MdPalette,
   MdRestartAlt,
+  MdSearch,
   MdSelectAll,
   MdSettings,
   MdSplitscreen,
@@ -102,6 +103,7 @@ const iconMap: Record<string, React.ElementType> = {
   delete_sweep: MdDeleteSweep,
   fit_screen: MdFitScreen,
   terminal: MdTerminal,
+  search: MdSearch,
 };
 
 function DynamicIcon({ name, className }: { name: string; className?: string }) {
@@ -125,6 +127,7 @@ interface HeaderProps {
   onManageSyncGroups?: () => void;
   onBroadcastToAll?: () => void;
   broadcastToAll?: boolean;
+  onOpenCommandPalette?: () => void;
   onClearTerminal?: () => void;
   onResetTerminalSize?: () => void;
 }
@@ -155,6 +158,7 @@ export default function Header({
   onManageSyncGroups,
   onBroadcastToAll,
   broadcastToAll,
+  onOpenCommandPalette,
   onClearTerminal,
   onResetTerminalSize,
 }: HeaderProps) {
@@ -298,6 +302,13 @@ export default function Header({
       },
     ],
     terminal: [
+      {
+        label: t("menu.commandPalette"),
+        icon: "search",
+        action: () => onOpenCommandPalette?.(),
+        shortcut: dk("tab.quickSwitch"),
+      },
+      { label: "separator", separator: true },
       {
         label: t("menu.smartSplit"),
         icon: "splitscreen",
