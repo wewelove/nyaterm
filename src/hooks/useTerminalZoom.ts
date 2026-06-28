@@ -13,6 +13,22 @@ type UpdateAppSettings = (
 ) => void;
 
 const CTRL_WHEEL_ZOOM_THROTTLE_MS = 50;
+const TERMINAL_ROOT_SELECTOR = '[data-terminal-root="true"]';
+
+function isElement(value: EventTarget | null): value is Element {
+  return value instanceof Element;
+}
+
+function eventTargetIsInsideTerminalRoot(event: WheelEvent) {
+  const pathContainsTerminalRoot = event.composedPath().some((target) => {
+    if (!isElement(target)) return false;
+    return target.matches(TERMINAL_ROOT_SELECTOR);
+  });
+  if (pathContainsTerminalRoot) return true;
+
+  const target = event.target;
+  return isElement(target) && target.closest(TERMINAL_ROOT_SELECTOR) !== null;
+}
 
 export function useTerminalZoom(
   updateAppSettings: UpdateAppSettings,
@@ -83,6 +99,7 @@ export function useTerminalZoom(
     const handleCtrlWheelZoom = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       if (event.deltaY === 0) return;
+      if (!eventTargetIsInsideTerminalRoot(event)) return;
 
       event.preventDefault();
       const now = Date.now();
