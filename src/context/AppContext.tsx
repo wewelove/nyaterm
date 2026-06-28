@@ -113,7 +113,7 @@ interface AppContextType {
     options?: { immediatePersist?: boolean; nextActiveTabId?: string | null },
   ) => void;
   closeTab: (tabId: string) => void;
-  persistTabsNow: () => Promise<void>;
+  persistTabsNow: (extraUi?: Partial<UiConfig>) => Promise<void>;
 
   // App Settings (includes UI config)
   appSettings: AppSettings;
@@ -149,6 +149,7 @@ interface AppContextType {
 
   // Loading
   settingsLoaded: boolean;
+  startupRestoreComplete: boolean;
   runtimeInfo: AppRuntimeInfo;
   runtimeInfoLoaded: boolean;
 }
@@ -184,6 +185,7 @@ const TerminalAppSettingsContext = createContext<TerminalAppSettings | null>(nul
 const DEFAULT_APP_SETTINGS: AppSettings = {
   general: {
     startup_restore: true,
+    startup_restore_window_layout: true,
     minimize_to_tray: false,
     boss_key: null,
     confirm_on_close: true,
@@ -303,6 +305,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   cloud_sync: DEFAULT_CLOUD_SYNC_SETTINGS,
   ui: {
     open_tabs: [],
+    terminal_window_layout: null,
     left_width: 256,
     right_width: 288,
     quick_cmd_height: 180,
@@ -497,6 +500,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Loading State
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [startupRestoreComplete, setStartupRestoreComplete] = useState(false);
   const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo>(DEFAULT_RUNTIME_INFO);
   const [runtimeInfoLoaded, setRuntimeInfoLoaded] = useState(false);
 
@@ -1023,11 +1027,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [commitTabs],
   );
 
-  const persistTabsNow = useCallback(async () => {
+  const persistTabsNow = useCallback(async (extraUi?: Partial<UiConfig>) => {
     if (!hasRestored.current || !appSettingsRef.current.general.startup_restore) return;
     const nextUi = {
       ...appSettingsRef.current.ui,
       open_tabs: serializeTabsForPersistence(tabsRef.current),
+      ...extraUi,
     };
     appSettingsRef.current = { ...appSettingsRef.current, ui: nextUi };
     await invoke("save_app_ui_settings", { ui: nextUi });
@@ -1093,87 +1098,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const hasRestored = useRef(false);
 
   useEffect(() => {
-    if (!hasRestored.current && appSettingsLoaded.current) {
-      hasRestored.current = true;
-      if (
-        isPrimaryMainWindow() &&
-        appSettings.general.startup_restore &&
-        appSettings.ui.open_tabs &&
-        appSettings.ui.open_tabs.length > 0
-      ) {
-        const restoredTabs = appSettings.ui.open_tabs
-          .map((tab, index) => restoreTabFromPersistence(tab, index))
-          .filter((tab): tab is Tab => tab !== null);
+    if (hasRestored.current || !appSettingsLoaded.current) return;
 
-        tabsRef.current = restoredTabs;
-        setTabs(restoredTabs);
-        if (restoredTabs.length > 0) {
-          setActiveTabId(restoredTabs[restoredTabs.length - 1].id);
-        }
+    hasRestored.current = true;
+    if (
+      isPrimaryMainWindow() &&
+      appSettings.general.startup_restore &&
+      appSettings.ui.open_tabs &&
+      appSettings.ui.open_tabs.length > 0
+    ) {
+      const restoredTabs = appSettings.ui.open_tabs
+        .map((tab, index) => restoreTabFromPersistence(tab, index))
+        .filter((tab): tab is Tab => tab !== null);
 
-        restoredTabs.forEach((tab) => {
-          const panes = collectSessionPanes(tab.root);
-
-          panes.forEach((pane) => {
-            const cid = pane.connectionId;
-            switch (pane.type) {
-              case "SSH":
-                if (!cid) {
-                  markPaneConnectionFailed(tab.id, pane.id, "Missing SSH connection id");
-                  return;
-                }
-                invoke<string>("create_ssh_session", {
-                  connectionId: cid,
-                  createRequestId: pane.createRequestId,
-                })
-                  .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
-                  .catch((e) =>
-                    handleRestoredSessionFailed(tab.id, pane.id, "SSH", pane.connectionId, e),
-                  );
-                break;
-              case "Local":
-                invoke<string>("create_local_session", {
-                  connectionId: cid || null,
-                  createRequestId: pane.createRequestId,
-                })
-                  .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
-                  .catch((e) =>
-                    handleRestoredSessionFailed(tab.id, pane.id, "Local", pane.connectionId, e),
-                  );
-                break;
-              case "Telnet":
-                if (!cid) {
-                  markPaneConnectionFailed(tab.id, pane.id, "Missing Telnet connection id");
-                  return;
-                }
-                invoke<string>("create_telnet_session", {
-                  connectionId: cid,
-                  createRequestId: pane.createRequestId,
-                })
-                  .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
-                  .catch((e) =>
-                    handleRestoredSessionFailed(tab.id, pane.id, "Telnet", pane.connectionId, e),
-                  );
-                break;
-              case "Serial":
-                if (!cid) {
-                  markPaneConnectionFailed(tab.id, pane.id, "Missing Serial connection id");
-                  return;
-                }
-                invoke<string>("create_serial_session", {
-                  connectionId: cid,
-                  createRequestId: pane.createRequestId,
-                })
-                  .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
-                  .catch((e) =>
-                    handleRestoredSessionFailed(tab.id, pane.id, "Serial", pane.connectionId, e),
-                  );
-                break;
-            }
-          });
-        });
+      tabsRef.current = restoredTabs;
+      setTabs(restoredTabs);
+      if (restoredTabs.length > 0) {
+        setActiveTabId(restoredTabs[restoredTabs.length - 1].id);
       }
+
+      restoredTabs.forEach((tab) => {
+        const panes = collectSessionPanes(tab.root);
+
+        panes.forEach((pane) => {
+          const cid = pane.connectionId;
+          switch (pane.type) {
+            case "SSH":
+              if (!cid) {
+                markPaneConnectionFailed(tab.id, pane.id, "Missing SSH connection id");
+                return;
+              }
+              invoke<string>("create_ssh_session", {
+                connectionId: cid,
+                createRequestId: pane.createRequestId,
+              })
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
+                .catch((e) =>
+                  handleRestoredSessionFailed(tab.id, pane.id, "SSH", pane.connectionId, e),
+                );
+              break;
+            case "Local":
+              invoke<string>("create_local_session", {
+                connectionId: cid || null,
+                createRequestId: pane.createRequestId,
+              })
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
+                .catch((e) =>
+                  handleRestoredSessionFailed(tab.id, pane.id, "Local", pane.connectionId, e),
+                );
+              break;
+            case "Telnet":
+              if (!cid) {
+                markPaneConnectionFailed(tab.id, pane.id, "Missing Telnet connection id");
+                return;
+              }
+              invoke<string>("create_telnet_session", {
+                connectionId: cid,
+                createRequestId: pane.createRequestId,
+              })
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
+                .catch((e) =>
+                  handleRestoredSessionFailed(tab.id, pane.id, "Telnet", pane.connectionId, e),
+                );
+              break;
+            case "Serial":
+              if (!cid) {
+                markPaneConnectionFailed(tab.id, pane.id, "Missing Serial connection id");
+                return;
+              }
+              invoke<string>("create_serial_session", {
+                connectionId: cid,
+                createRequestId: pane.createRequestId,
+              })
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
+                .catch((e) =>
+                  handleRestoredSessionFailed(tab.id, pane.id, "Serial", pane.connectionId, e),
+                );
+              break;
+          }
+        });
+      });
     }
+
+    setStartupRestoreComplete(true);
   }, [
     appSettings,
     handleRestoredSessionCreated,
@@ -1226,6 +1233,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isLocked,
       setIsLocked,
       settingsLoaded,
+      startupRestoreComplete,
       runtimeInfo,
       runtimeInfoLoaded,
     }),
@@ -1267,6 +1275,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isLocked,
       setIsLocked,
       settingsLoaded,
+      startupRestoreComplete,
       runtimeInfo,
       runtimeInfoLoaded,
     ],

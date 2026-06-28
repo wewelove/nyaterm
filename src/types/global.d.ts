@@ -314,8 +314,23 @@ export interface ActivityBarLayout {
 export type QuickCommandViewMode = "list" | "compact" | "tile";
 export type QuickCommandSortMode = "created" | "name" | "useCount";
 
+export type RestorableTerminalWindowNode =
+  | {
+      kind: "leaf";
+      tab_indexes: number[];
+      active_tab_index: number | null;
+    }
+  | {
+      kind: "split";
+      direction: PaneSplitDirection;
+      ratio: number;
+      first: RestorableTerminalWindowNode;
+      second: RestorableTerminalWindowNode;
+    };
+
 export interface UiConfig {
   open_tabs: RestorableTab[];
+  terminal_window_layout: RestorableTerminalWindowNode | null;
   left_width: number;
   right_width: number;
   quick_cmd_height: number;
@@ -448,6 +463,7 @@ export interface FuzzyResult {
 
 export interface GeneralSettings {
   startup_restore: boolean;
+  startup_restore_window_layout: boolean;
   minimize_to_tray: boolean;
   boss_key: string | null;
   confirm_on_close: boolean;

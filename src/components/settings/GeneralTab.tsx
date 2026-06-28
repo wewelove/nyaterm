@@ -47,6 +47,24 @@ export function GeneralTab() {
           />
         </SettingRow>
 
+        {appSettings.general.startup_restore && (
+          <div className="border-l pl-4 ml-1" style={{ borderColor: "var(--df-border)" }}>
+            <SettingRow
+              label={t("settings.startupRestoreWindowLayout")}
+              desc={t("settings.startupRestoreWindowLayoutDesc")}
+            >
+              <SettingSwitch
+                checked={appSettings.general.startup_restore_window_layout !== false}
+                onChange={(v) =>
+                  updateAppSettings({
+                    general: { ...appSettings.general, startup_restore_window_layout: v },
+                  })
+                }
+              />
+            </SettingRow>
+          </div>
+        )}
+
         <SettingRow label={t("settings.minimizeToTray")} desc={t("settings.minimizeToTrayDesc")}>
           <SettingSwitch
             checked={appSettings.general.minimize_to_tray}

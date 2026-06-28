@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct GeneralSettings {
     #[serde(default = "default_true")]
     pub startup_restore: bool,
+    #[serde(default = "default_true")]
+    pub startup_restore_window_layout: bool,
     #[serde(default)]
     pub minimize_to_tray: bool,
     #[serde(default)]
@@ -17,6 +19,7 @@ impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             startup_restore: false,
+            startup_restore_window_layout: true,
             minimize_to_tray: false,
             boss_key: None,
             confirm_on_close: true,

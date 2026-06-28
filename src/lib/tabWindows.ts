@@ -1,4 +1,4 @@
-import type { PaneSplitDirection, Tab } from "@/types/global";
+import type { PaneSplitDirection, RestorableTerminalWindowNode, Tab } from "@/types/global";
 
 export interface TerminalWindowLeaf {
   id: string;
@@ -420,6 +420,112 @@ export function flattenTerminalWindows(
   const tabIds = collectWindowTabIds(node);
   if (tabIds.length === 0) return node;
   return createTerminalWindowLeaf(tabIds, activeTabId ?? tabIds[0] ?? null);
+}
+
+export function serializeTerminalWindowLayout(
+  node: TerminalWindowNode | null,
+  tabs: Tab[],
+): RestorableTerminalWindowNode | null {
+  if (!node || tabs.length === 0) return null;
+
+  const tabIndexById = new Map(tabs.map((tab, index) => [tab.id, index]));
+
+  const serialize = (current: TerminalWindowNode): RestorableTerminalWindowNode | null => {
+    if (!isTerminalWindowSplit(current)) {
+      const tabIndexes = current.tabIds
+        .map((tabId) => tabIndexById.get(tabId))
+        .filter((index): index is number => index !== undefined);
+
+      if (tabIndexes.length === 0) return null;
+
+      const activeTabIndex =
+        current.activeTabId && tabIndexById.has(current.activeTabId)
+          ? (tabIndexById.get(current.activeTabId) ?? null)
+          : (tabIndexes[0] ?? null);
+
+      return {
+        kind: "leaf",
+        tab_indexes: Array.from(new Set(tabIndexes)),
+        active_tab_index: activeTabIndex,
+      };
+    }
+
+    const first = serialize(current.first);
+    const second = serialize(current.second);
+    if (!first && !second) return null;
+    if (!first) return second;
+    if (!second) return first;
+
+    return {
+      kind: "split",
+      direction: current.direction,
+      ratio: Math.max(0.2, Math.min(0.8, current.ratio)),
+      first,
+      second,
+    };
+  };
+
+  return serialize(node);
+}
+
+export function restoreTerminalWindowLayout(
+  layout: RestorableTerminalWindowNode | null | undefined,
+  tabs: Tab[],
+): TerminalWindowNode | null {
+  if (!layout || tabs.length === 0) return null;
+
+  const tabIds = tabs.map((tab) => tab.id);
+  const usedTabIds = new Set<string>();
+
+  const restore = (current: RestorableTerminalWindowNode): TerminalWindowNode | null => {
+    if (current.kind === "leaf") {
+      const leafTabIds: string[] = [];
+
+      for (const index of current.tab_indexes) {
+        const tabId = tabIds[index];
+        if (!tabId || usedTabIds.has(tabId)) continue;
+        usedTabIds.add(tabId);
+        leafTabIds.push(tabId);
+      }
+
+      if (leafTabIds.length === 0) return null;
+
+      const activeTabId =
+        current.active_tab_index !== null && current.active_tab_index !== undefined
+          ? (tabIds[current.active_tab_index] ?? null)
+          : null;
+
+      return createTerminalWindowLeaf(
+        leafTabIds,
+        activeTabId && leafTabIds.includes(activeTabId) ? activeTabId : leafTabIds[0],
+      );
+    }
+
+    const first = restore(current.first);
+    const second = restore(current.second);
+    if (!first && !second) return null;
+    if (!first) return second;
+    if (!second) return first;
+
+    return {
+      id: createTerminalWindowId("window-split"),
+      kind: "split",
+      direction: current.direction,
+      ratio: Math.max(0.2, Math.min(0.8, current.ratio)),
+      first,
+      second,
+    };
+  };
+
+  const restored = restore(layout);
+  if (!restored) return null;
+
+  const restoredTabIds = new Set(collectWindowTabIds(restored));
+  if (tabIds.some((tabId) => !restoredTabIds.has(tabId))) {
+    return null;
+  }
+
+  return restored;
 }
 
 export function reconcileTerminalWindows(

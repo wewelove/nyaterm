@@ -130,6 +130,26 @@ impl RestorableTab {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum RestorableTerminalWindowNode {
+    #[serde(rename = "leaf")]
+    Leaf {
+        #[serde(default)]
+        tab_indexes: Vec<usize>,
+        #[serde(default)]
+        active_tab_index: Option<usize>,
+    },
+    #[serde(rename = "split")]
+    Split {
+        direction: String,
+        #[serde(default = "default_split_ratio")]
+        ratio: f64,
+        first: Box<RestorableTerminalWindowNode>,
+        second: Box<RestorableTerminalWindowNode>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityBarLayout {
     #[serde(default = "default_left_top")]
     pub left_top: Vec<String>,
@@ -191,6 +211,8 @@ fn default_right_bottom() -> Vec<String> {
 pub struct UiConfig {
     #[serde(default)]
     pub open_tabs: Vec<RestorableTab>,
+    #[serde(default)]
+    pub terminal_window_layout: Option<RestorableTerminalWindowNode>,
     #[serde(default = "default_left_width")]
     pub left_width: f64,
     #[serde(default = "default_right_width")]
@@ -299,6 +321,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             open_tabs: vec![],
+            terminal_window_layout: None,
             left_width: default_left_width(),
             right_width: default_right_width(),
             quick_cmd_height: default_quick_cmd_height(),

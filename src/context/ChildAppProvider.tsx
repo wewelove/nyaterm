@@ -23,6 +23,7 @@ import { AppContext } from "./AppContext";
 const DEFAULT_APP_SETTINGS: AppSettings = {
   general: {
     startup_restore: true,
+    startup_restore_window_layout: true,
     minimize_to_tray: false,
     boss_key: null,
     confirm_on_close: true,
@@ -131,6 +132,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   cloud_sync: DEFAULT_CLOUD_SYNC_SETTINGS,
   ui: {
     open_tabs: [],
+    terminal_window_layout: null,
     left_width: 256,
     right_width: 288,
     quick_cmd_height: 180,
@@ -365,6 +367,7 @@ export function ChildAppProvider({ children }: { children: ReactNode }) {
       isLocked,
       setIsLocked,
       settingsLoaded,
+      startupRestoreComplete: true,
       runtimeInfo: DEFAULT_RUNTIME_INFO,
       runtimeInfoLoaded: true,
     }),
