@@ -497,6 +497,7 @@ export interface ProxySettings {
   protocol: string;
   host: string;
   port: number;
+  command?: string;
 }
 
 export interface ProxyConfig {
@@ -505,6 +506,7 @@ export interface ProxyConfig {
   protocol: string;
   host: string;
   port: number;
+  command?: string;
   username?: string;
   password?: string;
   password_id?: string;

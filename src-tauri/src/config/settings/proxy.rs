@@ -12,6 +12,8 @@ pub struct ProxySettings {
     #[serde(default = "default_proxy_port")]
     pub port: u16,
     #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
     pub username: Option<String>,
     #[serde(default, skip_serializing)]
     pub password: Option<String>,
@@ -36,6 +38,7 @@ impl Default for ProxySettings {
             protocol: default_proxy_protocol(),
             host: default_proxy_host(),
             port: default_proxy_port(),
+            command: None,
             username: None,
             password: None,
         }

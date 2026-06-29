@@ -28,6 +28,8 @@ pub struct ProxyConfig {
     #[serde(default = "default_port")]
     pub port: u16,
     #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,

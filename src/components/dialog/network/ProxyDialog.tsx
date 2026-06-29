@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { NetworkGroup, ProxyConfig } from "@/types/global";
 
 interface ProxyForm {
@@ -26,6 +27,7 @@ interface ProxyForm {
   protocol: string;
   host: string;
   port: number;
+  command: string;
   username: string;
   password: string;
   group_id: string;
@@ -37,6 +39,7 @@ const DEFAULT_FORM: ProxyForm = {
   protocol: "socks5",
   host: "127.0.0.1",
   port: 1080,
+  command: "",
   username: "",
   password: "",
   group_id: "",
@@ -50,6 +53,7 @@ function toForm(proxy: ProxyConfig | null): ProxyForm {
     protocol: proxy.protocol,
     host: proxy.host,
     port: proxy.port,
+    command: proxy.command ?? "",
     username: proxy.username ?? "",
     password: "",
     group_id: proxy.group_id ?? "",
@@ -87,13 +91,20 @@ export function ProxyDialog({
       setError(t("network.proxyNameRequired"));
       return;
     }
-    if (!form.host.trim()) {
-      setError(t("network.proxyHostRequired"));
-      return;
-    }
-    if (!form.port || form.port < 1 || form.port > 65535) {
-      setError(t("network.proxyPortRequired"));
-      return;
+    if (form.protocol === "proxycommand") {
+      if (!form.command.trim()) {
+        setError(t("network.proxyCommandRequired"));
+        return;
+      }
+    } else {
+      if (!form.host.trim()) {
+        setError(t("network.proxyHostRequired"));
+        return;
+      }
+      if (!form.port || form.port < 1 || form.port > 65535) {
+        setError(t("network.proxyPortRequired"));
+        return;
+      }
     }
 
     setError("");
@@ -103,6 +114,7 @@ export function ProxyDialog({
       protocol: form.protocol,
       host: form.host.trim(),
       port: form.port,
+      command: form.protocol === "proxycommand" ? form.command.trim() : undefined,
       username: form.username.trim() || undefined,
       password: form.password || undefined,
       group_id: form.group_id || undefined,
@@ -118,18 +130,8 @@ export function ProxyDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-sm">{t("network.proxyName")}</Label>
-            <Input
-              className="h-9 text-sm"
-              placeholder={t("network.proxyNamePlaceholder")}
-              value={form.name}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5 sm:col-span-1">
+          <div className="grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)]">
+            <div className="space-y-1.5">
               <Label className="text-sm">{t("settings.proxyProtocol")}</Label>
               <Select
                 value={form.protocol}
@@ -141,16 +143,17 @@ export function ProxyDialog({
                 <SelectContent>
                   <SelectItem value="socks5">SOCKS5</SelectItem>
                   <SelectItem value="http">HTTP</SelectItem>
+                  <SelectItem value="proxycommand">ProxyCommand</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-sm">{t("settings.proxyHost")}</Label>
+            <div className="space-y-1.5">
+              <Label className="text-sm">{t("network.proxyName")}</Label>
               <Input
                 className="h-9 text-sm"
-                placeholder="127.0.0.1"
-                value={form.host}
-                onChange={(event) => setForm((prev) => ({ ...prev, host: event.target.value }))}
+                placeholder={t("network.proxyNamePlaceholder")}
+                value={form.name}
+                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
               />
             </div>
           </div>
@@ -180,42 +183,74 @@ export function ProxyDialog({
             </Select>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-sm">{t("settings.proxyPort")}</Label>
-            <NumberInput
-              className="h-9 text-sm [&_button]:h-9 [&_button]:w-9 [&_input]:h-9 [&_input]:text-sm"
-              min={1}
-              max={65535}
-              value={form.port}
-              onChange={(value) => setForm((prev) => ({ ...prev, port: value || 0 }))}
-            />
-          </div>
+          {form.protocol === "proxycommand" ? (
+            <div className="space-y-1.5">
+              <Label className="text-sm">{t("network.proxyCommand")}</Label>
+              <Textarea
+                className="min-h-24 resize-y font-mono text-sm"
+                placeholder={t("network.proxyCommandPlaceholder")}
+                value={form.command}
+                onChange={(event) => setForm((prev) => ({ ...prev, command: event.target.value }))}
+              />
+              <div className="text-xs text-muted-foreground">{t("network.proxyCommandHint")}</div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t("settings.proxyHost")}</Label>
+                  <Input
+                    className="h-9 text-sm"
+                    placeholder="127.0.0.1"
+                    value={form.host}
+                    onChange={(event) => setForm((prev) => ({ ...prev, host: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t("settings.proxyPort")}</Label>
+                  <NumberInput
+                    className="h-9 text-sm [&_button]:h-9 [&_button]:w-9 [&_input]:h-9 [&_input]:text-sm"
+                    min={1}
+                    max={65535}
+                    value={form.port}
+                    onChange={(value) => setForm((prev) => ({ ...prev, port: value || 0 }))}
+                  />
+                </div>
+              </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-sm">{t("network.proxyUsername")}</Label>
-              <Input
-                className="h-9 text-sm"
-                placeholder={t("network.proxyUsernamePlaceholder")}
-                value={form.username}
-                autoComplete="off"
-                onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm">{t("network.proxyPassword")}</Label>
-              <Input
-                className="h-9 text-sm"
-                type="password"
-                placeholder={
-                  editing ? t("network.proxyPasswordKeep") : t("network.proxyPasswordPlaceholder")
-                }
-                value={form.password}
-                autoComplete="off"
-                onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t("network.proxyUsername")}</Label>
+                  <Input
+                    className="h-9 text-sm"
+                    placeholder={t("network.proxyUsernamePlaceholder")}
+                    value={form.username}
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, username: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t("network.proxyPassword")}</Label>
+                  <Input
+                    className="h-9 text-sm"
+                    type="password"
+                    placeholder={
+                      editing
+                        ? t("network.proxyPasswordKeep")
+                        : t("network.proxyPasswordPlaceholder")
+                    }
+                    value={form.password}
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, password: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {error ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">

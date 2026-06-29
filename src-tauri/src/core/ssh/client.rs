@@ -5,8 +5,10 @@ use russh::{Preferred, cipher, kex, mac};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::process::Stdio;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader};
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 /// Connection parameters for SSH (host, port, user, auth method).
@@ -553,7 +555,10 @@ pub(super) fn build_client_config(app: &AppHandle) -> client::Config {
 
 #[cfg(test)]
 mod tests {
-    use super::{KnownHostCheck, check_known_host_entry, preferred_algorithms};
+    use super::{
+        KnownHostCheck, check_known_host_entry, expand_proxy_command, preferred_algorithms,
+        shell_quote,
+    };
     use russh::keys::{Algorithm, EcdsaCurve};
     use russh::{cipher, kex, mac};
 
@@ -610,6 +615,57 @@ example.com ssh-rsa AAAARSA
             })
             .expect("P-521 ECDSA is enabled");
         assert!(rsa_sha1_index < ecdsa_p521_index);
+    }
+
+    #[test]
+    fn expands_proxy_command_placeholders() {
+        let command = expand_proxy_command(
+            Some("nc -X connect -x jump:1080 %h %p --user=%r --literal=%%"),
+            "example.com",
+            2222,
+            "alice",
+        )
+        .expect("command expands");
+
+        assert!(command.contains("nc -X connect -x jump:1080"));
+        assert!(command.contains(&shell_quote("example.com")));
+        assert!(command.contains(&shell_quote("2222")));
+        assert!(command.contains(&format!("--user={}", shell_quote("alice"))));
+        assert!(command.contains("--literal=%"));
+    }
+
+    #[test]
+    fn proxy_command_preserves_unknown_percent_escape() {
+        let command =
+            expand_proxy_command(Some("tool %x %"), "host", 22, "user").expect("command expands");
+
+        assert_eq!(command, "tool %x %");
+    }
+
+    #[test]
+    fn proxy_command_rejects_empty_template() {
+        let error = expand_proxy_command(Some("   "), "host", 22, "user").unwrap_err();
+
+        assert!(error.to_string().contains("ProxyCommand is empty"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn shell_quote_unix_handles_spaces_and_quotes() {
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("plain"), "'plain'");
+        assert_eq!(shell_quote("two words"), "'two words'");
+        assert_eq!(shell_quote("can't"), "'can'\\''t'");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shell_quote_windows_handles_spaces_and_quotes() {
+        assert_eq!(shell_quote(""), "\"\"");
+        assert_eq!(shell_quote("plain"), "plain");
+        assert_eq!(shell_quote("example.com:22"), "example.com:22");
+        assert_eq!(shell_quote("two words"), "\"two words\"");
+        assert_eq!(shell_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
     }
 }
 
@@ -679,6 +735,16 @@ pub(super) async fn connect_with_proxy(
 
                 client::connect_stream(ssh_config, stream, handler).await
             }
+            "proxycommand" => {
+                let stream = open_proxy_command_stream(
+                    proxy.command.as_deref(),
+                    &config.host,
+                    config.port,
+                    &config.username,
+                )
+                .await?;
+                client::connect_stream(ssh_config, stream, handler).await
+            }
             _ => client::connect(ssh_config, target, handler).await,
         }
     } else {
@@ -698,6 +764,190 @@ pub(super) async fn connect_with_proxy(
     );
 
     Ok(handle)
+}
+
+async fn open_proxy_command_stream(
+    template: Option<&str>,
+    host: &str,
+    port: u16,
+    username: &str,
+) -> AppResult<ProxyCommandStream> {
+    let command = expand_proxy_command(template, host, port, username)?;
+    tracing::info!("Opening SSH transport via ProxyCommand");
+
+    let mut process = system_shell_command(&command)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| AppError::Auth(format!("ProxyCommand failed to start: {}", error)))?;
+
+    let stdin = process
+        .stdin
+        .take()
+        .ok_or_else(|| AppError::Auth("ProxyCommand stdin unavailable".to_string()))?;
+    let stdout = process
+        .stdout
+        .take()
+        .ok_or_else(|| AppError::Auth("ProxyCommand stdout unavailable".to_string()))?;
+
+    if let Some(stderr) = process.stderr.take() {
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                match reader.read_until(b'\n', &mut line).await {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let message = String::from_utf8_lossy(&line);
+                        let message = message.trim_end_matches(['\r', '\n']);
+                        if !message.is_empty() {
+                            tracing::warn!(message = %message, "ProxyCommand stderr");
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "Failed to read ProxyCommand stderr");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    tokio::spawn(async move {
+        match process.wait().await {
+            Ok(status) if status.success() => {
+                tracing::debug!(%status, "ProxyCommand exited");
+            }
+            Ok(status) => {
+                tracing::warn!(%status, "ProxyCommand exited with failure");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Failed to wait for ProxyCommand");
+            }
+        }
+    });
+
+    Ok(ProxyCommandStream { stdout, stdin })
+}
+
+struct ProxyCommandStream {
+    stdout: tokio::process::ChildStdout,
+    stdin: tokio::process::ChildStdin,
+}
+
+impl AsyncRead for ProxyCommandStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.stdout).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ProxyCommandStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.stdin).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.stdin).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.stdin).poll_shutdown(cx)
+    }
+}
+
+fn expand_proxy_command(
+    template: Option<&str>,
+    host: &str,
+    port: u16,
+    username: &str,
+) -> AppResult<String> {
+    let template = template.unwrap_or_default().trim();
+    if template.is_empty() {
+        return Err(AppError::Auth("ProxyCommand is empty".to_string()));
+    }
+
+    let quoted_host = shell_quote(host);
+    let quoted_port = shell_quote(&port.to_string());
+    let quoted_username = shell_quote(username);
+
+    let mut output = String::with_capacity(template.len());
+    let mut chars = template.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            output.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('%') => output.push('%'),
+            Some('h') => output.push_str(&quoted_host),
+            Some('p') => output.push_str(&quoted_port),
+            Some('r') => output.push_str(&quoted_username),
+            Some(other) => {
+                output.push('%');
+                output.push(other);
+            }
+            None => output.push('%'),
+        }
+    }
+
+    Ok(output)
+}
+
+#[cfg(windows)]
+fn system_shell_command(command: &str) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new("cmd");
+    cmd.arg("/C").arg(command);
+    cmd
+}
+
+#[cfg(not(windows))]
+fn system_shell_command(command: &str) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.arg("-c").arg(command);
+    cmd
+}
+
+#[cfg(windows)]
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "\"\"".to_string();
+    }
+
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | ':' | '@' | '%'))
+    {
+        return value.to_string();
+    }
+
+    let escaped = value.replace('"', "\"\"");
+    format!("\"{}\"", escaped)
+}
+
+#[cfg(not(windows))]
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 pub(super) async fn connect_via_stream<S>(

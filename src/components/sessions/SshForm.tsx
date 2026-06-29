@@ -203,6 +203,9 @@ function AdvancedCombobox({
 }
 
 function formatProxySubtitle(proxy: ProxyConfig) {
+  if (proxy.protocol === "proxycommand") {
+    return [proxy.protocol.toUpperCase(), proxy.command].filter(Boolean).join(" · ");
+  }
   return [`${proxy.protocol.toUpperCase()} ${proxy.host}:${proxy.port}`, proxy.username]
     .filter(Boolean)
     .join(" · ");
@@ -335,7 +338,7 @@ export function SshForm({
   const proxyOptions = proxies.map((proxy) => ({
     id: proxy.id,
     label: proxy.name,
-    searchText: [proxy.name, proxy.protocol, proxy.host, proxy.port, proxy.username]
+    searchText: [proxy.name, proxy.protocol, proxy.host, proxy.port, proxy.username, proxy.command]
       .filter(Boolean)
       .join(" "),
     subtitle: formatProxySubtitle(proxy),

@@ -520,6 +520,7 @@ fn resolve_proxy(
         protocol: proxy_cfg.protocol,
         host: proxy_cfg.host,
         port: proxy_cfg.port,
+        command: proxy_cfg.command,
         username: proxy_cfg.username,
         password,
     }))

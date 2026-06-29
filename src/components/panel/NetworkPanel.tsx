@@ -157,6 +157,7 @@ function ProxyRow({
 }) {
   const { t } = useTranslation();
   const address = `${proxy.host}:${proxy.port}`;
+  const isProxyCommand = proxy.protocol === "proxycommand";
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent">
@@ -170,7 +171,11 @@ function ProxyRow({
           {proxy.protocol.toUpperCase()}
         </div>
         <div className="mt-0.5 text-[0.6875rem]" style={{ color: "var(--df-text-muted)" }}>
-          {proxy.username ? `${proxy.username}@${address}` : address}
+          {isProxyCommand
+            ? proxy.command
+            : proxy.username
+              ? `${proxy.username}@${address}`
+              : address}
         </div>
       </div>
 
