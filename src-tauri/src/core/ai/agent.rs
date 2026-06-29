@@ -3,7 +3,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent};
+use genai::chat::{
+    ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, Tool, ToolCall, ToolChoice,
+    ToolResponse,
+};
+use serde::Deserialize;
+use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
@@ -13,7 +18,7 @@ use crate::core::session::{SessionCommand, SessionManager};
 use crate::error::{AppError, AppResult};
 
 use super::history::{append_ai_audit, append_message, save_user_message};
-use super::model::{build_client, resolve_request_model};
+use super::model::{ResolvedAiModel, build_client, resolve_request_model};
 use super::parser::{extract_json_object, parse_model_output, trim_string_to_option};
 use super::prompt::{agent_system_prompt, build_agent_prompt, build_observation_message};
 use super::redaction::{redact_context, redact_sensitive_text};
@@ -76,6 +81,8 @@ impl AgentApprovalManager {
 
 const DEFAULT_MAX_AGENT_STEPS: u16 = 10;
 const DEFAULT_AGENT_STEP_TIMEOUT_MS: u64 = 30_000;
+const TOOL_EXECUTE_COMMAND: &str = "execute_command";
+const TOOL_FINAL_ANSWER: &str = "final_answer";
 
 fn emit_agent_step(app: &AppHandle, stream_id: &str, payload: AgentStepPayload) {
     let _ = app.emit(format!("ai-stream-{stream_id}").as_str(), payload);
@@ -334,6 +341,155 @@ struct RiskAssessment {
     local_risk: RiskLevel,
     effective_risk: RiskLevel,
     risk_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecuteCommandToolArgs {
+    thought: String,
+    command: String,
+    #[serde(deserialize_with = "deserialize_required_risk_level")]
+    risk_level: RiskLevel,
+    risk_reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalAnswerToolArgs {
+    thought: String,
+    answer: String,
+}
+
+struct LegacyAgentStep {
+    parsed: AgentLlmResponse,
+    raw_output: String,
+}
+
+#[derive(Debug, Clone)]
+enum AgentToolInvocation {
+    ExecuteCommand {
+        tool_call: ToolCall,
+        args: ExecuteCommandToolArgs,
+    },
+    FinalAnswer {
+        args: FinalAnswerToolArgs,
+    },
+}
+
+fn deserialize_required_risk_level<'de, D>(deserializer: D) -> Result<RiskLevel, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    super::types::parse_risk_level_label(&value)
+        .ok_or_else(|| serde::de::Error::custom(format!("invalid riskLevel '{value}'")))
+}
+
+fn agent_tools() -> Vec<Tool> {
+    vec![
+        Tool::new(TOOL_EXECUTE_COMMAND)
+            .with_description(
+                "Execute exactly one shell command in the active terminal session. Use this when \
+                 more observation is needed or when the user requested an action that requires a \
+                 command.",
+            )
+            .with_schema(json!({
+                "type": "object",
+                "properties": {
+                    "thought": {
+                        "type": "string",
+                        "description": "Brief reasoning for this step and why this command is needed."
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "A single shell command to execute."
+                    },
+                    "riskLevel": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high", "critical"],
+                        "description": "Risk level of this command."
+                    },
+                    "riskReason": {
+                        "type": "string",
+                        "description": "Brief reason for the selected risk level."
+                    }
+                },
+                "required": ["thought", "command", "riskLevel", "riskReason"],
+                "additionalProperties": false
+            }))
+            .with_strict(true),
+        Tool::new(TOOL_FINAL_ANSWER)
+            .with_description(
+                "Finish the agent task and provide the user-facing final answer. Use this when \
+                 no more command execution is needed.",
+            )
+            .with_schema(json!({
+                "type": "object",
+                "properties": {
+                    "thought": {
+                        "type": "string",
+                        "description": "Brief reason why the task is complete or cannot continue."
+                    },
+                    "answer": {
+                        "type": "string",
+                        "description": "Final user-facing answer."
+                    }
+                },
+                "required": ["thought", "answer"],
+                "additionalProperties": false
+            }))
+            .with_strict(true),
+    ]
+}
+
+fn parse_agent_tool_invocation(tool_calls: Vec<ToolCall>) -> AppResult<AgentToolInvocation> {
+    let mut tool_calls: Vec<ToolCall> = tool_calls
+        .into_iter()
+        .filter(|call| !call.fn_name.trim().is_empty())
+        .collect();
+    if tool_calls.len() != 1 {
+        return Err(AppError::Config(format!(
+            "Expected exactly one AI agent tool call, got {}",
+            tool_calls.len()
+        )));
+    }
+
+    let tool_call = tool_calls.remove(0);
+    match tool_call.fn_name.as_str() {
+        TOOL_EXECUTE_COMMAND => {
+            let args: ExecuteCommandToolArgs =
+                serde_json::from_value(tool_call.fn_arguments.clone()).map_err(|error| {
+                    AppError::Config(format!("Invalid execute_command tool arguments: {error}"))
+                })?;
+            if args.command.trim().is_empty() {
+                return Err(AppError::Config(
+                    "execute_command tool call is missing command".to_string(),
+                ));
+            }
+            Ok(AgentToolInvocation::ExecuteCommand { tool_call, args })
+        }
+        TOOL_FINAL_ANSWER => {
+            let args: FinalAnswerToolArgs = serde_json::from_value(tool_call.fn_arguments.clone())
+                .map_err(|error| {
+                    AppError::Config(format!("Invalid final_answer tool arguments: {error}"))
+                })?;
+            Ok(AgentToolInvocation::FinalAnswer { args })
+        }
+        other => Err(AppError::Config(format!(
+            "Unknown AI agent tool call '{other}'"
+        ))),
+    }
+}
+
+fn parsed_from_execute_tool(args: &ExecuteCommandToolArgs) -> AgentLlmResponse {
+    AgentLlmResponse {
+        thought: args.thought.clone(),
+        action: TOOL_EXECUTE_COMMAND.to_string(),
+        command: Some(args.command.clone()),
+        risk_level: Some(args.risk_level.clone()),
+        risk_reason: Some(args.risk_reason.clone()),
+        answer: None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -643,6 +799,202 @@ fn append_agent_command_audit(
     );
 }
 
+async fn run_agent_tool_step(
+    app: &AppHandle,
+    stream_id: &str,
+    session_id: &str,
+    resolved_model: &ResolvedAiModel,
+    conversation: &[ChatMessage],
+    settings: &AiSettings,
+    cancel_rx: &mut oneshot::Receiver<()>,
+) -> AppResult<AgentToolInvocation> {
+    let client = build_client(resolved_model, settings)?;
+    let chat_req = ChatRequest::new(conversation.to_vec()).with_tools(agent_tools());
+    let chat_options = ChatOptions::default()
+        .with_capture_reasoning_content(true)
+        .with_normalize_reasoning_content(true)
+        .with_capture_tool_calls(true)
+        .with_tool_choice(ToolChoice::Required);
+
+    let stream_result = tokio::time::timeout(
+        Duration::from_millis(settings.timeout_ms),
+        client.exec_chat_stream(&resolved_model.model_name, chat_req, Some(&chat_options)),
+    )
+    .await
+    .map_err(|_| AppError::Config("AI request timed out".to_string()))?
+    .map_err(|error| AppError::Config(format!("AI request failed: {error}")))?;
+
+    let mut raw_text = String::new();
+    let mut stream = stream_result.stream;
+    let idle_duration = Duration::from_millis(settings.timeout_ms);
+    let idle_deadline = tokio::time::sleep(idle_duration);
+    tokio::pin!(idle_deadline);
+
+    loop {
+        tokio::select! {
+            _ = &mut idle_deadline => {
+                return Err(AppError::Config("AI stream timed out (no data received)".to_string()));
+            }
+            _ = &mut *cancel_rx => {
+                return Err(AppError::Cancelled("AI stream cancelled".to_string()));
+            }
+            item = stream.next() => {
+                idle_deadline.as_mut().reset(tokio::time::Instant::now() + idle_duration);
+                match item {
+                    Some(Ok(ChatStreamEvent::Start)) => {}
+                    Some(Ok(ChatStreamEvent::Chunk(chunk))) => {
+                        raw_text.push_str(&chunk.content);
+                    }
+                    Some(Ok(ChatStreamEvent::ReasoningChunk(chunk))) => {
+                        if !chunk.content.is_empty() {
+                            emit_stream_event(app, stream_id, AiStreamEventPayload {
+                                event_type: "reasoning_delta".to_string(),
+                                stream_id: stream_id.to_string(),
+                                session_id: Some(session_id.to_string()),
+                                text_delta: None,
+                                reasoning_delta: Some(chunk.content),
+                                message: None,
+                                command_cards: vec![],
+                                usage: None,
+                                error: None,
+                            });
+                        }
+                    }
+                    Some(Ok(ChatStreamEvent::ToolCallChunk(_))) => {}
+                    Some(Ok(ChatStreamEvent::ThoughtSignatureChunk(_))) => {}
+                    Some(Ok(ChatStreamEvent::End(end))) => {
+                        let tool_calls = end.captured_into_tool_calls().unwrap_or_default();
+                        return parse_agent_tool_invocation(tool_calls).map_err(|error| {
+                            AppError::Config(format!(
+                                "{error}; streamed text fallback candidate length {}",
+                                raw_text.len()
+                            ))
+                        });
+                    }
+                    None => {
+                        return Err(AppError::Config(
+                            "AI stream ended without a tool call".to_string(),
+                        ));
+                    }
+                    Some(Err(error)) => {
+                        return Err(AppError::Config(format!("AI stream failed: {error}")));
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn run_agent_legacy_json_step(
+    app: &AppHandle,
+    stream_id: &str,
+    session_id: &str,
+    resolved_model: &ResolvedAiModel,
+    conversation: &[ChatMessage],
+    settings: &AiSettings,
+    cancel_rx: &mut oneshot::Receiver<()>,
+) -> AppResult<LegacyAgentStep> {
+    let client = build_client(resolved_model, settings)?;
+    let mut legacy_conversation = conversation.to_vec();
+    legacy_conversation.push(ChatMessage::system(
+        r#"Fallback protocol: tool calling is unavailable for this step. Return exactly one JSON object and no Markdown. For command execution use {"thought":"...","action":"execute_command","command":"...","riskLevel":"low|medium|high|critical","riskReason":"..."}. For final answer use {"thought":"...","action":"final_answer","answer":"..."}."#,
+    ));
+    let chat_req = ChatRequest::new(legacy_conversation);
+    let chat_options = ChatOptions::default()
+        .with_capture_reasoning_content(true)
+        .with_normalize_reasoning_content(true);
+
+    let stream_result = tokio::time::timeout(
+        Duration::from_millis(settings.timeout_ms),
+        client.exec_chat_stream(&resolved_model.model_name, chat_req, Some(&chat_options)),
+    )
+    .await
+    .map_err(|_| AppError::Config("AI request timed out".to_string()))?
+    .map_err(|error| AppError::Config(format!("AI request failed: {error}")))?;
+
+    let mut raw_output = String::new();
+    let mut reasoning_output = String::new();
+    let mut stream = stream_result.stream;
+    let idle_duration = Duration::from_millis(settings.timeout_ms);
+    let idle_deadline = tokio::time::sleep(idle_duration);
+    tokio::pin!(idle_deadline);
+
+    loop {
+        tokio::select! {
+            _ = &mut idle_deadline => break,
+            _ = &mut *cancel_rx => {
+                return Err(AppError::Cancelled("AI stream cancelled".to_string()));
+            }
+            item = stream.next() => {
+                idle_deadline.as_mut().reset(tokio::time::Instant::now() + idle_duration);
+                match item {
+                    Some(Ok(ChatStreamEvent::Chunk(chunk))) => {
+                        if !chunk.content.is_empty() {
+                            raw_output.push_str(&chunk.content);
+                        }
+                    }
+                    Some(Ok(ChatStreamEvent::ReasoningChunk(chunk))) => {
+                        if !chunk.content.is_empty() {
+                            reasoning_output.push_str(&chunk.content);
+                            emit_stream_event(app, stream_id, AiStreamEventPayload {
+                                event_type: "reasoning_delta".to_string(),
+                                stream_id: stream_id.to_string(),
+                                session_id: Some(session_id.to_string()),
+                                text_delta: None,
+                                reasoning_delta: Some(chunk.content),
+                                message: None,
+                                command_cards: vec![],
+                                usage: None,
+                                error: None,
+                            });
+                        }
+                    }
+                    Some(Ok(ChatStreamEvent::End(end))) => {
+                        if reasoning_output.is_empty()
+                            && let Some(r) = end.captured_reasoning_content
+                        {
+                            reasoning_output = r;
+                        }
+                        break;
+                    }
+                    None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(error)) => {
+                        return Err(AppError::Config(format!("AI stream failed: {error}")));
+                    }
+                }
+            }
+        }
+    }
+
+    let candidate =
+        extract_json_object(&raw_output).unwrap_or_else(|| raw_output.trim().to_string());
+    let parsed = match serde_json::from_str(&candidate) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            tracing::warn!(
+                stream_id = %stream_id,
+                session_id = %session_id,
+                error = %error,
+                raw_output_len = raw_output.len(),
+                "Failed to parse legacy AI agent JSON response; falling back to final text"
+            );
+            let (text, _, _) =
+                parse_model_output(&raw_output, trim_string_to_option(reasoning_output));
+            AgentLlmResponse {
+                thought: String::new(),
+                action: "final_answer".to_string(),
+                command: None,
+                risk_level: None,
+                risk_reason: None,
+                answer: Some(text),
+            }
+        }
+    };
+
+    Ok(LegacyAgentStep { parsed, raw_output })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,6 +1008,83 @@ mod tests {
             risk_reason: Some("model reason".to_string()),
             answer: None,
         }
+    }
+
+    #[test]
+    fn parses_execute_command_tool_args_case_insensitively() {
+        let call = ToolCall {
+            call_id: "call-1".to_string(),
+            fn_name: TOOL_EXECUTE_COMMAND.to_string(),
+            fn_arguments: json!({
+                "thought": "inspect",
+                "command": "ls -la",
+                "riskLevel": "LOW",
+                "riskReason": "read only"
+            }),
+            thought_signatures: None,
+        };
+
+        let parsed = parse_agent_tool_invocation(vec![call]).unwrap();
+        match parsed {
+            AgentToolInvocation::ExecuteCommand { args, .. } => {
+                assert_eq!(args.thought, "inspect");
+                assert_eq!(args.command, "ls -la");
+                assert_eq!(args.risk_level, RiskLevel::Low);
+                assert_eq!(args.risk_reason, "read only");
+            }
+            AgentToolInvocation::FinalAnswer { .. } => panic!("expected execute_command"),
+        }
+    }
+
+    #[test]
+    fn parses_final_answer_tool_args() {
+        let call = ToolCall {
+            call_id: "call-2".to_string(),
+            fn_name: TOOL_FINAL_ANSWER.to_string(),
+            fn_arguments: json!({
+                "thought": "done",
+                "answer": "All set"
+            }),
+            thought_signatures: None,
+        };
+
+        let parsed = parse_agent_tool_invocation(vec![call]).unwrap();
+        match parsed {
+            AgentToolInvocation::FinalAnswer { args } => {
+                assert_eq!(args.thought, "done");
+                assert_eq!(args.answer, "All set");
+            }
+            AgentToolInvocation::ExecuteCommand { .. } => panic!("expected final_answer"),
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_tool_name() {
+        let call = ToolCall {
+            call_id: "call-3".to_string(),
+            fn_name: "unknown".to_string(),
+            fn_arguments: json!({}),
+            thought_signatures: None,
+        };
+
+        assert!(parse_agent_tool_invocation(vec![call]).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_tool_risk_level() {
+        let call = ToolCall {
+            call_id: "call-4".to_string(),
+            fn_name: TOOL_EXECUTE_COMMAND.to_string(),
+            fn_arguments: json!({
+                "thought": "inspect",
+                "command": "ls",
+                "riskLevel": "spicy",
+                "riskReason": "not a real level"
+            }),
+            thought_signatures: None,
+        };
+
+        assert!(parse_agent_tool_invocation(vec![call]).is_err());
     }
 
     #[test]
@@ -841,120 +1270,79 @@ pub(super) async fn run_agent_stream(
             return;
         }
 
-        let client = match build_client(&resolved_model, &settings) {
-            Ok(c) => c,
-            Err(e) => {
-                emit_agent_error(&app, &stream_id, &session_id, &e.to_string());
-                return;
-            }
-        };
-
-        let chat_req = ChatRequest::new(conversation.clone());
-        let chat_options = ChatOptions::default()
-            .with_capture_reasoning_content(true)
-            .with_normalize_reasoning_content(true);
-
-        let stream_result = match tokio::time::timeout(
-            Duration::from_millis(settings.timeout_ms),
-            client.exec_chat_stream(&resolved_model.model_name, chat_req, Some(&chat_options)),
+        let tool_invocation = match run_agent_tool_step(
+            &app,
+            &stream_id,
+            &session_id,
+            &resolved_model,
+            &conversation,
+            &settings,
+            &mut cancel_rx,
         )
         .await
         {
-            Ok(Ok(result)) => result,
-            Ok(Err(e)) => {
-                emit_agent_error(
-                    &app,
-                    &stream_id,
-                    &session_id,
-                    &format!("AI request failed: {e}"),
-                );
-                return;
-            }
-            Err(_) => {
-                emit_agent_error(&app, &stream_id, &session_id, "AI request timed out");
-                return;
-            }
-        };
-
-        let mut raw_output = String::new();
-        let mut reasoning_output = String::new();
-        let mut stream = stream_result.stream;
-        let idle_duration = Duration::from_millis(settings.timeout_ms);
-        let idle_deadline = tokio::time::sleep(idle_duration);
-        tokio::pin!(idle_deadline);
-
-        loop {
-            tokio::select! {
-                _ = &mut idle_deadline => break,
-                _ = &mut cancel_rx => {
+            Ok(invocation) => Some(invocation),
+            Err(error) => {
+                if matches!(error, AppError::Cancelled(_)) {
                     emit_agent_error(&app, &stream_id, &session_id, "AI stream cancelled");
                     return;
                 }
-                item = stream.next() => {
-                    idle_deadline.as_mut().reset(tokio::time::Instant::now() + idle_duration);
-                    match item {
-                        Some(Ok(ChatStreamEvent::Chunk(chunk))) => {
-                            if !chunk.content.is_empty() {
-                                raw_output.push_str(&chunk.content);
-                            }
-                        }
-                        Some(Ok(ChatStreamEvent::ReasoningChunk(chunk))) => {
-                            if !chunk.content.is_empty() {
-                                reasoning_output.push_str(&chunk.content);
-                                emit_stream_event(&app, &stream_id, AiStreamEventPayload {
-                                    event_type: "reasoning_delta".to_string(),
-                                    stream_id: stream_id.clone(),
-                                    session_id: Some(session_id.clone()),
-                                    text_delta: None,
-                                    reasoning_delta: Some(chunk.content),
-                                    message: None,
-                                    command_cards: vec![],
-                                    usage: None,
-                                    error: None,
-                                });
-                            }
-                        }
-                        Some(Ok(ChatStreamEvent::End(end))) => {
-                            if reasoning_output.is_empty() {
-                                if let Some(r) = end.captured_reasoning_content {
-                                    reasoning_output = r;
-                                }
-                            }
-                            break;
-                        }
-                        None => break,
-                        Some(Ok(_)) => {}
-                        Some(Err(e)) => {
-                            emit_agent_error(&app, &stream_id, &session_id, &format!("AI stream failed: {e}"));
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        let candidate =
-            extract_json_object(&raw_output).unwrap_or_else(|| raw_output.trim().to_string());
-
-        let parsed: AgentLlmResponse = match serde_json::from_str(&candidate) {
-            Ok(r) => r,
-            Err(error) => {
                 tracing::warn!(
                     stream_id = %stream_id,
                     session_id = %session_id,
                     step_index,
                     error = %error,
-                    raw_output_len = raw_output.len(),
-                    "Failed to parse AI agent step response as JSON; falling back to final text"
+                    "AI agent tool call step failed; falling back to legacy JSON protocol"
                 );
-                let (text, _, _) =
-                    parse_model_output(&raw_output, trim_string_to_option(reasoning_output));
-                final_answer = Some(text);
-                break;
+                None
             }
         };
 
-        conversation.push(ChatMessage::assistant(&raw_output));
+        let mut execute_tool_call: Option<ToolCall> = None;
+        let mut legacy_raw_output: Option<String> = None;
+        let parsed = match tool_invocation {
+            Some(AgentToolInvocation::ExecuteCommand { tool_call, args }) => {
+                execute_tool_call = Some(tool_call);
+                parsed_from_execute_tool(&args)
+            }
+            Some(AgentToolInvocation::FinalAnswer { args }) => AgentLlmResponse {
+                thought: args.thought,
+                action: TOOL_FINAL_ANSWER.to_string(),
+                command: None,
+                risk_level: None,
+                risk_reason: None,
+                answer: Some(args.answer),
+            },
+            None => match run_agent_legacy_json_step(
+                &app,
+                &stream_id,
+                &session_id,
+                &resolved_model,
+                &conversation,
+                &settings,
+                &mut cancel_rx,
+            )
+            .await
+            {
+                Ok(step) => {
+                    legacy_raw_output = Some(step.raw_output);
+                    step.parsed
+                }
+                Err(error) => {
+                    let message = if matches!(error, AppError::Cancelled(_)) {
+                        "AI stream cancelled".to_string()
+                    } else {
+                        error.to_string()
+                    };
+                    emit_agent_error(&app, &stream_id, &session_id, &message);
+                    return;
+                }
+            },
+        };
+
+        if let Some(raw_output) = legacy_raw_output {
+            conversation.push(ChatMessage::assistant(&raw_output));
+        }
 
         tracing::debug!(
             stream_id = %stream_id,
@@ -963,7 +1351,6 @@ pub(super) async fn run_agent_stream(
             action = %parsed.action,
             has_command = parsed.command.as_ref().is_some_and(|value| !value.trim().is_empty()),
             has_answer = parsed.answer.as_ref().is_some_and(|value| !value.trim().is_empty()),
-            reasoning_len = reasoning_output.len(),
             "Parsed AI agent step response"
         );
 
@@ -1082,7 +1469,19 @@ pub(super) async fn run_agent_stream(
                             "用户拒绝执行命令 `{}`。请换用其他方案或给出 final_answer。",
                             command
                         );
-                        conversation.push(ChatMessage::user(skipped_msg));
+                        if let Some(tool_call) = execute_tool_call.as_ref() {
+                            conversation.push(ChatMessage::from(vec![tool_call.clone()]));
+                            conversation.push(ChatMessage::from(ToolResponse::from_tool_call(
+                                tool_call,
+                                json!({
+                                    "status": "rejected",
+                                    "message": skipped_msg,
+                                })
+                                .to_string(),
+                            )));
+                        } else {
+                            conversation.push(ChatMessage::user(skipped_msg));
+                        }
                         continue;
                     }
                 }
@@ -1159,7 +1558,19 @@ pub(super) async fn run_agent_stream(
                         );
 
                         let err_msg = format!("命令执行失败：{}。请分析原因并给出下一步。", e);
-                        conversation.push(ChatMessage::user(err_msg));
+                        if let Some(tool_call) = execute_tool_call.as_ref() {
+                            conversation.push(ChatMessage::from(vec![tool_call.clone()]));
+                            conversation.push(ChatMessage::from(ToolResponse::from_tool_call(
+                                tool_call,
+                                json!({
+                                    "status": "failed",
+                                    "error": e.to_string(),
+                                })
+                                .to_string(),
+                            )));
+                        } else {
+                            conversation.push(ChatMessage::user(err_msg));
+                        }
                         continue;
                     }
                 };
@@ -1205,7 +1616,15 @@ pub(super) async fn run_agent_stream(
                 );
 
                 let obs_msg = build_observation_message(&obs, &command, &request.options.language);
-                conversation.push(ChatMessage::user(obs_msg));
+                if let Some(tool_call) = execute_tool_call.as_ref() {
+                    conversation.push(ChatMessage::from(vec![tool_call.clone()]));
+                    conversation.push(ChatMessage::from(ToolResponse::from_tool_call(
+                        tool_call,
+                        serde_json::to_string(&obs).unwrap_or_else(|_| obs_msg.clone()),
+                    )));
+                } else {
+                    conversation.push(ChatMessage::user(obs_msg));
+                }
             }
             other => {
                 let fallback = format!(

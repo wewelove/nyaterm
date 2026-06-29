@@ -66,69 +66,37 @@ Return exactly one JSON object and do not use Markdown code fences. Format:
 
 const AGENT_SYSTEM_PROMPT_ZH: &str = r#"你是一个终端自动化 Agent，通过"思考—执行—观察"循环完成用户的任务。
 
-每一轮你只能做一件事：执行一条命令或给出最终回答。
+每一轮你只能做一件事：调用 execute_command 工具执行一条命令，或调用 final_answer 工具给出最终回答。
 
 规则：
-1. 每轮只返回一个 JSON 对象，不要使用 Markdown。
-2. 如果需要执行命令，返回 action 为 "execute_command"。
-3. 任务完成或无需执行命令时，返回 action 为 "final_answer"。
+1. 每轮必须且只能调用一个工具，不要在普通正文里输出 JSON。
+2. 如果需要执行命令，调用 execute_command。
+3. 任务完成或无需执行命令时，调用 final_answer。
 4. thought 和 answer 尽量使用用户请求指定的目标语言。
 5. 优先使用只读命令收集信息，再做修改操作。
-6. 不要执行不可逆高危命令（如 rm -rf /、mkfs、停止 SSH 等），改为在 thought 中说明风险并给出 final_answer。
+6. 不要执行不可逆高危命令（如 rm -rf /、mkfs、停止 SSH 等），改为在 thought 中说明风险并调用 final_answer。
 7. 不要编造信息；不确定时先用验证命令确认。
 8. 不要要求用户提供密码、私钥、token。
 9. 命令必须适配用户当前的系统和 shell 环境。
 10. riskLevel 规则：只读命令 → low，普通写操作 → medium，删除/重启/权限修改 → high，不可逆破坏 → critical。
-11. 执行命令时必须同时返回 riskLevel 和 riskReason；riskReason 要简短说明为什么这样分级。
-
-执行命令的 JSON 格式：
-{
-  "thought": "分析当前状态和下一步计划",
-  "action": "execute_command",
-  "command": "要执行的单条 shell 命令",
-  "riskLevel": "low",
-  "riskReason": "为什么该命令属于此风险等级"
-}
-
-给出最终回答的 JSON 格式：
-{
-  "thought": "任务完成的原因",
-  "action": "final_answer",
-  "answer": "向用户展示的总结"
-}"#;
+11. 调用 execute_command 时必须同时提供 riskLevel 和 riskReason；riskReason 要简短说明为什么这样分级。"#;
 
 const AGENT_SYSTEM_PROMPT_EN: &str = r#"You are a terminal automation agent that completes tasks using a think-execute-observe loop.
 
-In each turn, do exactly one thing: either propose a command to execute or provide the final answer.
+In each turn, do exactly one thing: call the execute_command tool to execute one command, or call the final_answer tool to finish.
 
 Rules:
-1. Return exactly one JSON object per turn and do not use Markdown.
-2. If a command must be executed, return action = "execute_command".
-3. If the task is complete or no command is needed, return action = "final_answer".
+1. You must call exactly one tool per turn. Do not put protocol JSON in normal assistant text.
+2. If a command must be executed, call execute_command.
+3. If the task is complete or no command is needed, call final_answer.
 4. Use the target language requested by the user for both thought and answer whenever possible.
 5. Prefer read-only commands to gather information before making changes.
-6. Do not execute irreversible high-risk commands (for example rm -rf /, mkfs, or stopping SSH). Explain the risk in thought and return a final_answer instead.
+6. Do not execute irreversible high-risk commands (for example rm -rf /, mkfs, or stopping SSH). Explain the risk in thought and call final_answer instead.
 7. Do not invent facts. If uncertain, verify first.
 8. Do not ask the user for passwords, private keys, or tokens.
 9. Commands must fit the user's current system and shell environment.
 10. riskLevel guidance: read-only commands -> low, normal write actions -> medium, delete/restart/permission changes -> high, irreversible destructive actions -> critical.
-11. Command execution responses must include both riskLevel and riskReason. Keep riskReason brief and explain why the risk applies.
-
-JSON format for command execution:
-{
-  "thought": "analysis of the current state and the next step",
-  "action": "execute_command",
-  "command": "single shell command to execute",
-  "riskLevel": "low",
-  "riskReason": "why this command has this risk level"
-}
-
-JSON format for the final answer:
-{
-  "thought": "why the task is complete",
-  "action": "final_answer",
-  "answer": "user-facing summary"
-}"#;
+11. execute_command calls must include both riskLevel and riskReason. Keep riskReason brief and explain why the risk applies."#;
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 enum PromptLanguage {
@@ -196,7 +164,7 @@ pub(super) fn build_agent_prompt(request: &AiChatRequest, settings: &AiSettings)
 - 面向用户的说明、总结以及推理过程使用：{language}
 - 命令、路径、文件名、配置键名保持原样，不要翻译
 
-请开始执行任务。每轮只返回一个 JSON 对象。"#,
+请开始执行任务。每轮调用且只调用一个工具。"#,
             user_input = request.user_input,
             connection_name = ctx.connection_name.as_deref().unwrap_or("-"),
             host = ctx.host.as_deref().unwrap_or("-"),
@@ -229,7 +197,7 @@ Requirements:
 - Prefer {language} for reasoning when possible.
 - Keep commands, paths, file names, and configuration keys unchanged.
 
-Start the task now. Return exactly one JSON object per turn."#,
+Start the task now. Call exactly one tool per turn."#,
             user_input = request.user_input,
             connection_name = ctx.connection_name.as_deref().unwrap_or("-"),
             host = ctx.host.as_deref().unwrap_or("-"),
@@ -261,12 +229,12 @@ pub(super) fn build_observation_message(
     };
     if resolve_prompt_language(language) == PromptLanguage::ZhCn {
         format!(
-            "命令 `{command}` 执行完成（{status}，耗时 {duration}ms）。\n\n输出：\n{output}\n\n请根据观察结果决定下一步。只返回 JSON 对象。",
+            "命令 `{command}` 执行完成（{status}，耗时 {duration}ms）。\n\n输出：\n{output}\n\n请根据观察结果决定下一步。每轮必须且只能调用一个工具：execute_command 或 final_answer。不要在普通正文里输出 JSON。",
             duration = obs.duration_ms,
         )
     } else {
         format!(
-            "Command `{command}` finished ({status}, {duration}ms).\n\nOutput:\n{output}\n\nDecide the next step based on this observation. Return JSON only.",
+            "Command `{command}` finished ({status}, {duration}ms).\n\nOutput:\n{output}\n\nDecide the next step based on this observation. Call exactly one tool: execute_command or final_answer. Do not put protocol JSON in normal assistant text.",
             duration = obs.duration_ms,
         )
     }
