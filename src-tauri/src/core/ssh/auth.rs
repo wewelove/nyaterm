@@ -1,8 +1,8 @@
 use super::client::{SshAuth, SshConfig, SshHandler, SshPostLoginConfig};
 use crate::error::{AppError, AppResult};
 use crate::observability::{self, StructuredLog, StructuredLogLevel};
-use russh::{MethodKind, MethodSet};
 use russh::client::{self, KeyboardInteractiveAuthResponse};
+use russh::{MethodKind, MethodSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
@@ -708,7 +708,9 @@ async fn request_runtime_secret(
     .await?;
     let secret = response.secret.unwrap_or_default();
     if secret.is_empty() {
-        return Err(AppError::Auth("SSH authentication response was empty".to_string()));
+        return Err(AppError::Auth(
+            "SSH authentication response was empty".to_string(),
+        ));
     }
 
     Ok(RuntimeSecret {
@@ -918,7 +920,10 @@ async fn authenticate_password_with_runtime_prompt(
 
     for attempt in 1..=MAX_RUNTIME_SSH_AUTH_ATTEMPTS {
         if password.as_deref().is_none_or(str::is_empty) {
-            if attempt == 1 && first_prompt_reason.is_none_or(|reason| reason == SshAuthPromptReason::MissingPassword) {
+            if attempt == 1
+                && first_prompt_reason
+                    .is_none_or(|reason| reason == SshAuthPromptReason::MissingPassword)
+            {
                 match discover_auth_methods_before_secret_prompt(
                     handle,
                     config,
@@ -1177,7 +1182,8 @@ async fn authenticate_publickey_with_runtime_selection(
     fallback_error: &str,
     otp_info: Option<&OtpAutoFillInfo>,
 ) -> Result<Option<RuntimeKeyPassphrase>, SshAuthFailure> {
-    authenticate_publickey_attempt(handle, config, app, &config.auth, fallback_error, otp_info).await
+    authenticate_publickey_attempt(handle, config, app, &config.auth, fallback_error, otp_info)
+        .await
 }
 
 async fn authenticate_publickey_with_runtime_key_prompt(
@@ -1195,8 +1201,15 @@ async fn authenticate_publickey_with_runtime_key_prompt(
             request_runtime_key_id(app, config, reason, attempt, available_methods.clone()).await?;
         let key_auth = load_runtime_key_auth(app, &key_id)?;
 
-        match authenticate_publickey_attempt(handle, config, app, &key_auth, fallback_error, otp_info)
-            .await
+        match authenticate_publickey_attempt(
+            handle,
+            config,
+            app,
+            &key_auth,
+            fallback_error,
+            otp_info,
+        )
+        .await
         {
             Ok(secret) => return Ok(secret),
             Err(failure) => {
@@ -1250,7 +1263,12 @@ async fn authenticate_publickey_attempt(
         decode_secret_key_with_runtime_prompt(key_data, passphrase.as_deref(), config, app)
             .await
             .map_err(|error| SshAuthFailure::from_error("Invalid SSH key passphrase", error))?;
-    let hash_alg = handle.best_supported_rsa_hash().await.ok().flatten().flatten();
+    let hash_alg = handle
+        .best_supported_rsa_hash()
+        .await
+        .ok()
+        .flatten()
+        .flatten();
     let cert = cert_data
         .as_deref()
         .map(russh::keys::Certificate::from_openssh)
@@ -1372,7 +1390,8 @@ fn persist_runtime_password(
             }
         }
         RuntimeSecretSave::SavedPassword { id, name } => {
-            let password_id = upsert_runtime_saved_password(app, id.as_deref(), name, &secret.value)?;
+            let password_id =
+                upsert_runtime_saved_password(app, id.as_deref(), name, &secret.value)?;
             let mut sessions = crate::config::load_config(app)?;
             if let Some(conn) = sessions
                 .connections
@@ -1430,8 +1449,14 @@ fn upsert_runtime_saved_password(
     Ok(target_id)
 }
 
-fn persist_runtime_key_passphrase(app: &AppHandle, key_secret: &RuntimeKeyPassphrase) -> AppResult<()> {
-    if !matches!(key_secret.secret.save, Some(RuntimeSecretSave::KeyPassphrase)) {
+fn persist_runtime_key_passphrase(
+    app: &AppHandle,
+    key_secret: &RuntimeKeyPassphrase,
+) -> AppResult<()> {
+    if !matches!(
+        key_secret.secret.save,
+        Some(RuntimeSecretSave::KeyPassphrase)
+    ) {
         return Ok(());
     }
 
