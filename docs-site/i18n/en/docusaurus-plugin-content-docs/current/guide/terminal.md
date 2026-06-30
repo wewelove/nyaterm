@@ -30,7 +30,7 @@ In **Settings → Interaction**, you can also adjust:
 ### Scrollback and fonts
 
 - The default scrollback buffer keeps **10000 lines**
-- You can customize font family, font size, ligatures, cursor style, and cursor blink
+- You can customize font family, font size, cursor style, and cursor blink
 - **Hardware acceleration** is optional and is **not enabled by default**; you can toggle it manually in **Settings → Terminal** if you want to compare rendering behavior
 
 ## Command history and suggestions

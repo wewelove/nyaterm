@@ -649,13 +649,6 @@ export function AppearanceTab() {
             onChange={(v) => updateAppearance({ cursor_blink: v })}
           />
         </SettingRow>
-
-        <SettingRow label={t("settings.fontLigatures")} desc={t("settings.fontLigaturesDesc")}>
-          <SettingSwitch
-            checked={appearance.ligatures}
-            onChange={(v) => updateAppearance({ ligatures: v })}
-          />
-        </SettingRow>
       </SettingSection>
     </div>
   );

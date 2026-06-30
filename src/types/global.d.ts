@@ -478,7 +478,6 @@ export interface AppearanceSettings {
   font_size: number;
   font_weight: number;
   font_weight_bold: number;
-  ligatures: boolean;
   background_opacity: number;
   background_image_path: string | null;
   background_image_fit: BackgroundImageFit;

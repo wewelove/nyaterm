@@ -46,13 +46,12 @@ System-installed fonts are also listed so you can extend the fallback chain.
 
 System font discovery now runs asynchronously, so you may briefly see `Loading system fonts...` when opening the font picker. That simply means the app is still collecting installed fonts in the background.
 
-## Cursor and ligatures
+## Cursor
 
 Appearance settings also expose terminal details such as:
 
 - **Cursor style** — Block / Underline / Bar
 - **Cursor blink**
-- **Font ligatures**
 
 If you switch between dark and light themes often, it is worth checking the terminal theme together with keyword highlighting and action links so the overall result stays readable.
 

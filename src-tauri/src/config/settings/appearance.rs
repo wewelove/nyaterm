@@ -18,8 +18,6 @@ pub struct AppearanceSettings {
     pub font_weight: u16,
     #[serde(default = "default_font_weight_bold")]
     pub font_weight_bold: u16,
-    #[serde(default = "default_false")]
-    pub ligatures: bool,
     #[serde(default = "default_opacity")]
     pub background_opacity: f64,
     #[serde(default)]
@@ -88,7 +86,6 @@ impl Default for AppearanceSettings {
             font_size: default_font_size(),
             font_weight: default_font_weight(),
             font_weight_bold: default_font_weight_bold(),
-            ligatures: false,
             background_opacity: default_opacity(),
             background_image_path: None,
             background_image_fit: default_background_image_fit(),
