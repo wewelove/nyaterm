@@ -917,8 +917,11 @@ fn expand_proxy_command(
 
 #[cfg(windows)]
 fn system_shell_command(command: &str) -> tokio::process::Command {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let mut cmd = tokio::process::Command::new("cmd");
     cmd.arg("/C").arg(command);
+    cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
 }
 
