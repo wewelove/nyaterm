@@ -451,7 +451,10 @@ fn parse_moba_entry(
 fn parse_windterm(path: &str) -> AppResult<Vec<ImportedSession>> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| AppError::Config(format!("Cannot read file: {e}")))?;
+    parse_windterm_content(&content)
+}
 
+fn parse_windterm_content(content: &str) -> AppResult<Vec<ImportedSession>> {
     let entries: Vec<serde_json::Value> = serde_json::from_str(&content)
         .map_err(|e| AppError::Config(format!("Invalid WindTerm JSON: {e}")))?;
 
@@ -466,11 +469,12 @@ fn parse_windterm(path: &str) -> AppResult<Vec<ImportedSession>> {
             continue;
         }
 
-        let host = entry
+        let target = entry
             .get("session.target")
             .and_then(|v| v.as_str())
             .unwrap_or("")
-            .to_string();
+            .trim();
+        let (host, username) = parse_windterm_target(target);
         if host.is_empty() {
             continue;
         }
@@ -511,13 +515,23 @@ fn parse_windterm(path: &str) -> AppResult<Vec<ImportedSession>> {
             name,
             host,
             port,
-            username: "root".to_string(),
+            username,
             auth_type: "password".to_string(),
             group_path,
         });
     }
 
     Ok(sessions)
+}
+
+fn parse_windterm_target(target: &str) -> (String, String) {
+    let target = target.trim();
+    if let Some((username, host)) = target.rsplit_once('@') {
+        if !username.is_empty() && !host.is_empty() {
+            return (host.to_string(), username.to_string());
+        }
+    }
+    (target.to_string(), "root".to_string())
 }
 
 // ── NyaTerm JSON (.json) ───────────────────────────────────────────────────
@@ -1242,6 +1256,68 @@ mod tests {
   ]
 }
 "#;
+
+    #[test]
+    fn windterm_import_splits_user_at_host_targets() {
+        let sessions = parse_windterm_content(
+            r#"
+[
+  {
+    "session.protocol": "SSH",
+    "session.target": "deploy@192.168.1.10",
+    "session.label": "Prod web",
+    "session.port": 2222
+  }
+]
+"#,
+        )
+        .expect("parse windterm sessions");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "Prod web");
+        assert_eq!(sessions[0].host, "192.168.1.10");
+        assert_eq!(sessions[0].username, "deploy");
+        assert_eq!(sessions[0].port, 2222);
+    }
+
+    #[test]
+    fn windterm_import_defaults_username_when_target_has_no_user() {
+        let sessions = parse_windterm_content(
+            r#"
+[
+  {
+    "session.protocol": "SSH",
+    "session.target": "192.168.1.10"
+  }
+]
+"#,
+        )
+        .expect("parse windterm sessions");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].host, "192.168.1.10");
+        assert_eq!(sessions[0].username, "root");
+    }
+
+    #[test]
+    fn windterm_target_rejects_empty_user_or_host_splits() {
+        assert_eq!(
+            parse_windterm_target("@192.168.1.10"),
+            ("@192.168.1.10".to_string(), "root".to_string())
+        );
+        assert_eq!(
+            parse_windterm_target("deploy@"),
+            ("deploy@".to_string(), "root".to_string())
+        );
+    }
+
+    #[test]
+    fn windterm_target_splits_on_last_at_symbol() {
+        assert_eq!(
+            parse_windterm_target("ops@team@example.com"),
+            ("example.com".to_string(), "ops@team".to_string())
+        );
+    }
 
     #[test]
     fn nyaterm_json_sample_import_prepares_supported_shapes() {
