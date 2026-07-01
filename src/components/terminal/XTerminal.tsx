@@ -41,6 +41,7 @@ import {
   buildTerminalCommandInput,
   listenSessionInputPreview,
   normalizeTerminalCommandInput,
+  type SendSessionInputOptions,
   type SessionInputPreview,
   sendSessionInput,
   sendSessionInputWithSync,
@@ -424,12 +425,19 @@ export default function XTerminal({
       const input = replaceCurrentLine
         ? `\u0005\u0015${command}`
         : `${"\x7f".repeat(trackedState.value.length)}${command}`;
-      void sendSessionInput(sessionId, buildTerminalCommandInput(input, execute), {
+      const data = buildTerminalCommandInput(input, execute);
+      const options: SendSessionInputOptions = {
         preview: execute
           ? { kind: "replace-and-execute", value: command }
           : { kind: "replace", value: command },
         registerSubmission: execute ? command : null,
-      }).catch(() => {});
+      };
+      const peers = syncPeerSessionIdsRef.current ?? [];
+      const sendInput =
+        peers.length > 0
+          ? sendSessionInputWithSync(sessionId, data, peers, options)
+          : sendSessionInput(sessionId, data, options);
+      void sendInput.catch(() => {});
       if (execute && commandStartsSuggestionSuppressingProgram(command)) {
         commandSuggestionSuppressedRef.current = true;
       }
