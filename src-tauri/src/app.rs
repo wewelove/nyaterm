@@ -21,9 +21,16 @@ fn main_window_config<R: tauri::Runtime>(
 
 fn apply_main_window_options<'a, R: tauri::Runtime, M: Manager<R>>(
     manager: &'a M,
+    label: &str,
     mut builder: tauri::WebviewWindowBuilder<'a, R, M>,
 ) -> tauri::WebviewWindowBuilder<'a, R, M> {
     let window_state = crate::window_state::load_main_window_state();
+    if label == crate::window_state::MAIN_WINDOW_LABEL
+        && let (Some(x), Some(y)) = (window_state.x, window_state.y)
+    {
+        builder = builder.position(x, y);
+    }
+
     builder = builder
         .inner_size(window_state.width, window_state.height)
         .maximized(window_state.maximized);
@@ -35,6 +42,50 @@ fn apply_main_window_options<'a, R: tauri::Runtime, M: Manager<R>>(
     }
 
     builder
+}
+
+fn ensure_restored_main_window_visible(window: &tauri::WebviewWindow, restored_position: bool) {
+    if !restored_position || window.is_maximized().unwrap_or(false) {
+        return;
+    }
+
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(monitors) = window.available_monitors() else {
+        return;
+    };
+
+    let overlaps_monitor = monitors
+        .iter()
+        .any(|monitor| rects_overlap_work_area(position, size, monitor.work_area()));
+    if !overlaps_monitor {
+        let _ = window.center();
+    }
+}
+
+fn rects_overlap_work_area(
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    work_area: &tauri::PhysicalRect<i32, u32>,
+) -> bool {
+    let window_left = i64::from(position.x);
+    let window_top = i64::from(position.y);
+    let window_right = window_left + i64::from(size.width);
+    let window_bottom = window_top + i64::from(size.height);
+
+    let area_left = i64::from(work_area.position.x);
+    let area_top = i64::from(work_area.position.y);
+    let area_right = area_left + i64::from(work_area.size.width);
+    let area_bottom = area_top + i64::from(work_area.size.height);
+
+    window_left < area_right
+        && window_right > area_left
+        && window_top < area_bottom
+        && window_bottom > area_top
 }
 
 fn install_main_window_bridges(window: &tauri::WebviewWindow) {
@@ -58,7 +109,8 @@ fn create_main_window_with_label(
     let mut config = main_window_config(app)?;
     config.label = label.to_string();
     let builder = tauri::WebviewWindowBuilder::from_config(app, &config)?;
-    let window = apply_main_window_options(app, builder).build()?;
+    let window = apply_main_window_options(app, label, builder).build()?;
+    ensure_restored_main_window_visible(&window, label == crate::window_state::MAIN_WINDOW_LABEL);
     install_main_window_bridges(&window);
     Ok(window)
 }
@@ -70,7 +122,7 @@ pub fn create_additional_main_window(
     let mut config = main_window_config(app)?;
     config.label = label;
     let builder = tauri::WebviewWindowBuilder::from_config(app, &config)?;
-    let window = apply_main_window_options(app, builder).build()?;
+    let window = apply_main_window_options(app, &config.label, builder).build()?;
     install_main_window_bridges(&window);
     focus_window(&window);
     crate::tray::schedule_refresh(app);
@@ -288,7 +340,9 @@ pub fn quit_application(app: &tauri::AppHandle) {
 pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     if crate::window_state::is_main_window_label(window.label()) {
         match event {
-            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
+            tauri::WindowEvent::Moved(_)
+            | tauri::WindowEvent::Resized(_)
+            | tauri::WindowEvent::ScaleFactorChanged { .. } => {
                 crate::window_state::schedule_main_window_state_save(
                     window.app_handle(),
                     window.label(),

@@ -24,6 +24,10 @@ const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MainWindowState {
+    #[serde(default)]
+    pub x: Option<f64>,
+    #[serde(default)]
+    pub y: Option<f64>,
     #[serde(default = "default_main_width")]
     pub width: f64,
     #[serde(default = "default_main_height")]
@@ -35,6 +39,8 @@ pub struct MainWindowState {
 impl Default for MainWindowState {
     fn default() -> Self {
         Self {
+            x: None,
+            y: None,
             width: DEFAULT_MAIN_WIDTH,
             height: DEFAULT_MAIN_HEIGHT,
             maximized: false,
@@ -46,6 +52,7 @@ impl MainWindowState {
     fn normalized(mut self) -> Self {
         self.width = normalize_dimension(self.width, MIN_MAIN_WIDTH, DEFAULT_MAIN_WIDTH);
         self.height = normalize_dimension(self.height, MIN_MAIN_HEIGHT, DEFAULT_MAIN_HEIGHT);
+        (self.x, self.y) = normalize_position_pair(self.x, self.y);
         self
     }
 }
@@ -161,6 +168,13 @@ fn normalize_dimension(value: f64, min: f64, fallback: f64) -> f64 {
     }
 }
 
+fn normalize_position_pair(x: Option<f64>, y: Option<f64>) -> (Option<f64>, Option<f64>) {
+    match (x, y) {
+        (Some(x), Some(y)) if x.is_finite() && y.is_finite() => (Some(x), Some(y)),
+        _ => (None, None),
+    }
+}
+
 fn normalize_child_dimension(value: f64, min: f64, fallback: f64) -> f64 {
     let fallback = if fallback.is_finite() && fallback > 0.0 {
         fallback.max(min)
@@ -254,7 +268,10 @@ pub fn save_main_window_state(window: &tauri::Window) -> AppResult<()> {
     let inner_size = window
         .inner_size()
         .map_err(|error| AppError::Config(error.to_string()))?;
-    save_main_window_state_values(scale_factor, inner_size, maximized)
+    let outer_position = window
+        .outer_position()
+        .map_err(|error| AppError::Config(error.to_string()))?;
+    save_main_window_state_values(scale_factor, outer_position, inner_size, maximized)
 }
 
 pub fn save_main_webview_window_state(window: &tauri::WebviewWindow) -> AppResult<()> {
@@ -269,11 +286,15 @@ pub fn save_main_webview_window_state(window: &tauri::WebviewWindow) -> AppResul
     let inner_size = window
         .inner_size()
         .map_err(|error| AppError::Config(error.to_string()))?;
-    save_main_window_state_values(scale_factor, inner_size, maximized)
+    let outer_position = window
+        .outer_position()
+        .map_err(|error| AppError::Config(error.to_string()))?;
+    save_main_window_state_values(scale_factor, outer_position, inner_size, maximized)
 }
 
 fn save_main_window_state_values(
     scale_factor: f64,
+    outer_position: PhysicalPosition<i32>,
     inner_size: PhysicalSize<u32>,
     maximized: bool,
 ) -> AppResult<()> {
@@ -287,10 +308,15 @@ fn save_main_window_state_values(
             } else {
                 1.0
             };
-            state.width =
-                normalize_dimension(inner_size.width as f64 / scale, MIN_MAIN_WIDTH, state.width);
+            state.x = Some(f64::from(outer_position.x) / scale);
+            state.y = Some(f64::from(outer_position.y) / scale);
+            state.width = normalize_dimension(
+                f64::from(inner_size.width) / scale,
+                MIN_MAIN_WIDTH,
+                state.width,
+            );
             state.height = normalize_dimension(
-                inner_size.height as f64 / scale,
+                f64::from(inner_size.height) / scale,
                 MIN_MAIN_HEIGHT,
                 state.height,
             );
@@ -500,6 +526,8 @@ mod tests {
     #[test]
     fn normalizes_missing_or_invalid_main_window_state_values() {
         let state = MainWindowState {
+            x: Some(f64::NAN),
+            y: Some(100.0),
             width: f64::NAN,
             height: 100.0,
             maximized: true,
@@ -508,6 +536,8 @@ mod tests {
 
         assert_eq!(state.width, DEFAULT_MAIN_WIDTH);
         assert_eq!(state.height, MIN_MAIN_HEIGHT);
+        assert_eq!(state.x, None);
+        assert_eq!(state.y, None);
         assert!(state.maximized);
     }
 
@@ -518,8 +548,36 @@ mod tests {
 
         assert_eq!(doc.main.width, 1000.0);
         assert_eq!(doc.main.height, 700.0);
+        assert_eq!(doc.main.x, None);
+        assert_eq!(doc.main.y, None);
         assert!(doc.main.maximized);
         assert!(doc.children.is_empty());
+    }
+
+    #[test]
+    fn deserializes_main_window_state_with_position() {
+        let doc: WindowStateDoc = serde_json::from_str(
+            r#"{
+                "x": -1200,
+                "y": 80,
+                "width": 1000,
+                "height": 700,
+                "maximized": false,
+                "children": {
+                    "settings": { "width": 820, "height": 600, "maximized": false }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(doc.main.x, Some(-1200.0));
+        assert_eq!(doc.main.y, Some(80.0));
+        assert_eq!(doc.main.width, 1000.0);
+        assert_eq!(doc.main.height, 700.0);
+        assert!(
+            doc.children
+                .contains_key(ChildWindowStateKey::Settings.as_str())
+        );
     }
 
     #[test]
