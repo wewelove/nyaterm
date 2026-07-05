@@ -157,8 +157,32 @@ pub struct PortableUiSettings {
     pub language: Option<String>,
     pub show_remote_stats: bool,
     pub remote_stats_interval: u32,
+    #[serde(default)]
+    pub show_gpu_monitor: bool,
+    #[serde(default = "default_portable_gpu_monitor_interval")]
+    pub gpu_monitor_interval: u32,
+    #[serde(default)]
+    pub show_process_manager: bool,
+    #[serde(default = "default_portable_process_manager_interval")]
+    pub process_manager_interval: u32,
+    #[serde(default)]
+    pub show_docker_manager: bool,
+    #[serde(default = "default_portable_docker_manager_interval")]
+    pub docker_manager_interval: u32,
     pub saved_connections_sort_mode: String,
     pub activity_bar_layout: ActivityBarLayout,
+}
+
+fn default_portable_gpu_monitor_interval() -> u32 {
+    3
+}
+
+fn default_portable_process_manager_interval() -> u32 {
+    5
+}
+
+fn default_portable_docker_manager_interval() -> u32 {
+    10
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,6 +222,12 @@ impl PortableAppSettings {
                 language: settings.ui.language.clone(),
                 show_remote_stats: settings.ui.show_remote_stats,
                 remote_stats_interval: settings.ui.remote_stats_interval,
+                show_gpu_monitor: settings.ui.show_gpu_monitor,
+                gpu_monitor_interval: settings.ui.gpu_monitor_interval,
+                show_process_manager: settings.ui.show_process_manager,
+                process_manager_interval: settings.ui.process_manager_interval,
+                show_docker_manager: settings.ui.show_docker_manager,
+                docker_manager_interval: settings.ui.docker_manager_interval,
                 saved_connections_sort_mode: settings.ui.saved_connections_sort_mode.clone(),
                 activity_bar_layout: settings.ui.activity_bar_layout.clone(),
             },
@@ -224,6 +254,12 @@ impl PortableAppSettings {
         current.ui.language = self.ui.language;
         current.ui.show_remote_stats = self.ui.show_remote_stats;
         current.ui.remote_stats_interval = self.ui.remote_stats_interval;
+        current.ui.show_gpu_monitor = self.ui.show_gpu_monitor;
+        current.ui.gpu_monitor_interval = self.ui.gpu_monitor_interval;
+        current.ui.show_process_manager = self.ui.show_process_manager;
+        current.ui.process_manager_interval = self.ui.process_manager_interval;
+        current.ui.show_docker_manager = self.ui.show_docker_manager;
+        current.ui.docker_manager_interval = self.ui.docker_manager_interval;
         current.ui.saved_connections_sort_mode = self.ui.saved_connections_sort_mode;
         current.ui.activity_bar_layout = self.ui.activity_bar_layout;
 
@@ -897,6 +933,12 @@ mod tests {
                 language: Some("en".to_string()),
                 show_remote_stats: false,
                 remote_stats_interval: 3,
+                show_gpu_monitor: false,
+                gpu_monitor_interval: 3,
+                show_process_manager: false,
+                process_manager_interval: 5,
+                show_docker_manager: false,
+                docker_manager_interval: 10,
                 saved_connections_sort_mode: "default".to_string(),
                 activity_bar_layout: ActivityBarLayout::default(),
             },

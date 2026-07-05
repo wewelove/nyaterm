@@ -186,6 +186,28 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
             .chain(&settings.ui.activity_bar_layout.right_bottom)
             .map(|s| s.as_str())
             .collect();
+        if !all_ids.contains(&"gpuMonitor") {
+            let right_top = &mut settings.ui.activity_bar_layout.right_top;
+            if let Some(resource_index) = right_top.iter().position(|id| id == "resourceMonitor") {
+                right_top.insert(resource_index + 1, "gpuMonitor".to_string());
+            } else {
+                right_top.push("gpuMonitor".to_string());
+            }
+            migrated = true;
+        }
+    }
+
+    {
+        let all_ids: Vec<&str> = settings
+            .ui
+            .activity_bar_layout
+            .left_top
+            .iter()
+            .chain(&settings.ui.activity_bar_layout.left_bottom)
+            .chain(&settings.ui.activity_bar_layout.right_top)
+            .chain(&settings.ui.activity_bar_layout.right_bottom)
+            .map(|s| s.as_str())
+            .collect();
         if !all_ids.contains(&"syncBackupHistory") {
             let left_bottom = &mut settings.ui.activity_bar_layout.left_bottom;
             if let Some(settings_index) = left_bottom.iter().position(|id| id == "settings") {
@@ -262,7 +284,11 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
             .collect();
         if !all_ids.contains(&"processManager") {
             let right_top = &mut settings.ui.activity_bar_layout.right_top;
-            if let Some(resource_index) = right_top.iter().position(|id| id == "resourceMonitor") {
+            if let Some(gpu_index) = right_top.iter().position(|id| id == "gpuMonitor") {
+                right_top.insert(gpu_index + 1, "processManager".to_string());
+            } else if let Some(resource_index) =
+                right_top.iter().position(|id| id == "resourceMonitor")
+            {
                 right_top.insert(resource_index + 1, "processManager".to_string());
             } else {
                 right_top.push("processManager".to_string());

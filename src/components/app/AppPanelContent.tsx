@@ -6,6 +6,7 @@ import CommandHistory from "@/components/panel/CommandHistory";
 import DockerManager from "@/components/panel/DockerManager";
 import FileExplorer from "@/components/panel/file-explorer";
 import FileTransfer from "@/components/panel/file-explorer/FileTransfer";
+import GpuMonitor from "@/components/panel/GpuMonitor";
 import NetworkPanel from "@/components/panel/NetworkPanel";
 import ProcessManager from "@/components/panel/ProcessManager";
 import RecordingPanel from "@/components/panel/RecordingPanel";
@@ -125,6 +126,8 @@ export default function AppPanelContent({
         return <CommandHistory activeSessionId={activeSessionId} onCommandSend={onCommandSend} />;
       case "resourceMonitor":
         return <ResourceMonitor activeSessionId={activeSshSessionId} />;
+      case "gpuMonitor":
+        return <GpuMonitor activeSessionId={activeSshSessionId} />;
       case "processManager":
         return <ProcessManager activeSessionId={activeSshSessionId} />;
       case "dockerManager":

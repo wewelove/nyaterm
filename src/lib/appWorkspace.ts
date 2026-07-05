@@ -7,6 +7,13 @@ export const NON_PANEL_IDS = new Set(["settings", "lock", "quickCmdBar", "serial
 /** Panels that never join the multi-open stack and are always shown on their own. */
 export const EXCLUSIVE_PANEL_IDS = new Set(["aiAssistant"]);
 
+const MONITOR_PANEL_VISIBILITY: Record<string, (ui: UiConfig) => boolean> = {
+  resourceMonitor: (ui) => ui.show_remote_stats ?? true,
+  gpuMonitor: (ui) => ui.show_gpu_monitor ?? false,
+  processManager: (ui) => ui.show_process_manager ?? false,
+  dockerManager: (ui) => ui.show_docker_manager ?? false,
+};
+
 export type TrayAction =
   | { type: "open_new_session"; targetWindowLabel?: string | null }
   | { type: "focus_session"; sessionId: string; targetWindowLabel?: string | null }
@@ -42,6 +49,14 @@ export function getItemSide(id: string, layout: ActivityBarLayout): "left" | "ri
   return null;
 }
 
+export function isActivityItemVisible(id: string, ui: UiConfig): boolean {
+  return MONITOR_PANEL_VISIBILITY[id]?.(ui) ?? true;
+}
+
+export function getVisibleActivityIds(ids: string[], ui: UiConfig): string[] {
+  return ids.filter((id) => isActivityItemVisible(id, ui));
+}
+
 function getSidePanelOrder(layout: ActivityBarLayout, side: "left" | "right"): string[] {
   return side === "left"
     ? [...layout.left_top, ...layout.left_bottom]
@@ -56,12 +71,16 @@ export function getSideOpenPanels(
 ): string[] {
   const active = side === "left" ? ui.active_left_panel : ui.active_right_panel;
   if (!multiOpen) {
-    return active ? [active] : [];
+    return active && isActivityItemVisible(active, ui) ? [active] : [];
   }
   const open = new Set((side === "left" ? ui.left_open_panels : ui.right_open_panels) ?? []);
   if (open.size === 0) return [];
   return getSidePanelOrder(ui.activity_bar_layout, side).filter(
-    (id) => open.has(id) && !NON_PANEL_IDS.has(id) && !EXCLUSIVE_PANEL_IDS.has(id),
+    (id) =>
+      open.has(id) &&
+      isActivityItemVisible(id, ui) &&
+      !NON_PANEL_IDS.has(id) &&
+      !EXCLUSIVE_PANEL_IDS.has(id),
   );
 }
 
@@ -73,7 +92,9 @@ export function getSideOverlayPanel(
 ): string | null {
   if (!multiOpen) return null;
   const active = side === "left" ? ui.active_left_panel : ui.active_right_panel;
-  return active && EXCLUSIVE_PANEL_IDS.has(active) ? active : null;
+  return active && isActivityItemVisible(active, ui) && EXCLUSIVE_PANEL_IDS.has(active)
+    ? active
+    : null;
 }
 
 /** Toggle a panel in the multi-open stack of its side (activity bar click). */

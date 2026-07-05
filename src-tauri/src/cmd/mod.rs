@@ -6,6 +6,7 @@ pub mod cloud_sync;
 pub mod connection;
 pub mod credential;
 pub mod docker;
+pub mod gpu;
 pub mod importer;
 pub mod log;
 pub mod otp;

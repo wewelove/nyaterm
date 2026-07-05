@@ -220,6 +220,7 @@ pub fn run() {
             cmd::process::get_remote_processes,
             cmd::process::signal_remote_process,
             cmd::process::renice_remote_process,
+            cmd::gpu::get_remote_gpu_overview,
             cmd::docker::get_remote_docker_overview,
             cmd::docker::get_remote_docker_images,
             cmd::docker::get_remote_docker_volumes,

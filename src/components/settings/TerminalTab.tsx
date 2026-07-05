@@ -241,17 +241,37 @@ export function TerminalTab() {
           />
         )}
 
+        <SettingRow label={t("settings.showGpuMonitor")} desc={t("settings.showGpuMonitorDesc")}>
+          <SettingSwitch
+            checked={appSettings.ui.show_gpu_monitor ?? false}
+            onChange={(v) => updateUi({ show_gpu_monitor: v })}
+          />
+        </SettingRow>
+
+        {(appSettings.ui.show_gpu_monitor ?? false) && (
+          <SettingNumberInput
+            label={t("settings.gpuMonitorInterval")}
+            desc={t("settings.gpuMonitorIntervalDesc")}
+            min={3}
+            max={120}
+            step={1}
+            value={appSettings.ui.gpu_monitor_interval ?? 3}
+            controlClassName="max-w-sm"
+            onChange={(v) => updateUi({ gpu_monitor_interval: v || 3 })}
+          />
+        )}
+
         <SettingRow
           label={t("settings.showProcessManager")}
           desc={t("settings.showProcessManagerDesc")}
         >
           <SettingSwitch
-            checked={appSettings.ui.show_process_manager ?? true}
+            checked={appSettings.ui.show_process_manager ?? false}
             onChange={(v) => updateUi({ show_process_manager: v })}
           />
         </SettingRow>
 
-        {appSettings.ui.show_process_manager && (
+        {(appSettings.ui.show_process_manager ?? false) && (
           <SettingNumberInput
             label={t("settings.processManagerInterval")}
             desc={t("settings.processManagerIntervalDesc")}
@@ -269,12 +289,12 @@ export function TerminalTab() {
           desc={t("settings.showDockerManagerDesc")}
         >
           <SettingSwitch
-            checked={appSettings.ui.show_docker_manager ?? true}
+            checked={appSettings.ui.show_docker_manager ?? false}
             onChange={(v) => updateUi({ show_docker_manager: v })}
           />
         </SettingRow>
 
-        {appSettings.ui.show_docker_manager && (
+        {(appSettings.ui.show_docker_manager ?? false) && (
           <SettingNumberInput
             label={t("settings.dockerManagerInterval")}
             desc={t("settings.dockerManagerIntervalDesc")}

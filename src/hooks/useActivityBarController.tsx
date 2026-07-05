@@ -17,9 +17,13 @@ import {
   MdSettings,
 } from "react-icons/md";
 import { PiRecordFill } from "react-icons/pi";
-import { SiDocker } from "react-icons/si";
+import { SiDocker, SiNvidia } from "react-icons/si";
 import type { ActivityBarItem } from "@/components/layout/ActivityBar";
-import { buildMultiPanelToggleUpdate, getItemSide } from "@/lib/appWorkspace";
+import {
+  buildMultiPanelToggleUpdate,
+  getItemSide,
+  isActivityItemVisible,
+} from "@/lib/appWorkspace";
 import { openSettings } from "@/lib/windowManager";
 import type { ActivityBarLayout, ActivityBarZone, UiConfig } from "@/types/global";
 
@@ -49,6 +53,20 @@ function insertBeforeOrPush(ids: string[], anchorId: string, itemId: string) {
     next.splice(anchorIndex, 0, itemId);
   }
   return next;
+}
+
+function mergeVisibleReorder(
+  currentIds: string[],
+  orderedVisibleIds: string[],
+  uiConfig: UiConfig,
+): string[] {
+  const orderedVisibleSet = new Set(orderedVisibleIds);
+  const nextVisibleIds = [...orderedVisibleIds];
+  const reordered = currentIds.map((id) => {
+    if (!orderedVisibleSet.has(id) || !isActivityItemVisible(id, uiConfig)) return id;
+    return nextVisibleIds.shift() ?? id;
+  });
+  return [...reordered, ...nextVisibleIds];
 }
 
 function normalizeActivityBarState(uiConfig: UiConfig): Partial<UiConfig> | null {
@@ -101,8 +119,12 @@ function normalizeActivityBarState(uiConfig: UiConfig): Partial<UiConfig> | null
     layout.right_bottom = insertBeforeOrPush(layout.right_bottom, "lock", "recording");
     seen.add("recording");
   }
+  if (!seen.has("gpuMonitor")) {
+    layout.right_top = insertAfter(layout.right_top, "resourceMonitor", "gpuMonitor");
+    seen.add("gpuMonitor");
+  }
   if (!seen.has("processManager")) {
-    layout.right_top = insertAfter(layout.right_top, "resourceMonitor", "processManager");
+    layout.right_top = insertAfter(layout.right_top, "gpuMonitor", "processManager");
     seen.add("processManager");
   }
   if (!seen.has("dockerManager")) {
@@ -110,8 +132,14 @@ function normalizeActivityBarState(uiConfig: UiConfig): Partial<UiConfig> | null
     seen.add("dockerManager");
   }
 
-  const leftPanelIds = new Set([...layout.left_top, ...layout.left_bottom]);
-  const rightPanelIds = new Set([...layout.right_top, ...layout.right_bottom]);
+  const leftPanelIds = new Set(
+    [...layout.left_top, ...layout.left_bottom].filter((id) => isActivityItemVisible(id, uiConfig)),
+  );
+  const rightPanelIds = new Set(
+    [...layout.right_top, ...layout.right_bottom].filter((id) =>
+      isActivityItemVisible(id, uiConfig),
+    ),
+  );
   const leftOpenPanels = [...new Set(originalLeftOpenPanels)].filter((id) => leftPanelIds.has(id));
   const rightOpenPanels = [...new Set(originalRightOpenPanels)].filter((id) =>
     rightPanelIds.has(id),
@@ -189,6 +217,7 @@ export function useActivityBarController({
       activeSessions: { icon: <MdLink />, tooltip: t("panel.activeSessions") },
       commandHistory: { icon: <MdHistory />, tooltip: t("panel.commandHistory") },
       resourceMonitor: { icon: <MdOutlineMonitorHeart />, tooltip: t("panel.resourceMonitor") },
+      gpuMonitor: { icon: <SiNvidia />, tooltip: t("panel.gpuMonitor") },
       processManager: { icon: <MdListAlt />, tooltip: t("panel.processManager") },
       dockerManager: { icon: <SiDocker />, tooltip: t("panel.dockerManager") },
       quickCmdBar: { icon: <MdBolt />, tooltip: t("panel.quickCommands") },
@@ -213,8 +242,10 @@ export function useActivityBarController({
 
   const buildItems = useCallback(
     (ids: string[]): ActivityBarItem[] =>
-      ids.filter((id) => id in itemRegistry).map((id) => ({ id, ...itemRegistry[id] })),
-    [itemRegistry],
+      ids
+        .filter((id) => id in itemRegistry && isActivityItemVisible(id, uiConfig))
+        .map((id) => ({ id, ...itemRegistry[id] })),
+    [itemRegistry, uiConfig],
   );
 
   const leftTopItems = useMemo(() => buildItems(layout.left_top), [buildItems, layout.left_top]);
@@ -282,9 +313,12 @@ export function useActivityBarController({
 
   const handleReorder = useCallback(
     (side: "left" | "right", zoneKey: "top" | "bottom", orderedIds: string[]) => {
-      const layoutKey = `${side}_${zoneKey}` as keyof ActivityBarLayout;
+      const layoutKey = `${side}_${zoneKey}` as ActivityBarZone;
       updateUi((prev) => ({
-        activity_bar_layout: { ...prev.activity_bar_layout, [layoutKey]: orderedIds },
+        activity_bar_layout: {
+          ...prev.activity_bar_layout,
+          [layoutKey]: mergeVisibleReorder(prev.activity_bar_layout[layoutKey], orderedIds, prev),
+        },
       }));
     },
     [updateUi],

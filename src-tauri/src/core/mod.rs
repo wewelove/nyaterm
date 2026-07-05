@@ -8,6 +8,7 @@ pub mod backup;
 pub mod capture;
 pub mod cloud_sync;
 pub mod docker;
+pub mod gpu;
 pub mod history;
 pub mod importer;
 pub(crate) mod input;

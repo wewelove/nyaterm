@@ -340,6 +340,7 @@ export type RightPanelId =
   | "activeSessions"
   | "commandHistory"
   | "resourceMonitor"
+  | "gpuMonitor"
   | "processManager"
   | "dockerManager"
   | "recording"
@@ -399,6 +400,8 @@ export interface UiConfig {
   language?: string;
   show_remote_stats: boolean;
   remote_stats_interval: number;
+  show_gpu_monitor: boolean;
+  gpu_monitor_interval: number;
   show_process_manager: boolean;
   process_manager_interval: number;
   show_docker_manager: boolean;
@@ -575,6 +578,38 @@ export interface RemoteDockerOverview {
   volumes: DockerVolume[];
   networks: DockerNetwork[];
   compose_projects: DockerComposeProject[];
+}
+
+export interface RemoteGpu {
+  index: number;
+  uuid: string;
+  name: string;
+  temperature_c?: number | null;
+  utilization_gpu_percent?: number | null;
+  utilization_memory_percent?: number | null;
+  memory_total_mb: number;
+  memory_used_mb: number;
+  memory_free_mb: number;
+  power_draw_w?: number | null;
+  power_limit_w?: number | null;
+  fan_speed_percent?: number | null;
+  pstate: string;
+}
+
+export interface RemoteGpuProcess {
+  gpu_uuid: string;
+  gpu_index?: number | null;
+  pid: number;
+  process_name: string;
+  used_memory_mb: number;
+}
+
+export interface RemoteGpuOverview {
+  available: boolean;
+  driver_version: string;
+  cuda_version: string;
+  gpus: RemoteGpu[];
+  processes: RemoteGpuProcess[];
 }
 
 /** Labeled command shortcut for quick execution. */

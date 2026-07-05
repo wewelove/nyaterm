@@ -499,6 +499,7 @@ fn build_runtime_snapshot(
             "show_quick_cmd_bar": settings.ui.show_quick_cmd_bar,
             "show_serial_send_panel": settings.ui.show_serial_send_panel,
             "show_remote_stats": settings.ui.show_remote_stats,
+            "show_gpu_monitor": settings.ui.show_gpu_monitor,
             "open_tab_count": settings.ui.open_tabs.len(),
         },
         "session_summary": session_summary,
