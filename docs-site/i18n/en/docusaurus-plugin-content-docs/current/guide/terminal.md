@@ -176,12 +176,12 @@ For SSH sessions, you can configure a Keep-Alive interval in **Settings → Term
 
 ### Remote resource monitoring
 
-Remote resource monitoring is not shown globally by default. To use it, both of these must be true:
+Remote resource monitoring is on by default. To see data, both of these must be true:
 
 1. The current tab is an **SSH session**
 2. **Show Remote Resource Stats** is enabled in **Settings → Terminal**
 
-When enabled, the **Resource Monitor** panel polls the host on the configured interval. The default interval is **3 seconds**, and you can change it manually.
+When enabled, the **Resource Monitor** icon appears in the right activity bar and the panel polls the host on the configured interval. The default interval is **3 seconds**, and you can change it manually. Turning the setting off also hides the icon.
 
 The panel displays:
 

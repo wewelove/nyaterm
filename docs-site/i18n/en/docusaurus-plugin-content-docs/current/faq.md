@@ -34,7 +34,7 @@ Check both of these:
 1. The current tab is an **SSH session**
 2. **Show Remote Resource Stats** is enabled in **Settings → Terminal**
 
-Resource monitoring is off by default.
+Resource monitoring is on by default; turning this setting off also hides the Resource Monitor icon in the right activity bar.
 
 ### What should I do if the serial port list is empty?
 
