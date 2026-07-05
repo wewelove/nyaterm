@@ -30,7 +30,9 @@ import {
   EXCLUSIVE_PANEL_IDS,
   getSideOpenPanels,
   getSideOverlayPanel,
+  getVisibleActivityIds,
   hasLiveSession,
+  isActivityItemVisible,
   isNonSerialSessionType,
   NON_PANEL_IDS,
   type TrayAction,
@@ -304,6 +306,7 @@ function App() {
 
   // Recording state: tracks which sessions are currently being recorded
   const [recordingSessions, setRecordingSessions] = useState<Set<string>>(new Set());
+  const [liveSessionIds, setLiveSessionIds] = useState<Set<string> | null>(null);
 
   const refreshRecordingSessions = useCallback(async () => {
     try {
@@ -328,6 +331,36 @@ function App() {
       unlisten.then((dispose) => dispose());
     };
   }, [refreshRecordingSessions]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const refreshLiveSessions = async () => {
+      try {
+        const sessions = await invoke<SessionInfo[]>("list_sessions");
+        if (!disposed) {
+          setLiveSessionIds(new Set(sessions.map((session) => session.id)));
+        }
+      } catch (error) {
+        logger.error({
+          domain: "session.lifecycle",
+          event: "session.live_list_failed",
+          message: "Failed to refresh live session ids",
+          error,
+        });
+      }
+    };
+
+    void refreshLiveSessions();
+    const unlisten = listen("sessions-changed", () => {
+      void refreshLiveSessions();
+    });
+
+    return () => {
+      disposed = true;
+      unlisten.then((dispose) => dispose());
+    };
+  }, []);
 
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -1295,20 +1328,20 @@ function App() {
         if ((prev.left_open_panels?.length ?? 0) > 0 || prev.active_left_panel) {
           return { left_open_panels: [], active_left_panel: null };
         }
-        const first = [
-          ...prev.activity_bar_layout.left_top,
-          ...prev.activity_bar_layout.left_bottom,
-        ].find((id) => !NON_PANEL_IDS.has(id));
+        const first = getVisibleActivityIds(
+          [...prev.activity_bar_layout.left_top, ...prev.activity_bar_layout.left_bottom],
+          prev,
+        ).find((id) => !NON_PANEL_IDS.has(id));
         if (!first) return {};
         return EXCLUSIVE_PANEL_IDS.has(first)
           ? { active_left_panel: first }
           : { left_open_panels: [first], active_left_panel: first };
       }
       if (prev.active_left_panel) return { active_left_panel: null };
-      const first = [
-        ...prev.activity_bar_layout.left_top,
-        ...prev.activity_bar_layout.left_bottom,
-      ].find((id) => !NON_PANEL_IDS.has(id));
+      const first = getVisibleActivityIds(
+        [...prev.activity_bar_layout.left_top, ...prev.activity_bar_layout.left_bottom],
+        prev,
+      ).find((id) => !NON_PANEL_IDS.has(id));
       return { active_left_panel: first ?? null };
     });
   }, [multiPanelOpen, updateUi]);
@@ -1319,20 +1352,20 @@ function App() {
         if ((prev.right_open_panels?.length ?? 0) > 0 || prev.active_right_panel) {
           return { right_open_panels: [], active_right_panel: null };
         }
-        const first = [
-          ...prev.activity_bar_layout.right_top,
-          ...prev.activity_bar_layout.right_bottom,
-        ].find((id) => !NON_PANEL_IDS.has(id));
+        const first = getVisibleActivityIds(
+          [...prev.activity_bar_layout.right_top, ...prev.activity_bar_layout.right_bottom],
+          prev,
+        ).find((id) => !NON_PANEL_IDS.has(id));
         if (!first) return {};
         return EXCLUSIVE_PANEL_IDS.has(first)
           ? { active_right_panel: first }
           : { right_open_panels: [first], active_right_panel: first };
       }
       if (prev.active_right_panel) return { active_right_panel: null };
-      const first = [
-        ...prev.activity_bar_layout.right_top,
-        ...prev.activity_bar_layout.right_bottom,
-      ].find((id) => !NON_PANEL_IDS.has(id));
+      const first = getVisibleActivityIds(
+        [...prev.activity_bar_layout.right_top, ...prev.activity_bar_layout.right_bottom],
+        prev,
+      ).find((id) => !NON_PANEL_IDS.has(id));
       return { active_right_panel: first ?? null };
     });
   }, [multiPanelOpen, updateUi]);
@@ -2364,6 +2397,10 @@ function App() {
     activePane && !activePane.connecting && !activePane.connectError && activePane.type === "SSH"
       ? activePane.sessionId
       : null;
+  const activeLiveSshSessionId =
+    activeSshSessionId && (liveSessionIds === null || liveSessionIds.has(activeSshSessionId))
+      ? activeSshSessionId
+      : null;
   const activeSerialSessionId =
     activePane && !activePane.connecting && !activePane.connectError && activePane.type === "Serial"
       ? activePane.sessionId
@@ -2546,11 +2583,13 @@ function App() {
     updateUi((prev) => ({
       ...((prev.left_open_panels?.length ?? 0) === 0 &&
       prev.active_left_panel &&
+      isActivityItemVisible(prev.active_left_panel, prev) &&
       !EXCLUSIVE_PANEL_IDS.has(prev.active_left_panel)
         ? { left_open_panels: [prev.active_left_panel] }
         : {}),
       ...((prev.right_open_panels?.length ?? 0) === 0 &&
       prev.active_right_panel &&
+      isActivityItemVisible(prev.active_right_panel, prev) &&
       !EXCLUSIVE_PANEL_IDS.has(prev.active_right_panel)
         ? { right_open_panels: [prev.active_right_panel] }
         : {}),
@@ -2598,7 +2637,7 @@ function App() {
         activePane={activePane}
         activeConnection={activeConnection}
         activeSessionId={activeSessionId}
-        activeSshSessionId={activeSshSessionId}
+        activeSshSessionId={activeLiveSshSessionId}
         recordingSessions={recordingSessions}
         aiIntent={aiIntent}
         transferHeight={uiConfig.transfer_height || 180}
@@ -2617,9 +2656,9 @@ function App() {
     ),
     [
       activeConnection,
+      activeLiveSshSessionId,
       activePane,
       activeSessionId,
-      activeSshSessionId,
       aiIntent,
       canReconnectSessionById,
       handleSaveSessionTranscript,

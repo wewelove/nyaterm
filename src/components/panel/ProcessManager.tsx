@@ -200,7 +200,7 @@ export default function ProcessManager({ activeSessionId }: ProcessManagerProps)
   const fetchingRef = useRef(false);
   const failCountRef = useRef(0);
 
-  const enabled = appSettings.ui.show_process_manager ?? true;
+  const enabled = appSettings.ui.show_process_manager ?? false;
   const pollIntervalMs = Math.max(3, appSettings.ui.process_manager_interval ?? 5) * 1000;
   const isCompactMode = displayMode === "compact";
 

@@ -114,7 +114,7 @@ export default function DockerManager({ activeSessionId }: DockerManagerProps) {
   const fetchingRef = useRef(false);
   const failCountRef = useRef(0);
 
-  const enabled = appSettings.ui.show_docker_manager ?? true;
+  const enabled = appSettings.ui.show_docker_manager ?? false;
   const pollIntervalMs = Math.max(3, appSettings.ui.docker_manager_interval ?? 10) * 1000;
 
   const fetchOverview = useCallback(async (sessionId: string, manual = false) => {
