@@ -5,18 +5,19 @@
 use super::traits::RemoteFs;
 use super::transfer::*;
 use super::util::*;
-use crate::core::ssh::{SshConnectionHandles, SshRawHandle};
+use crate::core::ssh::SshConnectionHandles;
 use crate::error::{AppError, AppResult};
 use crate::observability::{StructuredLog, StructuredLogLevel, log_event};
-use russh::ChannelMsg;
+use russh::{ChannelMsg, ChannelOpenFailure};
 use russh_sftp::client::{Config as SftpClientConfig, SftpSession, error::Error as SftpError};
 use russh_sftp::protocol::{FileAttributes, FileType, StatusCode};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 
 const SFTP_MIN_REQUEST_KIB: usize = 64;
 const SFTP_MAX_REQUEST_KIB: usize = 256;
@@ -31,10 +32,15 @@ const TRANSFER_PROGRESS_INTERVAL: Duration = Duration::from_millis(50);
 const SFTP_SMALL_FILE_THRESHOLD: u64 = 512 * 1024;
 const SFTP_DEFAULT_SMALL_FILE_CONCURRENCY: usize = 64;
 const SFTP_MAX_SMALL_FILE_CONCURRENCY: usize = 256;
-const SFTP_DEFAULT_SESSION_POOL_SIZE: usize = 4;
+const SFTP_DEFAULT_SESSION_POOL_SIZE: usize = 2;
 const SFTP_MAX_SESSION_POOL_SIZE: usize = 4;
 const SFTP_LARGE_FILE_CONCURRENCY: usize = 2;
 const SFTP_HANDLE_RESERVE: usize = 8;
+const SFTP_CHANNEL_OPEN_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(150),
+    Duration::from_millis(300),
+];
 
 fn sftp_pipeline_config(ts: &crate::config::TransferSettings) -> (usize, usize, usize) {
     let request_kib =
@@ -69,6 +75,15 @@ fn ignore_sftp_not_found(result: Result<(), SftpError>) -> AppResult<()> {
         Err(error) if is_sftp_not_found(&error) => Ok(()),
         Err(error) => Err(error.into()),
     }
+}
+
+fn is_retryable_sftp_channel_open_error(error: &russh::Error) -> bool {
+    matches!(
+        error,
+        russh::Error::ChannelOpenFailure(
+            ChannelOpenFailure::ConnectFailed | ChannelOpenFailure::ResourceShortage
+        )
+    )
 }
 
 fn sftp_remove_error(path: &str, kind: &str, error: SftpError) -> Option<String> {
@@ -189,7 +204,7 @@ fn sftp_directory_concurrency(max_open_handles: Option<u64>) -> SftpDirectoryCon
 
 #[derive(Clone)]
 struct SftpSessionPool {
-    sessions: Arc<Vec<Arc<SftpSession>>>,
+    sessions: Arc<Vec<Arc<ManagedSftpSession>>>,
 }
 
 impl SftpSessionPool {
@@ -205,14 +220,36 @@ impl SftpSessionPool {
         })
     }
 
-    fn session_for(&self, index: usize) -> Arc<SftpSession> {
+    fn session_for(&self, index: usize) -> Arc<ManagedSftpSession> {
         self.sessions[index % self.sessions.len()].clone()
     }
 
-    async fn close_all(&self) {
+    async fn close_all(self) {
         for session in self.sessions.iter() {
             let _ = session.close().await;
         }
+    }
+}
+
+struct ManagedSftpSession {
+    inner: SftpSession,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl ManagedSftpSession {
+    fn new(inner: SftpSession, permit: OwnedSemaphorePermit) -> Self {
+        Self {
+            inner,
+            _permit: permit,
+        }
+    }
+}
+
+impl Deref for ManagedSftpSession {
+    type Target = SftpSession;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
@@ -282,41 +319,63 @@ impl SftpBackend {
 
     /// Attempt to open a throwaway SFTP session to verify subsystem availability.
     pub(crate) async fn probe(ssh_handle: &Arc<SshConnectionHandles>) -> AppResult<()> {
-        let sftp =
-            Self::open_sftp_raw(ssh_handle.target_handle(), SftpClientConfig::default()).await?;
+        let sftp = Self::open_sftp_raw(ssh_handle.clone(), SftpClientConfig::default()).await?;
         let _ = sftp.close().await;
         Ok(())
     }
 
     async fn open_sftp_raw(
-        handle_mtx: SshRawHandle,
+        ssh_handle: Arc<SshConnectionHandles>,
         config: SftpClientConfig,
-    ) -> AppResult<SftpSession> {
-        let channel = {
-            let handle = handle_mtx.lock().await;
-            handle
-                .channel_open_session()
-                .await
-                .map_err(|e| AppError::Channel(format!("Failed to open SFTP channel: {}", e)))?
-        };
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| AppError::Channel(format!("Failed to start SFTP subsystem: {}", e)))?;
+    ) -> AppResult<ManagedSftpSession> {
+        for attempt in 0..=SFTP_CHANNEL_OPEN_RETRY_DELAYS.len() {
+            let permit = ssh_handle.acquire_sftp_channel_permit().await?;
+            let channel_result = {
+                let handle_mtx = ssh_handle.target_handle();
+                let handle = handle_mtx.lock().await;
+                handle.channel_open_session().await
+            };
 
-        let sftp = SftpSession::new_with_config(channel.into_stream(), config).await?;
-        Ok(sftp)
+            let channel = match channel_result {
+                Ok(channel) => channel,
+                Err(error)
+                    if attempt < SFTP_CHANNEL_OPEN_RETRY_DELAYS.len()
+                        && is_retryable_sftp_channel_open_error(&error) =>
+                {
+                    drop(permit);
+                    tokio::time::sleep(SFTP_CHANNEL_OPEN_RETRY_DELAYS[attempt]).await;
+                    continue;
+                }
+                Err(error) => {
+                    drop(permit);
+                    return Err(AppError::Channel(format!(
+                        "Failed to open SFTP channel: {}",
+                        error
+                    )));
+                }
+            };
+
+            channel
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|e| AppError::Channel(format!("Failed to start SFTP subsystem: {}", e)))?;
+
+            let sftp = SftpSession::new_with_config(channel.into_stream(), config).await?;
+            return Ok(ManagedSftpSession::new(sftp, permit));
+        }
+
+        unreachable!("SFTP channel open retry loop always returns or continues");
     }
 
-    async fn open_sftp(&self) -> AppResult<SftpSession> {
-        Self::open_sftp_raw(self.ssh_handle.target_handle(), SftpClientConfig::default()).await
+    async fn open_sftp(&self) -> AppResult<ManagedSftpSession> {
+        Self::open_sftp_raw(self.ssh_handle.clone(), SftpClientConfig::default()).await
     }
 
     async fn open_sftp_with_client_config(
         &self,
         config: SftpClientConfig,
-    ) -> AppResult<SftpSession> {
-        Self::open_sftp_raw(self.ssh_handle.target_handle(), config).await
+    ) -> AppResult<ManagedSftpSession> {
+        Self::open_sftp_raw(self.ssh_handle.clone(), config).await
     }
 
     async fn exec(&self, command: &str) -> AppResult<ExecResult> {
@@ -2768,7 +2827,7 @@ async fn run_upload_directory_workers(
 
 async fn download_directory_file_with_session(
     app: &tauri::AppHandle,
-    sftp: Arc<SftpSession>,
+    sftp: Arc<ManagedSftpSession>,
     file: RemoteDirectoryFile,
     directory_controller: &Arc<TransferController>,
     transfer_settings: &crate::config::TransferSettings,
@@ -2861,7 +2920,7 @@ async fn download_directory_file_with_session(
 
 async fn upload_directory_file_with_session(
     app: &tauri::AppHandle,
-    sftp: Arc<SftpSession>,
+    sftp: Arc<ManagedSftpSession>,
     file: LocalDirectoryFile,
     directory_controller: &Arc<TransferController>,
     transfer_settings: &crate::config::TransferSettings,
@@ -3063,7 +3122,7 @@ mod tests {
     fn directory_concurrency_uses_fast_default_without_server_limits() {
         let concurrency = sftp_directory_concurrency(None);
 
-        assert_eq!(concurrency.session_pool_size, 4);
+        assert_eq!(concurrency.session_pool_size, 2);
         assert_eq!(concurrency.small_file_concurrency, 64);
         assert_eq!(concurrency.large_file_concurrency, 2);
     }
@@ -3072,9 +3131,29 @@ mod tests {
     fn directory_concurrency_respects_low_server_handle_limits() {
         let concurrency = sftp_directory_concurrency(Some(12));
 
-        assert_eq!(concurrency.session_pool_size, 4);
+        assert_eq!(concurrency.session_pool_size, 2);
         assert_eq!(concurrency.small_file_concurrency, 4);
         assert_eq!(concurrency.large_file_concurrency, 2);
+    }
+
+    #[test]
+    fn sftp_channel_open_retry_classifies_temporary_capacity_failures() {
+        assert!(is_retryable_sftp_channel_open_error(
+            &russh::Error::ChannelOpenFailure(ChannelOpenFailure::ConnectFailed)
+        ));
+        assert!(is_retryable_sftp_channel_open_error(
+            &russh::Error::ChannelOpenFailure(ChannelOpenFailure::ResourceShortage)
+        ));
+    }
+
+    #[test]
+    fn sftp_channel_open_retry_rejects_policy_and_type_failures() {
+        assert!(!is_retryable_sftp_channel_open_error(
+            &russh::Error::ChannelOpenFailure(ChannelOpenFailure::AdministrativelyProhibited)
+        ));
+        assert!(!is_retryable_sftp_channel_open_error(
+            &russh::Error::ChannelOpenFailure(ChannelOpenFailure::UnknownChannelType)
+        ));
     }
 
     #[test]

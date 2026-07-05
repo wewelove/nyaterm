@@ -12,7 +12,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader};
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 
 /// Connection parameters for SSH (host, port, user, auth method).
 #[derive(Debug, Clone, Deserialize)]
@@ -108,18 +108,55 @@ pub enum SshAuth {
 
 pub(crate) type SshRawHandle = Arc<Mutex<client::Handle<SshHandler>>>;
 
+const DEFAULT_SFTP_CHANNEL_LIMIT: usize = 6;
+
+#[derive(Clone)]
+pub(crate) struct SftpChannelLimiter {
+    semaphore: Arc<Semaphore>,
+}
+
+impl SftpChannelLimiter {
+    pub(crate) fn new(limit: usize) -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(limit.max(1))),
+        }
+    }
+
+    pub(crate) async fn acquire(&self) -> AppResult<OwnedSemaphorePermit> {
+        self.semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| AppError::Channel("SFTP channel limiter is closed".to_string()))
+    }
+
+    #[cfg(test)]
+    fn available_permits(&self) -> usize {
+        self.semaphore.available_permits()
+    }
+}
+
 pub struct SshConnectionHandles {
     target: SshRawHandle,
     jumps: Vec<SshRawHandle>,
+    sftp_channel_limiter: SftpChannelLimiter,
 }
 
 impl SshConnectionHandles {
     pub fn new(target: SshRawHandle, jumps: Vec<SshRawHandle>) -> Self {
-        Self { target, jumps }
+        Self {
+            target,
+            jumps,
+            sftp_channel_limiter: SftpChannelLimiter::new(DEFAULT_SFTP_CHANNEL_LIMIT),
+        }
     }
 
     pub fn target_handle(&self) -> SshRawHandle {
         self.target.clone()
+    }
+
+    pub(crate) async fn acquire_sftp_channel_permit(&self) -> AppResult<OwnedSemaphorePermit> {
+        self.sftp_channel_limiter.acquire().await
     }
 
     #[allow(dead_code)]
@@ -807,12 +844,14 @@ pub(super) fn build_client_config(
 #[cfg(test)]
 mod tests {
     use super::{
-        KnownHostCheck, check_known_host_entry, compatible_algorithms, expand_proxy_command,
-        get_supported_ssh_algorithms, resolve_preferred_algorithms, secure_algorithms, shell_quote,
+        KnownHostCheck, SftpChannelLimiter, check_known_host_entry, compatible_algorithms,
+        expand_proxy_command, get_supported_ssh_algorithms, resolve_preferred_algorithms,
+        secure_algorithms, shell_quote,
     };
     use crate::config::{SshAlgorithmMode, SshAlgorithmPreferences};
     use russh::keys::{Algorithm, EcdsaCurve};
     use russh::{cipher, kex, mac};
+    use std::time::Duration;
 
     #[test]
     fn known_hosts_accepts_exact_match_after_other_key_types() {
@@ -879,6 +918,32 @@ example.com ssh-rsa AAAARSA
         assert!(!preferred.kex.contains(&kex::DH_G1_SHA1));
         assert!(!preferred.mac.contains(&mac::HMAC_SHA1));
         assert!(!preferred.key.contains(&Algorithm::Dsa));
+    }
+
+    #[tokio::test]
+    async fn sftp_channel_limiter_waits_until_permit_is_released() {
+        let limiter = SftpChannelLimiter::new(6);
+        let mut permits = Vec::new();
+
+        for _ in 0..6 {
+            permits.push(limiter.acquire().await.expect("permit should be available"));
+        }
+
+        assert_eq!(limiter.available_permits(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), limiter.acquire())
+                .await
+                .is_err(),
+            "seventh acquire should wait while all permits are held"
+        );
+
+        drop(permits.pop());
+
+        let permit = tokio::time::timeout(Duration::from_millis(25), limiter.acquire())
+            .await
+            .expect("acquire should resume after release")
+            .expect("released permit should be acquired");
+        drop(permit);
     }
 
     #[test]
