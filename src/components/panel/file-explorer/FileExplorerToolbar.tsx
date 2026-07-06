@@ -11,6 +11,8 @@ import {
   MdRefresh,
   MdSearch,
   MdUpload,
+  MdVisibility,
+  MdVisibilityOff,
 } from "react-icons/md";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +55,7 @@ interface FileExplorerToolbarProps {
   selectedCount: number;
   isFileSearchActive: boolean;
   isFileSearchExpanded: boolean;
+  showHiddenFiles: boolean;
   fileSearchQuery: string;
   fileSearchInputRef: RefObject<HTMLInputElement | null>;
   onNewFile: () => void;
@@ -63,6 +66,7 @@ interface FileExplorerToolbarProps {
   onDeleteSelected: () => void;
   onGoUp: () => void;
   onRefresh: () => void;
+  onToggleHiddenFiles: () => void;
   onExpandSearch: () => void;
   onSearchQueryChange: (query: string) => void;
   onCollapseSearch: () => void;
@@ -72,6 +76,7 @@ export function FileExplorerToolbar({
   selectedCount,
   isFileSearchActive,
   isFileSearchExpanded,
+  showHiddenFiles,
   fileSearchQuery,
   fileSearchInputRef,
   onNewFile,
@@ -82,6 +87,7 @@ export function FileExplorerToolbar({
   onDeleteSelected,
   onGoUp,
   onRefresh,
+  onToggleHiddenFiles,
   onExpandSearch,
   onSearchQueryChange,
   onCollapseSearch,
@@ -186,7 +192,25 @@ export function FileExplorerToolbar({
 
       <ToolbarDivider />
 
-      <div className="ml-auto">
+      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <ToolbarIconButton
+          label={
+            showHiddenFiles ? t("fileExplorer.hideHiddenFiles") : t("fileExplorer.showHiddenFiles")
+          }
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-7 w-7 rounded-md hover:text-foreground",
+            showHiddenFiles ? "bg-primary/10 text-primary" : "text-muted-foreground",
+          )}
+          onClick={onToggleHiddenFiles}
+        >
+          {showHiddenFiles ? (
+            <MdVisibility className="h-4 w-4" />
+          ) : (
+            <MdVisibilityOff className="h-4 w-4" />
+          )}
+        </ToolbarIconButton>
         <ToolbarIconButton
           label={t("fileExplorer.search")}
           variant="ghost"

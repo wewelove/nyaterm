@@ -158,6 +158,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     saved_connections_sort_mode: "default",
     recent_connection_ids: [],
     transfer_height: 180,
+    file_explorer_show_hidden_files: true,
     file_explorer_auto_sync_cwd_connection_ids: [],
     file_explorer_favorite_dirs_by_connection_id: {},
     activity_bar_layout: {

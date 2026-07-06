@@ -161,6 +161,7 @@ function FileExplorer({
   const homeDirRef = useRef("");
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const fileSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const preserveFileSearchCaretRef = useRef(false);
   const pathInputRef = useRef<HTMLInputElement | null>(null);
   const pendingRevealNameRef = useRef<string | null>(null);
   const inlineRenameScopeRef = useRef("");
@@ -197,6 +198,7 @@ function FileExplorer({
   const favoriteDirectories = activeConnectionId
     ? (favoriteDirectoriesByConnection[activeConnectionId] ?? [])
     : [];
+  const showHiddenFiles = appSettings.ui.file_explorer_show_hidden_files ?? true;
   const listScrollResetKey = `${activeSessionId ?? ""}:${currentPath}`;
   const listFilterResetKey = `${fileSearchQuery}:${fileSortMode.column}:${fileSortMode.direction}`;
 
@@ -278,8 +280,15 @@ function FileExplorer({
     }
 
     const frame = window.requestAnimationFrame(() => {
-      fileSearchInputRef.current?.focus();
-      fileSearchInputRef.current?.select();
+      const input = fileSearchInputRef.current;
+      if (!input) return;
+      input.focus();
+      if (preserveFileSearchCaretRef.current) {
+        preserveFileSearchCaretRef.current = false;
+        input.setSelectionRange(input.value.length, input.value.length);
+      } else {
+        input.select();
+      }
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -766,13 +775,33 @@ function FileExplorer({
     };
   }, [refreshCurrentDirectory]);
 
+  const visibleFiles = useMemo(
+    () => (showHiddenFiles ? files : files.filter((entry) => !entry.name.startsWith("."))),
+    [files, showHiddenFiles],
+  );
+
   const filteredSortedFiles = useMemo(
     () =>
-      files
+      visibleFiles
         .filter((entry) => matchesFileSearch(entry, fileSearchQuery))
         .sort((left, right) => compareFileEntries(left, right, fileSortMode)),
-    [files, fileSearchQuery, fileSortMode],
+    [visibleFiles, fileSearchQuery, fileSortMode],
   );
+
+  useEffect(() => {
+    if (showHiddenFiles) {
+      return;
+    }
+
+    setSelectedFiles((prev) => {
+      const next = new Set([...prev].filter((name) => !name.startsWith(".")));
+      return next.size === prev.size ? prev : next;
+    });
+
+    if (lastSelectedRef.current?.startsWith(".")) {
+      lastSelectedRef.current = null;
+    }
+  }, [showHiddenFiles]);
 
   useEffect(() => {
     const nextScope = `${activeSessionId ?? ""}:${currentPath}`;
@@ -1063,6 +1092,12 @@ function FileExplorer({
     openDeleteDialog(selectedRealFiles);
   };
 
+  const handleToggleHiddenFiles = useCallback(() => {
+    updateUi((prev) => ({
+      file_explorer_show_hidden_files: !(prev.file_explorer_show_hidden_files ?? true),
+    }));
+  }, [updateUi]);
+
   const handleListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
     if (
@@ -1072,6 +1107,28 @@ function FileExplorer({
         target.tagName === "TEXTAREA" ||
         target.tagName === "SELECT")
     ) {
+      return;
+    }
+
+    if (
+      event.key.length === 1 &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.nativeEvent.isComposing &&
+      !inlineRenameState
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      preserveFileSearchCaretRef.current = true;
+      setFileSearchQuery(event.key);
+      setIsFileSearchExpanded(true);
+      window.requestAnimationFrame(() => {
+        const input = fileSearchInputRef.current;
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      });
       return;
     }
 
@@ -1758,6 +1815,7 @@ function FileExplorer({
           selectedCount={selectedRealFiles.length}
           isFileSearchActive={isFileSearchActive}
           isFileSearchExpanded={isFileSearchExpanded}
+          showHiddenFiles={showHiddenFiles}
           fileSearchQuery={fileSearchQuery}
           fileSearchInputRef={fileSearchInputRef}
           onNewFile={handleNewFile}
@@ -1768,6 +1826,7 @@ function FileExplorer({
           onDeleteSelected={handleDeleteSelected}
           onGoUp={handleGoUp}
           onRefresh={() => void refreshCurrentDirectory()}
+          onToggleHiddenFiles={handleToggleHiddenFiles}
           onExpandSearch={() => setIsFileSearchExpanded(true)}
           onSearchQueryChange={setFileSearchQuery}
           onCollapseSearch={() => setIsFileSearchExpanded(false)}
@@ -2056,12 +2115,14 @@ function FileExplorer({
           }}
         >
           <div className="flex gap-4">
-            {!directoryLoading && !error && files.length > 0 && (
+            {!directoryLoading && !error && visibleFiles.length > 0 && (
               <>
-                <span>{t("fileExplorer.totalItems", { count: files.length })}</span>
-                {files.some((f) => !f.is_dir) && (
+                <span>{t("fileExplorer.totalItems", { count: visibleFiles.length })}</span>
+                {visibleFiles.some((f) => !f.is_dir) && (
                   <span>
-                    {formatSize(files.filter((f) => !f.is_dir).reduce((sum, f) => sum + f.size, 0))}
+                    {formatSize(
+                      visibleFiles.filter((f) => !f.is_dir).reduce((sum, f) => sum + f.size, 0),
+                    )}
                   </span>
                 )}
               </>

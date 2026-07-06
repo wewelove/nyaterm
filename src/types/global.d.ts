@@ -409,6 +409,7 @@ export interface UiConfig {
   saved_connections_sort_mode?: string;
   recent_connection_ids: string[];
   transfer_height: number;
+  file_explorer_show_hidden_files: boolean;
   file_explorer_auto_sync_cwd_connection_ids: string[];
   file_explorer_favorite_dirs_by_connection_id: Record<string, string[]>;
   activity_bar_layout: ActivityBarLayout;

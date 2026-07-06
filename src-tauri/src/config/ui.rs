@@ -268,6 +268,8 @@ pub struct UiConfig {
     pub recent_connection_ids: Vec<String>,
     #[serde(default = "default_transfer_height")]
     pub transfer_height: f64,
+    #[serde(default = "default_true_fn")]
+    pub file_explorer_show_hidden_files: bool,
     #[serde(default)]
     pub file_explorer_auto_sync_cwd_connection_ids: Vec<String>,
     #[serde(default)]
@@ -375,6 +377,7 @@ impl Default for UiConfig {
             saved_connections_sort_mode: default_sort_mode(),
             recent_connection_ids: vec![],
             transfer_height: default_transfer_height(),
+            file_explorer_show_hidden_files: true,
             file_explorer_auto_sync_cwd_connection_ids: vec![],
             file_explorer_favorite_dirs_by_connection_id: HashMap::new(),
             activity_bar_layout: ActivityBarLayout::default(),
