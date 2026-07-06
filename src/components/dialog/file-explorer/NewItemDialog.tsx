@@ -208,6 +208,7 @@ export default function NewItemDialog({ data, onClose, onSuccess }: NewItemDialo
                 <div className="flex items-center border rounded pl-2 pr-1 h-8 flex-1 bg-background mr-[20%]">
                   <input
                     ref={octalRef}
+                    type="text"
                     className="flex-1 bg-transparent outline-none font-mono text-xs w-full"
                     value={octal}
                     onChange={(e) => {
@@ -222,6 +223,10 @@ export default function NewItemDialog({ data, onClose, onSuccess }: NewItemDialo
                       if (!octal) setOctal(isFile ? "0644" : "0755");
                       else setOctal(octal.padStart(4, "0"));
                     }}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="off"
                   />
                 </div>
               </div>

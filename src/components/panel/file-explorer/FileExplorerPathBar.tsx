@@ -89,9 +89,14 @@ export function FileExplorerPathBar({
       {isEditingPath ? (
         <input
           ref={pathInputRef}
+          type="text"
           className="min-w-0 flex-1 text-[0.625rem] font-mono bg-transparent outline-none m-0 p-0"
           style={{ color: "var(--df-text)" }}
           value={pathInputText}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          autoComplete="off"
           onChange={(event) => onPathInputTextChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

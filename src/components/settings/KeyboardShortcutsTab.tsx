@@ -217,6 +217,10 @@ export function KeyboardShortcutsTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t("settings.keybindingsSearch")}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="off"
             className="h-9 w-full rounded-lg border border-border/70 bg-background pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
           />
         </div>

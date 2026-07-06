@@ -239,6 +239,10 @@ export function FileExplorerToolbar({
             type="text"
             value={fileSearchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoComplete="off"
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 if (fileSearchQuery) {

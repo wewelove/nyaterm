@@ -125,6 +125,10 @@ export default function TerminalSearchBar({
           style={{ color: "var(--df-text)" }}
           placeholder={t("terminalCtx.find")}
           value={searchQuery}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          autoComplete="off"
           onChange={(e) => {
             setSearchQuery(e.target.value);
           }}

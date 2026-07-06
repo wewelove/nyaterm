@@ -1255,6 +1255,10 @@ export default function SavedConnections({
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               placeholder={t("savedConnections.filter")}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="off"
               className="w-full pl-8 pr-7 py-1 h-7 text-xs rounded-md bg-[var(--df-bg-hover)] border border-transparent outline-none transition-all placeholder:text-[var(--df-text-dimmed)] focus:bg-transparent focus:border-[var(--df-primary)] focus:ring-1 focus:ring-[var(--df-primary)] text-[var(--df-text)]"
             />
             {filterText && (

@@ -265,8 +265,13 @@ export function FileListItem({
             {isRenaming ? (
               <input
                 ref={renameInputRef}
+                type="text"
                 className="h-6 min-w-0 flex-1 rounded border border-[var(--df-primary)] bg-[var(--df-bg-panel)] px-1.5 text-xs text-[var(--df-text)] outline-none"
                 value={inlineRename.value}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="off"
                 onChange={(event) => onInlineRenameChange(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {

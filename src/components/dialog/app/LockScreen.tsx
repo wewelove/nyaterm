@@ -199,6 +199,9 @@ export default function LockScreen({ hasPassword, onUnlock, onRequestClose }: Lo
                 onKeyDown={handleKeyDown}
                 placeholder={t("lockScreen.passwordPlaceholder")}
                 className="w-full px-4 py-2.5 rounded-lg text-sm text-white bg-white/10 border border-white/20 placeholder-white/30 outline-none focus:border-white/40 transition-colors"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 autoComplete="off"
                 disabled={verifying}
               />
