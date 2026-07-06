@@ -1,5 +1,5 @@
 //! Import sessions from Xshell (.xts), MobaXterm (.mxtsessions), WindTerm (.sessions),
-//! and NyaTerm JSON files.
+//! SecureCRT (.xml), FinalShell conn directories, and NyaTerm JSON files.
 
 use crate::config::{
     self, AiExecutionProfile, ConnectionAuth, ConnectionType, Group, SavedConnection,
@@ -18,6 +18,8 @@ include!("common.rs");
 include!("xshell.rs");
 include!("mobaxterm.rs");
 include!("windterm.rs");
+include!("securecrt.rs");
+include!("finalshell.rs");
 include!("nyaterm_json.rs");
 include!("merge.rs");
 include!("tests.rs");

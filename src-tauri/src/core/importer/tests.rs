@@ -141,6 +141,142 @@ mod tests {
     }
 
     #[test]
+    fn securecrt_imports_nested_ssh_sessions() {
+        let sessions = parse_securecrt_content(
+            r#"
+<VanDyke version="3.0">
+  <key name="Sessions">
+    <key name="dev">
+      <key name="New">
+        <dword name="[SSH2] Port">2222</dword>
+        <string name="Hostname">192.168.1.20</string>
+        <string name="Protocol Name">SSH2</string>
+        <string name="Username">deploy</string>
+      </key>
+    </key>
+  </key>
+</VanDyke>
+"#,
+        )
+        .expect("parse securecrt sessions");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "New");
+        assert_eq!(sessions[0].host, "192.168.1.20");
+        assert_eq!(sessions[0].port, 2222);
+        assert_eq!(sessions[0].username, "deploy");
+        assert_eq!(sessions[0].group_path, Some(vec!["dev".to_string()]));
+    }
+
+    #[test]
+    fn securecrt_skips_blank_host_and_non_ssh_sessions() {
+        let sessions = parse_securecrt_content(
+            r#"
+<VanDyke version="3.0">
+  <key name="Sessions">
+    <key name="Default">
+      <string name="Hostname"/>
+      <string name="Protocol Name">SSH2</string>
+      <string name="Username"/>
+    </key>
+    <key name="Remote Desktop">
+      <string name="Hostname">192.168.1.30</string>
+      <dword name="Port">3389</dword>
+      <string name="Protocol Name">RDP</string>
+    </key>
+    <key name="Valid">
+      <string name="Hostname">192.168.1.31</string>
+      <string name="Protocol Name">SSH2</string>
+    </key>
+  </key>
+</VanDyke>
+"#,
+        )
+        .expect("parse securecrt sessions");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "Valid");
+        assert_eq!(sessions[0].username, "root");
+        assert_eq!(sessions[0].port, 22);
+    }
+
+    #[test]
+    fn finalshell_imports_root_and_nested_connections() {
+        let root = importer_test_dir("finalshell-imports-root-and-nested");
+        let nested = root.join("folder-1");
+        std::fs::create_dir_all(&nested).expect("create finalshell test dir");
+        std::fs::write(
+            nested.join("folder.json"),
+            r#"{"id":"folder-1","name":"Prod","parent_id":"root","delete_time":0}"#,
+        )
+        .expect("write folder");
+        std::fs::write(
+            root.join("root_connect_config.json"),
+            r#"{"name":"Root Host","host":"10.0.0.1","port":22,"user_name":"root","parent_id":"root","conection_type":100,"description":"root desc","delete_time":0}"#,
+        )
+        .expect("write root conn");
+        std::fs::write(
+            nested.join("nested_connect_config.json"),
+            r#"{"name":"Nested Host","host":"10.0.0.2","port":2222,"user_name":"deploy","parent_id":"folder-1","conection_type":100,"description":"nested desc","delete_time":0}"#,
+        )
+        .expect("write nested conn");
+
+        let mut sessions = parse_finalshell(root.to_str().expect("utf8 path")).expect("parse dir");
+        sessions.sort_by(|a, b| a.name.cmp(&b.name));
+
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0].name, "Nested Host");
+        assert_eq!(sessions[0].host, "10.0.0.2");
+        assert_eq!(sessions[0].port, 2222);
+        assert_eq!(sessions[0].username, "deploy");
+        assert_eq!(sessions[0].group_path, Some(vec!["Prod".to_string()]));
+        assert_eq!(sessions[0].description, Some("nested desc".to_string()));
+        assert_eq!(sessions[1].name, "Root Host");
+        assert_eq!(sessions[1].group_path, None);
+        assert_eq!(sessions[1].description, Some("root desc".to_string()));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn finalshell_skips_non_ssh_and_empty_host_connections() {
+        let root = importer_test_dir("finalshell-skips-invalid");
+        std::fs::create_dir_all(&root).expect("create finalshell test dir");
+        std::fs::write(
+            root.join("rdp_connect_config.json"),
+            r#"{"name":"RDP","host":"10.0.0.3","port":3389,"user_name":"root","parent_id":"root","conection_type":101,"delete_time":0}"#,
+        )
+        .expect("write rdp conn");
+        std::fs::write(
+            root.join("empty_connect_config.json"),
+            r#"{"name":"Empty","host":"","port":22,"user_name":"root","parent_id":"root","conection_type":100,"delete_time":0}"#,
+        )
+        .expect("write empty conn");
+        std::fs::write(
+            root.join("valid_connect_config.json"),
+            r#"{"name":"Valid","host":"10.0.0.4","port":0,"user_name":"","parent_id":"root","conection_type":100,"delete_time":0}"#,
+        )
+        .expect("write valid conn");
+
+        let sessions = parse_finalshell(root.to_str().expect("utf8 path")).expect("parse dir");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "Valid");
+        assert_eq!(sessions[0].port, 22);
+        assert_eq!(sessions[0].username, "root");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn importer_test_dir(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("nyaterm-importer-{name}-{nanos}"))
+    }
+
+    #[test]
     fn nyaterm_json_sample_import_prepares_supported_shapes() {
         crate::utils::crypto::set_master_password(None);
 

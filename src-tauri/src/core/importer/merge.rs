@@ -94,7 +94,7 @@ fn import_legacy_sessions(
                 x11_forwarding: false,
             },
             group_id,
-            description: None,
+            description: sess.description,
             sort_order: 0,
             icon: None,
             auth: Some(ConnectionAuth {
@@ -174,6 +174,15 @@ fn import_prepared_nyaterm_json(
 // ── Tauri Command ───────────────────────────────────────────────────────────
 
 pub fn import_sessions(app: tauri::AppHandle, file_path: String) -> AppResult<usize> {
+    let path = Path::new(&file_path);
+    if path.is_dir() {
+        let count = import_legacy_sessions(&app, parse_finalshell(&file_path)?)?;
+        if count > 0 {
+            let _ = app.emit("connections-changed", ());
+        }
+        return Ok(count);
+    }
+
     let lower = file_path.to_lowercase();
     let count = if lower.ends_with(".xts") {
         import_legacy_sessions(&app, parse_xshell(&file_path)?)?
@@ -181,11 +190,13 @@ pub fn import_sessions(app: tauri::AppHandle, file_path: String) -> AppResult<us
         import_legacy_sessions(&app, parse_mobaxterm(&file_path)?)?
     } else if lower.ends_with(".sessions") {
         import_legacy_sessions(&app, parse_windterm(&file_path)?)?
+    } else if lower.ends_with(".xml") {
+        import_legacy_sessions(&app, parse_securecrt(&file_path)?)?
     } else if lower.ends_with(".json") {
         import_prepared_nyaterm_json(&app, parse_nyaterm_json(&file_path)?)?
     } else {
         return Err(AppError::Config(
-            "Unsupported file format. Please use .xts (Xshell), .mxtsessions (MobaXterm), .sessions (WindTerm), or .json (NyaTerm JSON)."
+            "Unsupported file format. Please use .xts (Xshell), .mxtsessions (MobaXterm), .sessions (WindTerm), .xml (SecureCRT), .json (NyaTerm JSON), or a FinalShell conn directory."
                 .to_string(),
         ));
     };

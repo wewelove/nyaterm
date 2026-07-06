@@ -5,6 +5,7 @@ struct ImportedSession {
     username: String,
     auth_type: String,
     group_path: Option<Vec<String>>,
+    description: Option<String>,
 }
 
 #[derive(Debug)]

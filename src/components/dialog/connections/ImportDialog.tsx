@@ -25,9 +25,10 @@ interface ImportSource {
   id: string;
   name: string;
   icon: string | ComponentType<{ className?: string }>;
-  extensions: string[];
+  extensions?: string[];
   hint?: string;
   type: "backup" | "sessions";
+  picker?: "file" | "directory";
 }
 
 const IMPORT_SOURCES: ImportSource[] = [
@@ -62,6 +63,22 @@ const IMPORT_SOURCES: ImportSource[] = [
     extensions: ["sessions"],
     hint: ".sessions",
     type: "sessions",
+  },
+  {
+    id: "securecrt",
+    name: "SecureCRT",
+    icon: "/SecureCRT.svg",
+    extensions: ["xml"],
+    hint: ".xml",
+    type: "sessions",
+  },
+  {
+    id: "finalshell",
+    name: "FinalShell",
+    icon: "/FinalShell.svg",
+    hint: "conn directory",
+    type: "sessions",
+    picker: "directory",
   },
   {
     id: "nyaterm_json",
@@ -103,10 +120,13 @@ export default function ImportDialog({ open, onClose }: ImportDialogProps) {
       return;
     }
 
-    const selected = await openFileDialog({
-      multiple: false,
-      filters: [{ name: source.name, extensions: source.extensions }],
-    });
+    const selected =
+      source.picker === "directory"
+        ? await openFileDialog({ directory: true, multiple: false })
+        : await openFileDialog({
+            multiple: false,
+            filters: [{ name: source.name, extensions: source.extensions ?? [] }],
+          });
     if (!selected) return;
     try {
       const count = await invoke<number>("import_sessions", { filePath: selected });

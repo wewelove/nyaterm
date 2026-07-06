@@ -96,5 +96,6 @@ fn parse_xsh_content(content: &str, entry_path: &str) -> Option<ImportedSession>
         username,
         auth_type,
         group_path,
+        description: None,
     })
 }

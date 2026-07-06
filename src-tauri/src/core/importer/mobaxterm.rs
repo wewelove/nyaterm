@@ -90,6 +90,7 @@ fn parse_moba_entry(
         username,
         auth_type: "password".to_string(),
         group_path: group_path.clone(),
+        description: None,
     })
 }
 

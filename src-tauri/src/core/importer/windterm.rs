@@ -68,6 +68,7 @@ fn parse_windterm_content(content: &str) -> AppResult<Vec<ImportedSession>> {
             username,
             auth_type: "password".to_string(),
             group_path,
+            description: None,
         });
     }
 
