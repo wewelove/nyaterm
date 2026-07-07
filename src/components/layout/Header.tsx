@@ -416,12 +416,9 @@ export default function Header({
     if (item.submenu) {
       return (
         <MenubarSub key={item.label}>
-          <MenubarSubTrigger disabled={item.disabled}>
+          <MenubarSubTrigger disabled={item.disabled} className="gap-2">
             {item.icon && (
-              <DynamicIcon
-                name={item.icon}
-                className="text-[1rem] mr-2 text-[var(--df-text-muted)]"
-              />
+              <DynamicIcon name={item.icon} className="text-[1rem] text-[var(--df-text-muted)]" />
             )}
             <span className="flex-1">{item.label}</span>
           </MenubarSubTrigger>
@@ -461,7 +458,7 @@ export default function Header({
         {item.icon && (
           <DynamicIcon
             name={item.icon}
-            className={`text-[1rem] mr-2 ${item.icon === "upgrade" ? "text-green-500" : "text-[var(--df-text-muted)]"}`}
+            className={`text-[1rem] ${item.icon === "upgrade" ? "text-green-500" : "text-[var(--df-text-muted)]"}`}
           />
         )}
         <span className="flex-1">{item.label}</span>
