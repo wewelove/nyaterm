@@ -26,6 +26,11 @@ Visit the [Releases](https://github.com/nyakang/nyaterm/releases) page and downl
 
 For the Windows portable edition, extract the zip and run `NyaTerm.exe`. Portable edition updates are manual: download the new portable zip, close NyaTerm, replace the program files, and keep the `data/` folder.
 
+Direct downloads for the Windows portable edition:
+
+- [NyaTerm_1.1.13_windows_x64_portable.zip](https://github.com/nyakang/nyaterm/releases/download/v1.1.13/NyaTerm_1.1.13_windows_x64_portable.zip) (x64)
+- [NyaTerm_1.1.13_windows_arm64_portable.zip](https://github.com/nyakang/nyaterm/releases/download/v1.1.13/NyaTerm_1.1.13_windows_arm64_portable.zip) (ARM64)
+
 ### Build from source
 
 If you prefer to build NyaTerm yourself, see [Development Setup](../development/setup).

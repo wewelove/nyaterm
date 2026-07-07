@@ -53,6 +53,12 @@
   "Windows x86_64": {
     "message": "Windows x86_64"
   },
+  "Windows x86_64 便携版": {
+    "message": "Windows x86_64 Portable"
+  },
+  "Windows ARM64 便携版": {
+    "message": "Windows ARM64 Portable"
+  },
   "Linux x86_64": {
     "message": "Linux x86_64"
   },

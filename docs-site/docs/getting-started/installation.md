@@ -26,6 +26,11 @@ NyaTerm 支持以下操作系统：
 
 Windows 便携版解压后运行 `NyaTerm.exe` 即可。便携版不会使用自动更新；更新时请下载新的便携版 zip，关闭 NyaTerm，替换程序文件，并保留 `data/` 目录。
 
+Windows 便携版直接下载：
+
+- [NyaTerm_1.1.13_windows_x64_portable.zip](https://github.com/nyakang/nyaterm/releases/download/v1.1.13/NyaTerm_1.1.13_windows_x64_portable.zip)（x64）
+- [NyaTerm_1.1.13_windows_arm64_portable.zip](https://github.com/nyakang/nyaterm/releases/download/v1.1.13/NyaTerm_1.1.13_windows_arm64_portable.zip)（ARM64）
+
 ### 从源码构建
 
 如果你想从源码构建，请参考 [开发环境搭建](../development/setup) 章节。

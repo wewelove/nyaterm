@@ -27,6 +27,8 @@ type FeatureTabWithUrls = FeatureTab & {
 type DownloadPlatformKey =
   | 'windows-x86_64'
   | 'windows-aarch64'
+  | 'windows-x86_64-portable'
+  | 'windows-aarch64-portable'
   | 'linux-x86_64'
   | 'linux-aarch64'
   | 'darwin-x86_64'
@@ -38,10 +40,31 @@ type DownloadPlatform = {
 };
 
 type LatestDownloadManifest = {
+  version?: string;
   platforms?: Partial<Record<DownloadPlatformKey, {url?: string}>>;
 };
 
 const latestDownloadManifestUrl = 'https://downloads.nyaterm.app/latest.json';
+const downloadBaseUrl = 'https://downloads.nyaterm.app';
+
+// Fallback version for portable download links before the manifest loads.
+// Portable zips have no `.sig`, so they never appear in latest.json's platforms;
+// their URLs are derived from the manifest `version` instead (see buildPortableHref).
+const fallbackPortableVersion = 'latest';
+
+const portableArchByKey: Partial<Record<DownloadPlatformKey, string>> = {
+  'windows-x86_64-portable': 'x64',
+  'windows-aarch64-portable': 'arm64',
+};
+
+function buildPortableHref(key: DownloadPlatformKey, version: string): string | undefined {
+  const arch = portableArchByKey[key];
+  if (!arch) {
+    return undefined;
+  }
+
+  return `${downloadBaseUrl}/releases/v${version}/NyaTerm_${version}_windows_${arch}_portable.zip`;
+}
 
 const downloadPlatforms: DownloadPlatform[] = [
   {
@@ -51,6 +74,14 @@ const downloadPlatforms: DownloadPlatform[] = [
   {
     key: 'windows-aarch64',
     href: 'https://nyaterm.app/download/windows-aarch64',
+  },
+  {
+    key: 'windows-x86_64-portable',
+    href: buildPortableHref('windows-x86_64-portable', fallbackPortableVersion) ?? '',
+  },
+  {
+    key: 'windows-aarch64-portable',
+    href: buildPortableHref('windows-aarch64-portable', fallbackPortableVersion) ?? '',
   },
   {
     key: 'linux-x86_64',
@@ -206,6 +237,13 @@ function getPlatformKeyFromHints(os: string, architecture: string): DownloadPlat
 
 function getDownloadPlatformsFromManifest(manifest: LatestDownloadManifest): DownloadPlatform[] {
   return downloadPlatforms.map((platform) => {
+    // Portable zips have no `.sig`, so they never appear in manifest.platforms;
+    // derive their URL from the manifest version when available.
+    if (portableArchByKey[platform.key]) {
+      const href = manifest.version ? buildPortableHref(platform.key, manifest.version) : undefined;
+      return href ? {...platform, href} : platform;
+    }
+
     const href = manifest.platforms?.[platform.key]?.url;
     return href ? {...platform, href} : platform;
   });
@@ -217,6 +255,10 @@ function getDownloadPlatformLabel(key: DownloadPlatformKey) {
       return translate({message: 'Windows x86_64'});
     case 'windows-aarch64':
       return translate({message: 'Windows ARM64'});
+    case 'windows-x86_64-portable':
+      return translate({message: 'Windows x86_64 便携版'});
+    case 'windows-aarch64-portable':
+      return translate({message: 'Windows ARM64 便携版'});
     case 'linux-x86_64':
       return translate({message: 'Linux x86_64'});
     case 'linux-aarch64':
