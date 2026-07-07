@@ -199,9 +199,14 @@ pub(super) fn build_startup_command_input(command: &str) -> Option<Vec<u8>> {
 }
 
 fn arm_post_login_timer(
+    phase: &IoPhase,
     pending_post_login: &Option<PendingStartupCommand>,
     post_login_deadline: &mut Option<Pin<Box<Sleep>>>,
 ) {
+    if *phase != IoPhase::Normal {
+        return;
+    }
+
     if post_login_deadline.is_none() {
         if let Some(pending) = pending_post_login.as_ref() {
             *post_login_deadline = Some(Box::pin(tokio::time::sleep(Duration::from_millis(
@@ -416,7 +421,7 @@ pub(super) async fn ssh_io_loop(
         pending_post_login = pending_startup_command.take();
     }
     let mut post_login_deadline: Option<Pin<Box<Sleep>>> = None;
-    arm_post_login_timer(&pending_post_login, &mut post_login_deadline);
+    arm_post_login_timer(&phase, &pending_post_login, &mut post_login_deadline);
     let mut remote_exit_status: Option<u32> = None;
     let mut remote_exit_signal: Option<String> = None;
     let mut output_paused = false;
@@ -606,6 +611,11 @@ pub(super) async fn ssh_io_loop(
                                         &mut suppressed_visible_fallback,
                                         shell_kind,
                                     ).await;
+                                    arm_post_login_timer(
+                                        &phase,
+                                        &pending_post_login,
+                                        &mut post_login_deadline,
+                                    );
                                     continue;
                                 }
                             }
@@ -696,6 +706,7 @@ pub(super) async fn ssh_io_loop(
                 if timeout_event == InjectionTimeoutEvent::FallbackToNormal && !fallback_visible.is_empty() {
                     emit_visible_text(&output, &recording_mgr, &session_id, &fallback_visible);
                 }
+                arm_post_login_timer(&phase, &pending_post_login, &mut post_login_deadline);
             }
             _ = async {
                 if let Some(deadline) = post_login_deadline.as_mut() {
@@ -719,7 +730,11 @@ pub(super) async fn ssh_io_loop(
                         delay_ms = pending.delay_ms,
                         "Sent SSH post-login command"
                     );
-                    arm_post_login_timer(&pending_startup_command, &mut post_login_deadline);
+                    arm_post_login_timer(
+                        &phase,
+                        &pending_startup_command,
+                        &mut post_login_deadline,
+                    );
                     continue;
                 }
                 if let Some(pending) = pending_startup_command.take() {
@@ -958,14 +973,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_login_timer_can_arm_while_injection_is_waiting_for_ready() {
+    async fn post_login_timer_only_arms_after_injection_is_normal() {
         let pending_post_login = Some(PendingStartupCommand {
             input: b"uptime\r".to_vec(),
             delay_ms: 1,
         });
         let mut post_login_deadline: Option<Pin<Box<Sleep>>> = None;
 
-        super::arm_post_login_timer(&pending_post_login, &mut post_login_deadline);
+        super::arm_post_login_timer(
+            &IoPhase::WaitInitial,
+            &pending_post_login,
+            &mut post_login_deadline,
+        );
+        assert!(post_login_deadline.is_none());
+
+        super::arm_post_login_timer(
+            &IoPhase::Suppressing,
+            &pending_post_login,
+            &mut post_login_deadline,
+        );
+        assert!(post_login_deadline.is_none());
+
+        super::arm_post_login_timer(
+            &IoPhase::Normal,
+            &pending_post_login,
+            &mut post_login_deadline,
+        );
 
         assert!(post_login_deadline.is_some());
         post_login_deadline.as_mut().unwrap().as_mut().await;
