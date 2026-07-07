@@ -31,8 +31,14 @@ env:
   GITEE_REPO: ${{ vars.GITEE_REPO }}
   GITEE_API_BASE: ${{ vars.GITEE_API_BASE || 'https://gitee.com/api/v5' }}
   MAX_GITEE_ASSET_MB: ${{ vars.MAX_GITEE_ASSET_MB || '99' }}
+
+  # 只作为兜底。正常上传到 Gitee Release 附件区时，不会在正文展示 R2 链接。
   R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+
   UPLOAD_SMALL_ASSETS: ${{ inputs.upload_small_assets || 'true' }}
+
+  # false：正文和 Release 创建成功即可，不因单个附件上传失败中断整个发版
+  # true：任意附件上传失败即失败
   FAIL_ON_GITEE_ASSET_UPLOAD_ERROR: "false"
 
 jobs:
@@ -88,7 +94,8 @@ jobs:
             sleep 20
           done
 
-          echo "::error::Gitee tag ${TAG} was not found after waiting. Make sure GitHub -> Gitee mirror has synced tags."
+          echo "::error::Gitee tag ${TAG} was not found after waiting."
+          echo "::error::Make sure GitHub -> Gitee mirror has synced tags."
           exit 1
 
       - name: Read GitHub release metadata
@@ -122,9 +129,9 @@ jobs:
       - name: Install Python dependencies
         shell: bash
         run: |
-          python3 -m pip install --upgrade requests
+          python3 -m pip install --upgrade requests requests-toolbelt
 
-      - name: Create or update Gitee release
+      - name: Create or update Gitee release and upload assets
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: bash
@@ -139,6 +146,7 @@ jobs:
           import urllib.parse
 
           import requests
+          from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor
 
 
           def require_env(name: str) -> str:
@@ -153,9 +161,10 @@ jobs:
           owner = require_env("GITEE_OWNER")
           repo = require_env("GITEE_REPO")
           tag = require_env("TAG")
+
           api_base = os.environ.get("GITEE_API_BASE", "https://gitee.com/api/v5").rstrip("/")
           r2_public_base_url = os.environ.get("R2_PUBLIC_BASE_URL", "").strip().rstrip("/")
-          max_mb = float(os.environ.get("MAX_GITEE_ASSET_MB", "95"))
+          max_mb = float(os.environ.get("MAX_GITEE_ASSET_MB", "99"))
           max_bytes = int(max_mb * 1024 * 1024)
           upload_small_assets = os.environ.get("UPLOAD_SMALL_ASSETS", "true").lower() == "true"
           fail_on_upload_error = os.environ.get("FAIL_ON_GITEE_ASSET_UPLOAD_ERROR", "false").lower() == "true"
@@ -168,9 +177,9 @@ jobs:
               sys.exit(1)
 
           release = json.loads(release_json_path.read_text(encoding="utf-8"))
+
           release_name = release.get("name") or tag
           github_body = release.get("body") or ""
-          github_url = release.get("url") or ""
           is_prerelease = bool(release.get("isPrerelease"))
           target_commitish = release.get("targetCommitish") or ""
 
@@ -199,7 +208,7 @@ jobs:
 
               if response.status_code not in expected:
                   print(f"::error::Gitee API failed: {method} {path} -> HTTP {response.status_code}")
-                  print(response.text[:2000])
+                  print(response.text[:3000])
                   sys.exit(1)
 
               if response.text.strip():
@@ -207,64 +216,142 @@ jobs:
                       return response.json()
                   except Exception:
                       return response.text
+
               return None
 
 
           def human_size(size: int) -> str:
               units = ["B", "KB", "MB", "GB"]
               value = float(size)
+
               for unit in units:
                   if value < 1024 or unit == units[-1]:
                       if unit == "B":
                           return f"{int(value)} {unit}"
                       return f"{value:.2f} {unit}"
                   value /= 1024
+
               return f"{size} B"
 
+          def make_upload_progress_callback(filename: str, total_bytes: int):
+              started_at = time.monotonic()
+              state = {
+                  "last_percent": -1,
+                  "last_report_at": 0.0,
+              }
+
+              def callback(monitor: MultipartEncoderMonitor):
+                  if total_bytes <= 0:
+                      return
+
+                  now = time.monotonic()
+                  uploaded = min(monitor.bytes_read, total_bytes)
+                  percent = int(uploaded * 100 / total_bytes)
+
+                  should_report = (
+                      percent == 0
+                      or percent == 100
+                      or percent >= state["last_percent"] + 10
+                      or now - state["last_report_at"] >= 15
+                  )
+
+                  if not should_report:
+                      return
+
+                  elapsed = max(now - started_at, 0.001)
+                  speed = uploaded / elapsed
+
+                  print(
+                      f"Upload progress: {filename}: "
+                      f"{percent}% "
+                      f"({human_size(uploaded)}/{human_size(total_bytes)}, "
+                      f"{human_size(int(speed))}/s)",
+                      flush=True,
+                  )
+
+                  state["last_percent"] = percent
+                  state["last_report_at"] = now
+
+              return callback
 
           def build_r2_url(filename: str) -> str:
               if not r2_public_base_url:
                   return ""
-              return f"{r2_public_base_url}/{urllib.parse.quote(tag)}/{urllib.parse.quote(filename)}"
+              return (
+                  f"{r2_public_base_url}/"
+                  f"{urllib.parse.quote(tag, safe='')}/"
+                  f"{urllib.parse.quote(filename, safe='')}"
+              )
 
 
           asset_files = []
           if assets_dir.exists():
-              asset_files = sorted([p for p in assets_dir.iterdir() if p.is_file()], key=lambda p: p.name.lower())
+              asset_files = sorted(
+                  [p for p in assets_dir.iterdir() if p.is_file()],
+                  key=lambda p: p.name.lower(),
+              )
 
-          download_lines = []
-          download_lines.append("")
-          download_lines.append("---")
-          download_lines.append("")
-          download_lines.append("## 下载")
-          download_lines.append("")
-          download_lines.append("> 代码、分支、Tag 由 Gitee 镜像同步；安装包附件由 CI/CD 同步。")
-          download_lines.append("")
 
-          if asset_files:
-              for file_path in asset_files:
-                  size = file_path.stat().st_size
+          def build_release_body(
+              *,
+              uploadable_assets,
+              skipped_assets,
+              failed_assets,
+              no_assets=False,
+              uploading=False,
+          ) -> str:
+              body = github_body.rstrip()
+
+              lines = []
+              lines.append("")
+              lines.append("---")
+              lines.append("")
+              lines.append("## 下载")
+              lines.append("")
+
+              if uploading:
+                  lines.append("> 正在同步发行版附件，请稍后刷新页面。")
+                  return body + "\n" + "\n".join(lines) + "\n"
+
+              if no_assets:
+                  lines.append("- 本次 GitHub Release 未检测到附件。")
+                  return body + "\n" + "\n".join(lines) + "\n"
+
+              if uploadable_assets:
+                  lines.append("> 安装包已同步到本发行版附件区，请在本页附件区下载。")
+              elif not upload_small_assets:
+                  lines.append("> 本次未上传附件到 Gitee Release 附件区。")
+              else:
+                  lines.append("> 本次没有可上传到 Gitee Release 附件区的附件。")
+
+              fallback_lines = []
+
+              for file_path in skipped_assets:
+                  size_text = human_size(file_path.stat().st_size)
                   r2_url = build_r2_url(file_path.name)
-                  size_text = human_size(size)
 
                   if r2_url:
-                      if upload_small_assets and size <= max_bytes:
-                          download_lines.append(f"- [{file_path.name}]({r2_url}) `{size_text}`（同时尝试同步到 Gitee 附件）")
-                      else:
-                          download_lines.append(f"- [{file_path.name}]({r2_url}) `{size_text}`")
+                      fallback_lines.append(f"- [{file_path.name}]({r2_url}) `{size_text}`")
                   else:
-                      if upload_small_assets and size <= max_bytes:
-                          download_lines.append(f"- `{file_path.name}` `{size_text}`（已尝试同步到 Gitee 附件）")
-                      else:
-                          download_lines.append(f"- `{file_path.name}` `{size_text}`（超过 Gitee 附件阈值，建议配置 R2_PUBLIC_BASE_URL）")
-          else:
-              download_lines.append("- 本次 GitHub Release 未检测到附件。")
+                      fallback_lines.append(f"- `{file_path.name}` `{size_text}`（未上传到 Gitee 附件区）")
 
-          if github_url:
-              download_lines.append("")
-              download_lines.append(f"GitHub Release：{github_url}")
+              for file_path, reason in failed_assets:
+                  size_text = human_size(file_path.stat().st_size)
+                  r2_url = build_r2_url(file_path.name)
 
-          gitee_body = github_body.rstrip() + "\n" + "\n".join(download_lines) + "\n"
+                  if r2_url:
+                      fallback_lines.append(f"- [{file_path.name}]({r2_url}) `{size_text}`（Gitee 附件同步失败）")
+                  else:
+                      fallback_lines.append(f"- `{file_path.name}` `{size_text}`（Gitee 附件同步失败：{reason}）")
+
+              if fallback_lines:
+                  lines.append("")
+                  lines.append("### 备用下载")
+                  lines.append("")
+                  lines.extend(fallback_lines)
+
+              return body + "\n" + "\n".join(lines) + "\n"
+
 
           existing = gitee_request(
               "GET",
@@ -273,15 +360,13 @@ jobs:
               allow_404=True,
           )
 
-          payload = {
-              "tag_name": tag,
-              "name": release_name,
-              "body": gitee_body,
-              "prerelease": str(is_prerelease).lower(),
-          }
-
-          if target_commitish:
-              payload["target_commitish"] = target_commitish
+          initial_body = build_release_body(
+              uploadable_assets=[],
+              skipped_assets=[],
+              failed_assets=[],
+              no_assets=not bool(asset_files),
+              uploading=bool(asset_files),
+          )
 
           if existing:
               release_id = existing.get("id")
@@ -292,14 +377,26 @@ jobs:
                   f"/repos/{owner_q}/{repo_q}/releases/{release_id}",
                   data={
                       "name": release_name,
-                      "body": gitee_body,
+                      "body": initial_body,
                       "prerelease": str(is_prerelease).lower(),
                   },
                   expected=(200, 201),
               )
-              release_id = updated.get("id", release_id) if isinstance(updated, dict) else release_id
+
+              if isinstance(updated, dict) and updated.get("id"):
+                  release_id = updated["id"]
           else:
               print(f"Creating Gitee release: tag={tag}")
+
+              payload = {
+                  "tag_name": tag,
+                  "name": release_name,
+                  "body": initial_body,
+                  "prerelease": str(is_prerelease).lower(),
+              }
+
+              if target_commitish:
+                  payload["target_commitish"] = target_commitish
 
               created = gitee_request(
                   "POST",
@@ -317,28 +414,55 @@ jobs:
 
           print(f"Gitee release id: {release_id}")
 
-          if not upload_small_assets:
-              print("UPLOAD_SMALL_ASSETS=false, skip Gitee asset upload.")
-              sys.exit(0)
-
           if not asset_files:
               print("No assets to upload.")
+
+              final_body = build_release_body(
+                  uploadable_assets=[],
+                  skipped_assets=[],
+                  failed_assets=[],
+                  no_assets=True,
+                  uploading=False,
+              )
+
+              gitee_request(
+                  "PATCH",
+                  f"/repos/{owner_q}/{repo_q}/releases/{release_id}",
+                  data={
+                      "name": release_name,
+                      "body": final_body,
+                      "prerelease": str(is_prerelease).lower(),
+                  },
+                  expected=(200, 201),
+              )
+
               sys.exit(0)
 
           uploadable_files = []
           skipped_files = []
 
-          for file_path in asset_files:
-              size = file_path.stat().st_size
-              if size <= max_bytes:
-                  uploadable_files.append(file_path)
-              else:
-                  skipped_files.append(file_path)
+          if upload_small_assets:
+              for file_path in asset_files:
+                  size = file_path.stat().st_size
+
+                  if size <= max_bytes:
+                      uploadable_files.append(file_path)
+                  else:
+                      skipped_files.append(file_path)
+          else:
+              skipped_files = asset_files[:]
 
           for file_path in skipped_files:
-              print(f"Skip large asset: {file_path.name} ({human_size(file_path.stat().st_size)} > {max_mb} MB)")
+              print(
+                  f"Skip asset: {file_path.name} "
+                  f"({human_size(file_path.stat().st_size)}, threshold={max_mb} MB, upload_small_assets={upload_small_assets})"
+              )
 
-          def upload_asset(file_path: pathlib.Path):
+          uploaded_or_existing_files = []
+          failed_files = []
+
+
+          def upload_asset(file_path: pathlib.Path) -> tuple[bool, str]:
               filename = file_path.name
               content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
@@ -346,24 +470,41 @@ jobs:
                   print(f"Uploading asset to Gitee: {filename}, attempt {attempt}/3")
 
                   try:
-                      with file_path.open("rb") as f:
+                      with file_path.open("rb") as file_handle:
+                          encoder = MultipartEncoder(
+                              fields={
+                                  "name": filename,
+                                  "file": (filename, file_handle, content_type),
+                              }
+                          )
+
+                          monitor = MultipartEncoderMonitor(
+                              encoder,
+                              make_upload_progress_callback(filename, encoder.len),
+                          )
+
                           response = session.post(
                               f"{api_base}/repos/{owner_q}/{repo_q}/releases/{release_id}/attach_files",
                               params={"access_token": token},
-                              data={"name": filename},
-                              files={"file": (filename, f, content_type)},
+                              data=monitor,
+                              headers={
+                                  "Content-Type": monitor.content_type,
+                              },
                               timeout=300,
                           )
                   except Exception as exc:
+                      reason = str(exc)
+
                       if attempt < 3:
-                          print(f"::warning::Upload failed with exception: {exc}. Retrying...")
+                          print(f"::warning::Upload failed with exception: {reason}. Retrying...")
                           time.sleep(5 * attempt)
                           continue
-                      raise
+
+                      return False, reason
 
                   if response.status_code in (200, 201):
                       print(f"Uploaded: {filename}")
-                      return
+                      return True, "uploaded"
 
                   text = response.text or ""
                   lowered = text.lower()
@@ -378,9 +519,9 @@ jobs:
                   ]
 
                   if response.status_code in (400, 409, 422) and any(marker in lowered or marker in text for marker in duplicate_markers):
-                      print(f"::warning::Asset may already exist, skip: {filename}")
+                      print(f"::warning::Asset may already exist, treat as available: {filename}")
                       print(text[:1000])
-                      return
+                      return True, "already_exists"
 
                   if attempt < 3:
                       print(f"::warning::Upload failed: HTTP {response.status_code}. Retrying...")
@@ -388,17 +529,45 @@ jobs:
                       time.sleep(5 * attempt)
                       continue
 
-                  message = f"Upload failed permanently: {filename}, HTTP {response.status_code}, {text[:1000]}"
+                  return False, f"HTTP {response.status_code}: {text[:1000]}"
+
+
+          for file_path in uploadable_files:
+              ok, reason = upload_asset(file_path)
+
+              if ok:
+                  uploaded_or_existing_files.append(file_path)
+              else:
+                  message = f"Upload failed permanently: {file_path.name}, {reason}"
 
                   if fail_on_upload_error:
                       print(f"::error::{message}")
                       sys.exit(1)
 
                   print(f"::warning::{message}")
-                  return
+                  failed_files.append((file_path, reason))
 
-          for file_path in uploadable_files:
-              upload_asset(file_path)
+          final_body = build_release_body(
+              uploadable_assets=uploaded_or_existing_files,
+              skipped_assets=skipped_files,
+              failed_assets=failed_files,
+              no_assets=False,
+              uploading=False,
+          )
+
+          gitee_request(
+              "PATCH",
+              f"/repos/{owner_q}/{repo_q}/releases/{release_id}",
+              data={
+                  "name": release_name,
+                  "body": final_body,
+                  "prerelease": str(is_prerelease).lower(),
+              },
+              expected=(200, 201),
+          )
 
           print("Gitee release publish completed.")
+          print(f"Uploaded or existing assets: {len(uploaded_or_existing_files)}")
+          print(f"Skipped assets: {len(skipped_files)}")
+          print(f"Failed assets: {len(failed_files)}")
           PY
