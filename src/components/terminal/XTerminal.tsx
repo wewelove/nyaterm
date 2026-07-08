@@ -39,6 +39,7 @@ import { detectCredentialPromptKind } from "@/lib/credentialAutofill";
 import { invoke } from "@/lib/invoke";
 import { hexLuminance } from "@/lib/keywordHighlightPresets";
 import { logger } from "@/lib/logger";
+import { isMacOS } from "@/lib/platform";
 import { openSendCommandPanel } from "@/lib/sendCommandPanelEvents";
 import {
   buildTerminalCommandInput,
@@ -1991,6 +1992,31 @@ export default function XTerminal({
       }
     };
 
+    const handleMacReleasedMouseMove = (e: MouseEvent) => {
+      if (!isMacOS || !primaryMouseDown || e.buttons !== 0) return;
+
+      primaryMouseDown = null;
+      e.stopImmediatePropagation();
+
+      // WKWebView can miss mouseup after a trackpad tap when three-finger drag is enabled.
+      // xterm listens on document while selecting, so synthesize the release there.
+      const syntheticMouseUp = new MouseEvent("mouseup", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 0,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        screenX: e.screenX,
+        screenY: e.screenY,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+      });
+      document.dispatchEvent(syntheticMouseUp);
+    };
+
     const handleTerminalPointerCancel = () => {
       resetTerminalPointerState({ clearSelection: true });
     };
@@ -2018,6 +2044,9 @@ export default function XTerminal({
     containerRef.current.addEventListener("pointercancel", handleTerminalPointerCancel);
     containerRef.current.addEventListener("mouseleave", handleTerminalMouseLeave);
     containerRef.current.addEventListener("dragstart", handleTerminalDragStart);
+    if (isMacOS) {
+      document.addEventListener("mousemove", handleMacReleasedMouseMove, true);
+    }
     window.addEventListener("blur", handleTerminalWindowBlur);
     document.addEventListener("visibilitychange", handleTerminalVisibilityChange);
     const containerEl = containerRef.current;
@@ -2042,6 +2071,9 @@ export default function XTerminal({
       containerEl.removeEventListener("pointercancel", handleTerminalPointerCancel);
       containerEl.removeEventListener("mouseleave", handleTerminalMouseLeave);
       containerEl.removeEventListener("dragstart", handleTerminalDragStart);
+      if (isMacOS) {
+        document.removeEventListener("mousemove", handleMacReleasedMouseMove, true);
+      }
       window.removeEventListener("blur", handleTerminalWindowBlur);
       document.removeEventListener("visibilitychange", handleTerminalVisibilityChange);
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
