@@ -24,7 +24,11 @@ use crate::error::{AppError, AppResult};
 use super::history::{append_ai_audit, append_message, save_user_message};
 use super::model::{ResolvedAiModel, build_client, resolve_request_model};
 use super::parser::{extract_json_object, parse_model_output, trim_string_to_option};
-use super::prompt::{agent_system_prompt, build_agent_prompt, build_observation_message};
+use super::prompt::{
+    agent_execution_disabled_message, agent_max_steps_message, agent_send_only_observation,
+    agent_system_prompt, build_agent_failed_message, build_agent_prompt,
+    build_agent_rejected_message, build_agent_unknown_action_message, build_observation_message,
+};
 use super::redaction::{redact_context, redact_sensitive_text};
 use super::stream::{active_streams, emit_stream_event, is_cancelled};
 use super::types::{
@@ -220,6 +224,7 @@ async fn execute_command_on_session(
     session_manager: Arc<SessionManager>,
     terminal_session_id: &str,
     command: &str,
+    language: &str,
     timeout_ms: u64,
     step_index: u16,
     terminal_output_lines: u16,
@@ -249,6 +254,7 @@ async fn execute_command_on_session(
             session_manager.as_ref(),
             terminal_session_id,
             command,
+            language,
             step_index,
             terminal_output_lines,
         )
@@ -257,7 +263,7 @@ async fn execute_command_on_session(
 
     if profile == AiExecutionProfile::Disabled {
         return Err(AppError::Config(
-            "当前会话已禁用 AI Agent 命令执行。".to_string(),
+            agent_execution_disabled_message(language).to_string(),
         ));
     }
 
@@ -362,6 +368,7 @@ async fn send_command_without_capture(
     session_manager: &SessionManager,
     terminal_session_id: &str,
     command: &str,
+    language: &str,
     step_index: u16,
     terminal_output_lines: u16,
 ) -> AppResult<CommandObservation> {
@@ -382,7 +389,7 @@ async fn send_command_without_capture(
         .await?;
 
     let observation = CommandObservation {
-        output: "命令已发送到终端，但当前会话使用仅发送模式，未捕获输出。".to_string(),
+        output: agent_send_only_observation(language).to_string(),
         exit_code: None,
         duration_ms: started.elapsed().as_millis() as u64,
     };
@@ -1784,10 +1791,8 @@ pub(super) async fn run_agent_stream(
                             true,
                         );
 
-                        let skipped_msg = format!(
-                            "用户拒绝执行命令 `{}`。请换用其他方案或给出 final_answer。",
-                            command
-                        );
+                        let skipped_msg =
+                            build_agent_rejected_message(&command, &request.options.language);
                         if let Some(tool_call) = execute_tool_call.as_ref() {
                             conversation.push(ChatMessage::from(vec![tool_call.clone()]));
                             conversation.push(ChatMessage::from(ToolResponse::from_tool_call(
@@ -1843,6 +1848,7 @@ pub(super) async fn run_agent_stream(
                         session_manager.clone(),
                         &terminal_session_id,
                         &command,
+                        &request.options.language,
                         step_timeout,
                         step_index,
                         settings.terminal_output_lines,
@@ -1885,7 +1891,8 @@ pub(super) async fn run_agent_stream(
                             false,
                         );
 
-                        let err_msg = format!("命令执行失败：{}。请分析原因并给出下一步。", e);
+                        let err_msg =
+                            build_agent_failed_message(&e.to_string(), &request.options.language);
                         if let Some(tool_call) = execute_tool_call.as_ref() {
                             conversation.push(ChatMessage::from(vec![tool_call.clone()]));
                             conversation.push(ChatMessage::from(ToolResponse::from_tool_call(
@@ -1893,6 +1900,7 @@ pub(super) async fn run_agent_stream(
                                 json!({
                                     "status": "failed",
                                     "error": e.to_string(),
+                                    "message": err_msg,
                                 })
                                 .to_string(),
                             )));
@@ -1955,10 +1963,10 @@ pub(super) async fn run_agent_stream(
                 }
             }
             other => {
-                let fallback = format!(
-                    "Unknown action '{}'. Treating as final answer. {}",
+                let fallback = build_agent_unknown_action_message(
                     other,
-                    parsed.answer.as_deref().unwrap_or(&parsed.thought)
+                    parsed.answer.as_deref().unwrap_or(&parsed.thought),
+                    &request.options.language,
                 );
                 final_answer = Some(fallback);
                 break;
@@ -1977,7 +1985,7 @@ pub(super) async fn run_agent_stream(
     );
 
     let answer_text =
-        final_answer.unwrap_or_else(|| "Agent 已达到最大步数限制，任务可能未完成。".to_string());
+        final_answer.unwrap_or_else(|| agent_max_steps_message(&request.options.language).into());
 
     let message = AiMessage {
         id: format!("msg-{}", uuid()),
