@@ -347,11 +347,7 @@ pnpm tauri dev
 <a name="contributors"></a>
 # 贡献者
 
-感谢所有为 NyaTerm 做出贡献的开发者、设计师、测试人员和社区成员！
-
-<a href="https://github.com/nyakang/nyaterm/graphs/contributors">
-  <img src="https://contrib-wall.coderkang.workers.dev/image?snapshot=wG7-1rsxhbR1IcQQWX8-sNGo&amp;sealed_token=eyJ2IjoxLCJ0eXBlIjoic25hcHNob3QiLCJzbmFwc2hvdCI6IndHNy0xcnN4aGJSMUljUVFXWDgtc05HbyIsImV4cCI6MTgxNTAzNDc4NH0.NxTbzm2trBDHw1YRrA_Npf1Ikf5_lwk6dwQ6BWj2AvY&amp;sealed_github_token=8YR27W8pqbfGje5f.vuGeXuKRgotJYeJS0-r1ZjtIRJY6NyhYeE1A4KeFb2jT5ywm__-05jmjBmDa_4xpVxf60rbzngumBLLs7aMbh1N9WmN6BC3fj657FFCv_ubLx2F4S281sdsiZOXFZOWXkLMRVQJtnP-5QexdJueqgC1GSUQuBhQjRKMnYkAtryYC9tcXYuPxb4gCVt0r0h5ieOhiYDok22hkaJ6eUyq5ZZYp7gRSJlme0Y2XY370Zow" alt="Contributors to nyakang/nyaterm" />
-</a>
+<img src="https://contrib-wall.coderkang.workers.dev/image?snapshot=kAwrwg2ScchjP7BfSUo1CRC1&amp;sealed_token=eyJ2IjoxLCJ0eXBlIjoic25hcHNob3QiLCJzbmFwc2hvdCI6ImtBd3J3ZzJTY2NoalA3QmZTVW8xQ1JDMSIsImV4cCI6MTgxNTAzNTk5MH0.TJLai_CDxSPq2P87wkvhcZWNZMlyaEG4ae-38GMwWUA&amp;sealed_github_token=GwZ52_aI0Ag4oPtR.YeRoS2e62LHjBpMu1wc0naL0G6Q6N2pDjKFx1GSFFSNIm4mL-e_AkDY6q56pJ1K1k3lHbiC8gCWGRsQ0__3IjU3NX20uZuLXdabysg0Lxe6Kgx7ZStmap0bAlmNhrBj4XTSGmaDXZoNLiYNTDM0VNlrkud7XAklusE_9PXzO8pYT4Mrd8gH8vlojBrdCebe0HQrchcLg9VOLPbGmps_oCfss1vNyTHaamu15Nhai4nE" alt="贡献者" />
 
 ---
 
