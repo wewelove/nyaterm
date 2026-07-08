@@ -249,9 +249,9 @@ textarea,
   background-color: transparent !important;
 }
 
-html:has(.nyaterm-wallpaper-shell[data-window-transparency="true"]),
-body:has(.nyaterm-wallpaper-shell[data-window-transparency="true"]),
-body:has(.nyaterm-wallpaper-shell[data-window-transparency="true"]) #root {
+html[data-window-transparency="true"],
+body[data-window-transparency="true"],
+body[data-window-transparency="true"] #root {
   background-color: transparent !important;
 }
 

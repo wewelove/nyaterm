@@ -31,6 +31,15 @@ fn schedule_cloud_sync_notify(app: tauri::AppHandle) {
     });
 }
 
+fn window_transparency_settings_changed(
+    existing: &config::AppearanceSettings,
+    next: &config::AppearanceSettings,
+) -> bool {
+    existing.window_transparency != next.window_transparency
+        || existing.window_transparency_tint != next.window_transparency_tint
+        || existing.window_transparency_blur != next.window_transparency_blur
+}
+
 #[tauri::command]
 pub async fn get_system_fonts() -> Vec<String> {
     tauri::async_runtime::spawn_blocking(list_system_font_families)
@@ -109,6 +118,8 @@ pub async fn persist_app_settings(
             return Err(error);
         }
     };
+    let should_apply_window_transparency =
+        window_transparency_settings_changed(&existing.appearance, &settings.appearance);
 
     match settings.security.master_password.as_deref() {
         Some("__SET__") => {
@@ -171,7 +182,9 @@ pub async fn persist_app_settings(
 
     manager.replace_settings(merged_cloud_sync).await?;
     schedule_cloud_sync_notify(app.clone());
-    crate::app::apply_window_transparency_to_all(&app);
+    if should_apply_window_transparency {
+        crate::app::apply_window_transparency_to_all(app);
+    }
     let _ = app.emit("settings-changed", ());
     crate::tray::schedule_refresh(app);
 
@@ -280,6 +293,37 @@ mod tests {
             color_light: "#cf222e".to_string(),
             enabled: true,
         }
+    }
+
+    fn appearance_with_window_transparency(
+        mode: &str,
+        tint: f64,
+        blur: bool,
+    ) -> config::AppearanceSettings {
+        config::AppearanceSettings {
+            window_transparency: mode.to_string(),
+            window_transparency_tint: tint,
+            window_transparency_blur: blur,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn window_transparency_change_detection_only_tracks_native_fields() {
+        let base = appearance_with_window_transparency("transparent", 0.6, false);
+
+        let mut unrelated = base.clone();
+        unrelated.theme = "github-light".to_string();
+        assert!(!window_transparency_settings_changed(&base, &unrelated));
+
+        let changed_mode = appearance_with_window_transparency("none", 1.0, false);
+        assert!(window_transparency_settings_changed(&base, &changed_mode));
+
+        let changed_tint = appearance_with_window_transparency("transparent", 0.4, false);
+        assert!(window_transparency_settings_changed(&base, &changed_tint));
+
+        let changed_blur = appearance_with_window_transparency("transparent", 0.6, true);
+        assert!(window_transparency_settings_changed(&base, &changed_blur));
     }
 
     #[test]

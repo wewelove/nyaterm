@@ -26,6 +26,7 @@ import {
 } from "@/lib/backgroundImage";
 import { invoke } from "@/lib/invoke";
 import { logger } from "@/lib/logger";
+import { isWindows } from "@/lib/platform";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_FONT_SIZE,
@@ -546,32 +547,34 @@ export function AppearanceTab() {
         </SettingRow>
       </SettingSection>
 
-      <SettingSection
-        title={t("settings.windowTransparency")}
-        desc={t("settings.windowTransparencyDesc")}
-        contentClassName="space-y-5"
-      >
-        <PercentSlider
-          label={t("settings.windowTransparencyOpacity")}
-          desc={t("settings.windowTransparencyOpacityDesc")}
-          value={getWindowTransparencyOpacity(appearance) ?? DEFAULT_WINDOW_TRANSPARENCY_OPACITY}
-          onChange={(value) =>
-            updateAppearance({
-              window_transparency_tint: value,
-              window_transparency: windowTransparencyModeForOpacity(value),
-            })
-          }
-        />
-        <SettingRow
-          label={t("settings.windowTransparencyBlur")}
-          desc={t("settings.windowTransparencyBlurDesc")}
+      {isWindows && (
+        <SettingSection
+          title={t("settings.windowTransparency")}
+          desc={t("settings.windowTransparencyDesc")}
+          contentClassName="space-y-5"
         >
-          <SettingSwitch
-            checked={appearance.window_transparency_blur ?? false}
-            onChange={(v) => updateAppearance({ window_transparency_blur: v })}
+          <PercentSlider
+            label={t("settings.windowTransparencyOpacity")}
+            desc={t("settings.windowTransparencyOpacityDesc")}
+            value={getWindowTransparencyOpacity(appearance) ?? DEFAULT_WINDOW_TRANSPARENCY_OPACITY}
+            onChange={(value) =>
+              updateAppearance({
+                window_transparency_tint: value,
+                window_transparency: windowTransparencyModeForOpacity(value),
+              })
+            }
           />
-        </SettingRow>
-      </SettingSection>
+          <SettingRow
+            label={t("settings.windowTransparencyBlur")}
+            desc={t("settings.windowTransparencyBlurDesc")}
+          >
+            <SettingSwitch
+              checked={appearance.window_transparency_blur ?? false}
+              onChange={(v) => updateAppearance({ window_transparency_blur: v })}
+            />
+          </SettingRow>
+        </SettingSection>
+      )}
 
       <BackgroundImageSection appearance={appearance} onChange={updateAppearance} />
 

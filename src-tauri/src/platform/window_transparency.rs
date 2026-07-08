@@ -9,6 +9,11 @@
 
 use tauri::WebviewWindow;
 
+#[cfg(windows)]
+use std::ffi::c_void;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::HWND;
+
 /// Effective native window transparency state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowTransparency {
@@ -35,6 +40,55 @@ fn legacy_acrylic_activation_color() -> window_vibrancy::Color {
     // The visible dimming is controlled by frontend CSS opacity. The native API
     // only needs a tiny alpha value to keep blur-behind active.
     (0u8, 0u8, 0u8, 1u8)
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct AccentPolicy {
+    accent_state: u32,
+    accent_flags: u32,
+    gradient_color: u32,
+    animation_id: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct WindowCompositionAttribData {
+    attrib: u32,
+    data: *mut c_void,
+    data_size: usize,
+}
+
+#[cfg(windows)]
+type SetWindowCompositionAttribute =
+    unsafe extern "system" fn(HWND, *mut WindowCompositionAttribData) -> i32;
+
+#[cfg(windows)]
+fn set_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+
+    static SET_WINDOW_COMPOSITION_ATTRIBUTE: OnceLock<Option<SetWindowCompositionAttribute>> =
+        OnceLock::new();
+
+    *SET_WINDOW_COMPOSITION_ATTRIBUTE.get_or_init(|| {
+        let user32 = unsafe { GetModuleHandleA(c"user32.dll".as_ptr().cast()) };
+        if user32.is_null() {
+            return None;
+        }
+
+        let proc =
+            unsafe { GetProcAddress(user32, c"SetWindowCompositionAttribute".as_ptr().cast()) }?;
+
+        // SetWindowCompositionAttribute is an undocumented user32 export. The
+        // function pointer ABI and parameter layout are the common Windows
+        // "system" signature used for ACCENT_POLICY/WCA_ACCENT_POLICY.
+        Some(unsafe {
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, SetWindowCompositionAttribute>(
+                proc,
+            )
+        })
+    })
 }
 
 /// Apply (or clear) the transparency effect on a single window. Safe to call
@@ -89,50 +143,13 @@ fn set_legacy_acrylic(
     accent_state: LegacyAccentState,
     color: Option<window_vibrancy::Color>,
 ) -> Result<(), String> {
-    use std::ffi::c_void;
-    use windows_sys::Win32::{
-        Foundation::HWND,
-        System::LibraryLoader::{GetProcAddress, LoadLibraryA},
-    };
-
-    #[repr(C)]
-    struct AccentPolicy {
-        accent_state: u32,
-        accent_flags: u32,
-        gradient_color: u32,
-        animation_id: u32,
-    }
-
-    #[repr(C)]
-    struct WindowCompositionAttribData {
-        attrib: u32,
-        data: *mut c_void,
-        data_size: usize,
-    }
-
-    type SetWindowCompositionAttribute =
-        unsafe extern "system" fn(HWND, *mut WindowCompositionAttribData) -> i32;
-
     let hwnd = window
         .hwnd()
         .map_err(|error| format!("failed to get HWND: {error}"))?
         .0 as HWND;
 
-    let user32 = unsafe { LoadLibraryA(c"user32.dll".as_ptr().cast()) };
-    if user32.is_null() {
-        return Err("failed to load user32.dll".to_string());
-    }
-
-    let Some(proc) =
-        (unsafe { GetProcAddress(user32, c"SetWindowCompositionAttribute".as_ptr().cast()) })
-    else {
-        return Err("SetWindowCompositionAttribute is unavailable".to_string());
-    };
-    let set_window_composition_attribute = unsafe {
-        std::mem::transmute::<unsafe extern "system" fn() -> isize, SetWindowCompositionAttribute>(
-            proc,
-        )
-    };
+    let set_window_composition_attribute = set_window_composition_attribute()
+        .ok_or_else(|| "SetWindowCompositionAttribute is unavailable".to_string())?;
 
     let mut color = color.unwrap_or_default();
     if matches!(accent_state, LegacyAccentState::EnableAcrylicBlurBehind) && color.3 == 0 {
@@ -205,6 +222,10 @@ mod tests {
     fn transparency_state_is_derived_from_opacity() {
         assert_eq!(
             WindowTransparency::from_settings("none", 0.2),
+            WindowTransparency::Transparent
+        );
+        assert_eq!(
+            WindowTransparency::from_settings("transparent", 0.0),
             WindowTransparency::Transparent
         );
         assert_eq!(

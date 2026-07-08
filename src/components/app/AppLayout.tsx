@@ -180,17 +180,16 @@ export default function AppLayout({
     () => buildBackgroundImageLayerStyle(effectiveAppearance, backgroundDataUrl),
     [effectiveAppearance, backgroundDataUrl],
   );
+  const windowTransparencyEnabled = isWindowTransparencyEnabled(effectiveAppearance);
   const shellStyle = useMemo(
     () => ({
       ...buildSurfaceCssVariables(theme.colors, effectiveAppearance),
       // When native window transparency is on, the shell background must be
       // transparent so the native backdrop is visible through the webview.
-      backgroundColor: isWindowTransparencyEnabled(effectiveAppearance)
-        ? "transparent"
-        : theme.colors.bg,
+      backgroundColor: windowTransparencyEnabled ? "transparent" : theme.colors.bg,
       color: "var(--df-text)",
     }),
-    [effectiveAppearance, theme.colors],
+    [effectiveAppearance, theme.colors, windowTransparencyEnabled],
   );
   const hasLeftActivityItems =
     leftActivityBar.items.length > 0 || (leftActivityBar.bottomItems?.length ?? 0) > 0;
@@ -202,6 +201,23 @@ export default function AppLayout({
     hasRightActivityItems && (rightPanelIds.length > 0 || Boolean(rightOverlayPanelId));
   const leftMobileOpen = hasLeftActivityItems && mobile.leftOpen;
   const rightMobileOpen = hasRightActivityItems && mobile.rightOpen;
+
+  useEffect(() => {
+    const roots = [document.documentElement, document.body];
+    for (const root of roots) {
+      if (windowTransparencyEnabled) {
+        root.dataset.windowTransparency = "true";
+      } else {
+        delete root.dataset.windowTransparency;
+      }
+    }
+
+    return () => {
+      for (const root of roots) {
+        delete root.dataset.windowTransparency;
+      }
+    };
+  }, [windowTransparencyEnabled]);
 
   useEffect(() => {
     if (!hasLeftActivityItems && mobile.leftOpen) {
@@ -223,12 +239,9 @@ export default function AppLayout({
     <div
       className="nyaterm-wallpaper-shell font-display relative h-full min-h-0 overflow-hidden"
       data-wallpaper-enabled={backgroundEnabled ? "true" : "false"}
-      data-window-transparency={
-        isWindowTransparencyEnabled(effectiveAppearance) ? "true" : "false"
-      }
+      data-window-transparency={windowTransparencyEnabled ? "true" : "false"}
       data-window-transparency-blur={
-        isWindowTransparencyEnabled(effectiveAppearance) &&
-        effectiveAppearance.window_transparency_blur
+        windowTransparencyEnabled && effectiveAppearance.window_transparency_blur
           ? "true"
           : "false"
       }

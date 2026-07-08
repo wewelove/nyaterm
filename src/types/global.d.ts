@@ -706,7 +706,7 @@ export interface AppearanceSettings {
   panel_multi_open: boolean;
   /** Internal native window transparency marker. */
   window_transparency: WindowTransparency;
-  /** Surface opacity for transparent windows, 0.0 to 1.0. */
+  /** Surface opacity for transparent windows, 0.0 to 1.0. Low values may reveal windows behind the app. */
   window_transparency_tint: number;
   /** Whether native Acrylic material applies blur behind transparent windows. */
   window_transparency_blur: boolean;

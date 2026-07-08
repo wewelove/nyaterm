@@ -202,4 +202,30 @@ mod tests {
         assert_eq!(settings.window_transparency, "transparent");
         assert_eq!(settings.window_transparency_tint, 0.35);
     }
+
+    #[test]
+    fn normalize_window_transparency_keeps_fully_transparent_opacity() {
+        let mut settings = AppearanceSettings {
+            window_transparency: "acrylic".to_string(),
+            window_transparency_tint: 0.0,
+            ..Default::default()
+        };
+
+        assert!(settings.normalize_window_transparency());
+        assert_eq!(settings.window_transparency, "transparent");
+        assert_eq!(settings.window_transparency_tint, 0.0);
+    }
+
+    #[test]
+    fn normalize_window_transparency_resets_non_finite_opacity() {
+        let mut settings = AppearanceSettings {
+            window_transparency: "transparent".to_string(),
+            window_transparency_tint: f64::NAN,
+            ..Default::default()
+        };
+
+        assert!(settings.normalize_window_transparency());
+        assert_eq!(settings.window_transparency, "none");
+        assert_eq!(settings.window_transparency_tint, 1.0);
+    }
 }
