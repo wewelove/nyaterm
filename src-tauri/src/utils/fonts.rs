@@ -2,10 +2,18 @@ use font_kit::font::Font;
 use font_kit::source::SystemSource;
 use serde::Serialize;
 
-pub const DEFAULT_TERMINAL_FONT_FAMILY: &str =
-    "JetBrains Mono, Consolas, \"Cascadia Mono\", monospace";
+pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "\"JetBrains Mono\", \"Cascadia Mono\", \"SF Mono\", Menlo, Monaco, Consolas, \"Liberation Mono\", monospace";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_UI_FONT_FAMILY: &str = "system-ui, -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Helvetica Neue\", Arial, sans-serif";
+
+#[cfg(target_os = "windows")]
 pub const DEFAULT_UI_FONT_FAMILY: &str =
-    "JetBrains Mono, \"Noto Sans SC Variable\", Inter, sans-serif";
+    "system-ui, \"Segoe UI\", \"Microsoft YaHei\", \"Noto Sans SC\", Arial, sans-serif";
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub const DEFAULT_UI_FONT_FAMILY: &str =
+    "system-ui, \"Noto Sans SC\", \"Noto Sans CJK SC\", \"Helvetica Neue\", Arial, sans-serif";
 
 const BUILT_IN_MONOSPACE_FONTS: &[&str] = &["JetBrains Mono"];
 const GENERIC_MONOSPACE_FAMILY: &str = "monospace";

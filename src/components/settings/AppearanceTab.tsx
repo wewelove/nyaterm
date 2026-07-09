@@ -53,10 +53,42 @@ const PACKAGE_FONT_INFOS: FontInfo[] = [
   { family: "Noto Sans SC Variable", monospace: false },
   { family: "Inter", monospace: false },
 ];
-const GENERIC_TERMINAL_FONTS = ["monospace"];
+const TERMINAL_FALLBACK_FONT_OPTIONS = [
+  "Cascadia Mono",
+  "SF Mono",
+  "Menlo",
+  "Monaco",
+  "Consolas",
+  "Liberation Mono",
+  "monospace",
+];
+const SYSTEM_UI_FONT_OPTIONS = [
+  "system-ui",
+  "-apple-system",
+  "BlinkMacSystemFont",
+  "Segoe UI",
+  "PingFang SC",
+  "Microsoft YaHei",
+  "Noto Sans SC",
+  "Noto Sans CJK SC",
+  "Helvetica Neue",
+  "Arial",
+  "sans-serif",
+  "serif",
+  "monospace",
+];
 const UI_FALLBACK_FONT = "Inter";
 const TERMINAL_FALLBACK_FONT = "JetBrains Mono";
-const GENERIC_FONT_FAMILIES = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy"]);
+const GENERIC_FONT_FAMILIES = new Set([
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "-apple-system",
+  "blinkmacsystemfont",
+]);
 const PACKAGE_FONTS = PACKAGE_FONT_INFOS.map((font) => font.family);
 const PACKAGE_BUILT_IN_FONTS = new Set(PACKAGE_FONTS.map((font) => font.toLowerCase()));
 const TERMINAL_BUILT_IN_FONTS = new Set(
@@ -304,6 +336,7 @@ interface FontStackSectionProps {
   fallbackFont: string;
   previewFallback: "sans-serif" | "monospace";
   isLoadingOptions: boolean;
+  hasLoadedOptions: boolean;
   onRequestOptions: () => void;
   onChange: (value: string) => void;
 }
@@ -317,6 +350,7 @@ function FontStackSection({
   fallbackFont,
   previewFallback,
   isLoadingOptions,
+  hasLoadedOptions,
   onRequestOptions,
   onChange,
 }: FontStackSectionProps) {
@@ -349,6 +383,7 @@ function FontStackSection({
         const selectValue = selectedFont ?? font;
         const isKnownFont = Boolean(selectedFont);
         const showLoading = openFontIndex === idx && isLoadingOptions;
+        const showUnknownMarker = openFontIndex === idx && hasLoadedOptions && !isKnownFont;
 
         return (
           <div
@@ -398,7 +433,8 @@ function FontStackSection({
                       disabled
                       style={{ fontFamily: previewFontFamily(font, previewFallback) }}
                     >
-                      {font} (Custom/Missing)
+                      {font}
+                      {showUnknownMarker && " (Custom/Missing)"}
                     </SelectItem>
                   )}
                   {options.map((option) => (
@@ -450,15 +486,17 @@ export function AppearanceTab() {
       mergeFontFamilies(
         PACKAGE_FONTS,
         systemFontInfos.map((font) => font.family),
+        SYSTEM_UI_FONT_OPTIONS,
       ),
     [systemFontInfos],
   );
+  const hasLoadedSystemFontInfos = cachedSystemFontInfos !== null;
   const terminalFonts = useMemo(
     () =>
       mergeFontFamilies(
         PACKAGE_FONT_INFOS.filter((font) => font.monospace).map((font) => font.family),
         systemFontInfos.filter((font) => font.monospace).map((font) => font.family),
-        GENERIC_TERMINAL_FONTS,
+        TERMINAL_FALLBACK_FONT_OPTIONS,
       ),
     [systemFontInfos],
   );
@@ -587,6 +625,7 @@ export function AppearanceTab() {
         fallbackFont={UI_FALLBACK_FONT}
         previewFallback="sans-serif"
         isLoadingOptions={systemFontInfosLoading}
+        hasLoadedOptions={hasLoadedSystemFontInfos}
         onRequestOptions={loadSystemFontInfos}
         onChange={(uiFontFamily) =>
           updateAppearance({
@@ -604,6 +643,7 @@ export function AppearanceTab() {
         fallbackFont={TERMINAL_FALLBACK_FONT}
         previewFallback="monospace"
         isLoadingOptions={systemFontInfosLoading}
+        hasLoadedOptions={hasLoadedSystemFontInfos}
         onRequestOptions={loadSystemFontInfos}
         onChange={(terminalFontFamily) =>
           updateAppearance({

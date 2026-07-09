@@ -12,6 +12,7 @@ import {
 import { useAppLockState } from "@/hooks/useAppLockState";
 import { DEFAULT_AI_SETTINGS } from "@/lib/aiSettings";
 import { DEFAULT_CLOUD_SYNC_SETTINGS } from "@/lib/cloudSync";
+import { DEFAULT_TERMINAL_FONT_FAMILY, getDefaultUiFontFamily } from "@/lib/defaultFonts";
 import { getErrorMessage } from "@/lib/errors";
 import {
   DEFAULT_COMMAND_SUGGESTION_MAX_CHARS,
@@ -192,8 +193,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   appearance: {
     theme: "github-dark",
-    font_family: 'JetBrains Mono, Consolas, "Cascadia Mono", monospace',
-    ui_font_family: 'JetBrains Mono, "Noto Sans SC Variable", Inter, sans-serif',
+    font_family: DEFAULT_TERMINAL_FONT_FAMILY,
+    ui_font_family: getDefaultUiFontFamily(),
     font_size: DEFAULT_TERMINAL_FONT_SIZE,
     font_weight: 400,
     font_weight_bold: 700,
