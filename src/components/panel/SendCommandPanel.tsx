@@ -317,8 +317,6 @@ export default function SendCommandPanel({
     dataType === "hex"
       ? parsedHexBytes !== null && parsedHexBytes.length > 0
       : commandText.length > 0;
-  const targetAvailable = targetKind === "serial" ? !!serialSessionId : shellSessionIds.length > 0;
-
   const cancelSend = useCallback(() => {
     cancelRef.current = true;
     if (timerRef.current !== null) {
@@ -661,16 +659,6 @@ export default function SendCommandPanel({
     });
   }, []);
 
-  const renderUnavailable = useCallback(
-    (title: string, description: string) => (
-      <div className="h-full flex flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 text-center">
-        <div className="text-xs font-medium text-foreground">{title}</div>
-        <div className="text-[0.6875rem] text-muted-foreground">{description}</div>
-      </div>
-    ),
-    [],
-  );
-
   const progressPercent =
     progress?.totalUnits && progress.totalUnits > 0
       ? Math.min(100, Math.round((progress.completedUnits / progress.totalUnits) * 100))
@@ -688,20 +676,6 @@ export default function SendCommandPanel({
   const hexPreview = buildHexPreview(previewBytes);
   const hexGuideRows = useMemo(() => buildHexGuideRows(hexText), [hexText]);
   const hasHexGuides = hexGuideRows.some((row) => row.guidePositions.length > 0);
-
-  if (!targetAvailable) {
-    return (
-      <div className="h-full flex flex-col overflow-hidden px-2 py-1.5 gap-1">
-        {renderUnavailable(
-          t("serialSend.unavailable", "No active session available"),
-          t(
-            "serialSend.unavailableDesc",
-            "Switch to a connected serial, SSH, local terminal, or Telnet tab to send data.",
-          ),
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden px-2 py-1.5 gap-2">
