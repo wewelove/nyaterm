@@ -265,6 +265,7 @@ export default function TerminalGutter({
       style={{
         boxSizing: "content-box",
         width: gutterWidth,
+        marginRight: separatorGap,
         paddingTop: layout.topPadding,
         borderColor:
           "color-mix(in srgb, var(--df-terminal-fg, var(--df-text)) 18%, var(--df-terminal-bg, var(--df-bg-terminal)))",
@@ -281,7 +282,7 @@ export default function TerminalGutter({
             height: layout.rowHeight,
             lineHeight: `${layout.rowHeight}px`,
             columnGap,
-            paddingRight: innerRightPadding + separatorGap,
+            paddingRight: innerRightPadding,
           }}
         >
           {showTimestamps && (
