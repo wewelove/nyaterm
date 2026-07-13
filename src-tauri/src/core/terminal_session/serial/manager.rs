@@ -45,6 +45,7 @@ pub async fn create_serial_session(
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
     let reader_shutdown_tx = cmd_tx.clone();
+    let output_control_tx = cmd_tx.clone();
 
     let session_info = SessionInfo {
         id: session_id.clone(),
@@ -79,6 +80,7 @@ pub async fn create_serial_session(
             mgr,
             cmd_rx,
             reader_shutdown_tx,
+            output_control_tx,
             rt_handle,
             config,
             connection_id,

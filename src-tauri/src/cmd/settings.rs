@@ -70,8 +70,15 @@ pub async fn save_app_settings(
     app: tauri::AppHandle,
     manager: tauri::State<'_, Arc<CloudSyncManager>>,
     settings: config::AppSettings,
+    allow_master_password_change: Option<bool>,
 ) -> AppResult<()> {
-    persist_app_settings(&app, manager.inner(), settings).await
+    persist_app_settings(
+        &app,
+        manager.inner(),
+        settings,
+        allow_master_password_change.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -90,7 +97,7 @@ pub async fn import_keyword_highlight_rules(
             uuid::Uuid::new_v4().to_string()
         })?;
 
-    persist_app_settings(&app, manager.inner(), settings).await?;
+    persist_app_settings(&app, manager.inner(), settings, false).await?;
     Ok(result)
 }
 
@@ -98,6 +105,7 @@ pub async fn persist_app_settings(
     app: &tauri::AppHandle,
     manager: &Arc<CloudSyncManager>,
     mut settings: config::AppSettings,
+    allow_master_password_change: bool,
 ) -> AppResult<()> {
     settings.appearance.normalize_terminal_font_family();
     settings.appearance.normalize_window_transparency();
@@ -120,18 +128,27 @@ pub async fn persist_app_settings(
     };
     let should_apply_window_transparency =
         window_transparency_settings_changed(&existing.appearance, &settings.appearance);
+    let had_existing_password = existing.security.master_password.is_some();
 
+    let master_password_action: &'static str;
     match settings.security.master_password.as_deref() {
         Some("__SET__") => {
+            master_password_action = "preserve_existing";
             settings.security.master_password = existing.security.master_password;
         }
         Some("") => {
+            log_master_password_persist_action("reject_empty", had_existing_password);
             return Err(AppError::Config(
                 "Master password cannot be empty when enabled".to_string(),
             ));
         }
         None => {
-            if existing.security.master_password.is_some() {
+            master_password_action = if had_existing_password {
+                "remove_existing"
+            } else {
+                "keep_unset"
+            };
+            if had_existing_password {
                 let old_plain = crypto::decrypt_settings_secret(
                     existing.security.master_password.as_deref().unwrap(),
                 )?;
@@ -141,6 +158,22 @@ pub async fn persist_app_settings(
             settings.security.master_password = None;
         }
         Some(plain) => {
+            if !allow_master_password_change {
+                let action = if had_existing_password {
+                    "reject_unconfirmed_replace"
+                } else {
+                    "reject_unconfirmed_set"
+                };
+                log_master_password_persist_action(action, had_existing_password);
+                return Err(AppError::Config(
+                    "Master password change requires explicit confirmation".to_string(),
+                ));
+            }
+            master_password_action = if had_existing_password {
+                "replace_existing"
+            } else {
+                "set_new"
+            };
             let old_plain = existing
                 .security
                 .master_password
@@ -153,6 +186,7 @@ pub async fn persist_app_settings(
             settings.security.master_password = Some(crypto::encrypt_settings_secret(plain)?);
         }
     }
+    log_master_password_persist_action(master_password_action, had_existing_password);
     let merged_cloud_sync =
         config::merge_masked_cloud_sync_settings(&existing.cloud_sync, settings.cloud_sync);
     settings.cloud_sync = merged_cloud_sync.clone();
@@ -209,10 +243,57 @@ pub fn verify_master_password(app: tauri::AppHandle, password: String) -> AppRes
     match settings.security.master_password {
         Some(ref ct) => {
             let stored = crypto::decrypt_settings_secret(ct)?;
-            Ok(stored == password)
+            let verified = stored == password;
+            observability::log_event(StructuredLog {
+                level: StructuredLogLevel::Debug,
+                domain: "security.master_password".to_string(),
+                event: "verify.result".to_string(),
+                message: "Master password verification completed".to_string(),
+                ids: None,
+                data: Some(serde_json::json!({
+                    "has_stored_password": true,
+                    "password_length": password.chars().count(),
+                    "verified": verified,
+                })),
+                error: None,
+                client_timestamp: None,
+            });
+            Ok(verified)
         }
-        None => Ok(true),
+        None => {
+            observability::log_event(StructuredLog {
+                level: StructuredLogLevel::Debug,
+                domain: "security.master_password".to_string(),
+                event: "verify.result".to_string(),
+                message: "Master password verification completed".to_string(),
+                ids: None,
+                data: Some(serde_json::json!({
+                    "has_stored_password": false,
+                    "password_length": password.chars().count(),
+                    "verified": true,
+                })),
+                error: None,
+                client_timestamp: None,
+            });
+            Ok(true)
+        }
     }
+}
+
+fn log_master_password_persist_action(action: &'static str, had_existing_password: bool) {
+    observability::log_event(StructuredLog {
+        level: StructuredLogLevel::Debug,
+        domain: "security.master_password".to_string(),
+        event: "persist.action".to_string(),
+        message: "Master password persistence branch selected".to_string(),
+        ids: None,
+        data: Some(serde_json::json!({
+            "action": action,
+            "had_existing_password": had_existing_password,
+        })),
+        error: None,
+        client_timestamp: None,
+    });
 }
 
 fn parse_keyword_highlight_import(raw: &str) -> AppResult<Vec<config::KeywordHighlightRule>> {

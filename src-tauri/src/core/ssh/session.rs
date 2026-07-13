@@ -246,6 +246,7 @@ async fn create_ssh_session_inner(
     let cwd: SharedCwd = Arc::new(tokio::sync::Mutex::new(None));
     let ssh_config_arc: Arc<dyn std::any::Any + Send + Sync> = Arc::new(config.clone());
     let ssh_handle_arc: Arc<dyn std::any::Any + Send + Sync> = ssh_connection.clone();
+    let output_control_tx = cmd_tx.clone();
 
     let session_handle = SessionHandle {
         info: session_info,
@@ -285,6 +286,7 @@ async fn create_ssh_session_inner(
             channel,
             io_handle,
             cmd_rx,
+            output_control_tx,
             cwd,
             io_connection_id,
             injection_script,
@@ -397,6 +399,7 @@ pub async fn create_multiplexed_ssh_session(
     let cwd: SharedCwd = Arc::new(tokio::sync::Mutex::new(None));
     let ssh_config_arc: Arc<dyn std::any::Any + Send + Sync> = Arc::new(config.clone());
     let ssh_handle_arc: Arc<dyn std::any::Any + Send + Sync> = ssh_connection.clone();
+    let output_control_tx = cmd_tx.clone();
 
     let session_handle = SessionHandle {
         info: session_info,
@@ -423,6 +426,7 @@ pub async fn create_multiplexed_ssh_session(
             channel,
             io_handle,
             cmd_rx,
+            output_control_tx,
             cwd,
             io_connection_id,
             injection_script,

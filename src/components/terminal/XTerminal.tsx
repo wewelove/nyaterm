@@ -1,3 +1,4 @@
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -184,6 +185,17 @@ interface SessionCommandAcceptedEvent {
   command: string;
 }
 
+interface TerminalOutputPayload {
+  data: string;
+  bytes: number;
+  droppedBytes?: number;
+}
+
+interface QueuedOutputChunk {
+  data: string;
+  bytes: number;
+}
+
 function serializeTerminalText(terminal: Terminal): string {
   const buffer = terminal.buffer.active;
   const lastLine = Math.min(buffer.length - 1, buffer.baseY + buffer.cursorY);
@@ -229,7 +241,7 @@ export default function XTerminal({
   const [terminalReady, setTerminalReady] = useState(false);
   const [performanceMode, setPerformanceMode] = useState<PerformanceMode>("normal");
   const [performanceOverlay, setPerformanceOverlay] = useState<PerformanceOverlayState>(null);
-  const [skippedOutputChars, setSkippedOutputChars] = useState(0);
+  const [skippedOutputBytes, setSkippedOutputBytes] = useState(0);
   const [multiLinePasteText, setMultiLinePasteText] = useState<string | null>(null);
   const [isExternalDropActive, setIsExternalDropActive] = useState(false);
   const aiCapturingRef = useRef(false);
@@ -280,14 +292,16 @@ export default function XTerminal({
   const activeRef = useRef(active);
   const performanceModeRef = useRef<PerformanceMode>("normal");
   const performanceOverlayTimerRef = useRef<number | null>(null);
-  const skippedOutputCharsRef = useRef(0);
-  const queuedOutputChunksRef = useRef<string[]>([]);
-  const queuedOutputCharsRef = useRef(0);
-  const unackedOutputCharsRef = useRef(0);
-  const backendOutputPausedRef = useRef(false);
-  const backendOutputPauseSupportedRef = useRef(true);
-  const backendOutputPauseRequestRef = useRef<Promise<void> | null>(null);
+  const skippedOutputBytesRef = useRef(0);
+  const queuedOutputChunksRef = useRef<QueuedOutputChunk[]>([]);
+  const queuedOutputBytesRef = useRef(0);
+  const writingOutputBytesRef = useRef(0);
+  const backendUnackedOutputBytesRef = useRef(0);
+  const pendingOutputAckBytesRef = useRef(0);
+  const outputAckTimerRef = useRef<number | null>(null);
   const pendingOutputFlushRef = useRef<number | null>(null);
+  const pendingOutputFlushTimerRef = useRef<number | null>(null);
+  const lastAlternateScreenWriteAtRef = useRef(0);
   const handleVisibilityChangeRef = useRef<(() => void) | null>(null);
   const replaceInputCommandRef = useRef<((command: string) => void) | null>(null);
   const lastErrorNoticeAtRef = useRef(0);
@@ -536,12 +550,12 @@ export default function XTerminal({
     lineTimestampsRef.current = new Map();
     gutterLineOffsetRef.current = 0;
     queuedOutputChunksRef.current = [];
-    queuedOutputCharsRef.current = 0;
-    unackedOutputCharsRef.current = 0;
-    backendOutputPausedRef.current = false;
-    backendOutputPauseSupportedRef.current = true;
-    backendOutputPauseRequestRef.current = null;
-    skippedOutputCharsRef.current = 0;
+    queuedOutputBytesRef.current = 0;
+    writingOutputBytesRef.current = 0;
+    backendUnackedOutputBytesRef.current = 0;
+    pendingOutputAckBytesRef.current = 0;
+    lastAlternateScreenWriteAtRef.current = 0;
+    skippedOutputBytesRef.current = 0;
     outputWriteInFlightRef.current = false;
     outputWriteQueueRef.current = Promise.resolve();
     disconnectedRef.current = false;
@@ -550,7 +564,7 @@ export default function XTerminal({
     resetCredentialAutofill();
     setPerformanceMode("normal");
     setPerformanceOverlay(null);
-    setSkippedOutputChars(0);
+    setSkippedOutputBytes(0);
     clearPerformanceOverlayTimer();
     let disposed = false;
 
@@ -1372,133 +1386,199 @@ export default function XTerminal({
       }
     };
 
-    const getBacklogCap = () =>
-      visibleRef.current
-        ? XTERM_PERFORMANCE_CONFIG.output.visibleBacklogCap
-        : XTERM_PERFORMANCE_CONFIG.output.hiddenBacklogCap;
+    const utf8Encoder = new TextEncoder();
+    const outputAckBatchBytes = 64 * 1024;
+    const outputAckDebounceMs = 16;
 
-    const getRecoveryThreshold = () =>
-      visibleRef.current
-        ? XTERM_PERFORMANCE_CONFIG.output.visibleRecoveryThreshold
-        : XTERM_PERFORMANCE_CONFIG.output.hiddenRecoveryThreshold;
+    const isAlternateScreenActive = () => terminal.buffer.active.type === "alternate";
 
-    const getPauseHighWatermark = () =>
-      visibleRef.current
-        ? XTERM_PERFORMANCE_CONFIG.output.visiblePauseHighWatermark
-        : XTERM_PERFORMANCE_CONFIG.output.hiddenPauseHighWatermark;
-
-    const getPauseLowWatermark = () =>
-      visibleRef.current
-        ? XTERM_PERFORMANCE_CONFIG.output.visiblePauseLowWatermark
-        : XTERM_PERFORMANCE_CONFIG.output.hiddenPauseLowWatermark;
-
-    const getPendingOutputChars = () =>
-      queuedOutputCharsRef.current + unackedOutputCharsRef.current;
-
-    const setBackendOutputPaused = (paused: boolean) => {
-      if (backendOutputPausedRef.current === paused) return;
-      if (!backendOutputPauseSupportedRef.current) return;
-
-      backendOutputPausedRef.current = paused;
-      backendOutputPauseRequestRef.current = invoke("set_session_output_paused", {
-        sessionId,
-        paused,
-      })
-        .then(() => {
-          backendOutputPauseRequestRef.current = null;
-        })
-        .catch(() => {
-          backendOutputPauseRequestRef.current = null;
-          backendOutputPausedRef.current = false;
-          backendOutputPauseSupportedRef.current = false;
-          const dropped = trimQueuedOutput(getBacklogCap());
-          noteSkippedOutput(dropped);
-        });
-    };
-
-    const syncOutputBackpressure = () => {
-      if (!isTerminalAlive()) return;
-      const pendingChars = getPendingOutputChars();
-      if (!backendOutputPausedRef.current && pendingChars > getPauseHighWatermark()) {
-        setBackendOutputPaused(true);
-      } else if (backendOutputPausedRef.current && pendingChars < getPauseLowWatermark()) {
-        setBackendOutputPaused(false);
+    const getBacklogCapBytes = () => {
+      if (!visibleRef.current) {
+        return XTERM_PERFORMANCE_CONFIG.output.hiddenBacklogCapBytes;
       }
+      return isAlternateScreenActive()
+        ? XTERM_PERFORMANCE_CONFIG.output.alternateScreenBacklogCapBytes
+        : XTERM_PERFORMANCE_CONFIG.output.visibleBacklogCapBytes;
     };
+
+    const getWriteChunkBytes = () =>
+      isAlternateScreenActive()
+        ? XTERM_PERFORMANCE_CONFIG.output.alternateScreenWriteChunkBytes
+        : XTERM_PERFORMANCE_CONFIG.output.writeChunkBytes;
+
+    const getAlternateScreenWriteIntervalMs = () =>
+      1000 / XTERM_PERFORMANCE_CONFIG.output.alternateScreenMaxWriteFps;
+
+    const shouldThrottleAlternateScreenWrite = () =>
+      isAlternateScreenActive() &&
+      queuedOutputBytesRef.current >
+        XTERM_PERFORMANCE_CONFIG.output.alternateScreenThrottleBacklogBytes;
+
+    const getRecoveryThresholdBytes = () =>
+      visibleRef.current
+        ? XTERM_PERFORMANCE_CONFIG.output.visibleRecoveryThresholdBytes
+        : XTERM_PERFORMANCE_CONFIG.output.hiddenRecoveryThresholdBytes;
+
+    const getPendingOutputBytes = () =>
+      queuedOutputBytesRef.current +
+      writingOutputBytesRef.current +
+      pendingOutputAckBytesRef.current;
 
     const noteSkippedOutput = (count: number) => {
       if (count <= 0) return;
-      skippedOutputCharsRef.current += count;
-      setSkippedOutputChars(skippedOutputCharsRef.current);
+      skippedOutputBytesRef.current += count;
+      setSkippedOutputBytes(skippedOutputBytesRef.current);
       enterOverloadedMode();
     };
 
-    const trimQueuedOutput = (maxChars: number) => {
-      if (backendOutputPauseSupportedRef.current) {
-        return 0;
+    const sendOutputAck = (bytes: number) => {
+      if (bytes <= 0) return;
+      const ackBytes = Math.min(bytes, backendUnackedOutputBytesRef.current);
+      if (ackBytes <= 0) return;
+      backendUnackedOutputBytesRef.current = Math.max(
+        0,
+        backendUnackedOutputBytesRef.current - ackBytes,
+      );
+      tauriInvoke("ack_session_output", { sessionId, bytes: ackBytes }).catch(() => {});
+    };
+
+    const clearOutputAckTimer = () => {
+      if (outputAckTimerRef.current !== null) {
+        window.clearTimeout(outputAckTimerRef.current);
+        outputAckTimerRef.current = null;
+      }
+    };
+
+    const clearPendingOutputFlushTimer = () => {
+      if (pendingOutputFlushTimerRef.current !== null) {
+        window.clearTimeout(pendingOutputFlushTimerRef.current);
+        pendingOutputFlushTimerRef.current = null;
+      }
+    };
+
+    const scheduleOutputAckFlush = () => {
+      if (outputAckTimerRef.current !== null) return;
+      outputAckTimerRef.current = window.setTimeout(() => {
+        outputAckTimerRef.current = null;
+        flushPendingOutputAck(true);
+      }, outputAckDebounceMs);
+    };
+
+    const flushPendingOutputAck = (force = false) => {
+      const bytes = pendingOutputAckBytesRef.current;
+      if (bytes <= 0) {
+        if (force) {
+          clearOutputAckTimer();
+        }
+        return;
+      }
+      if (!force && bytes < outputAckBatchBytes) {
+        scheduleOutputAckFlush();
+        return;
+      }
+      clearOutputAckTimer();
+      pendingOutputAckBytesRef.current = 0;
+      sendOutputAck(bytes);
+    };
+
+    const splitOutputChunk = (chunk: QueuedOutputChunk, maxBytes: number): QueuedOutputChunk[] => {
+      if (chunk.bytes <= maxBytes) {
+        return [chunk, { data: "", bytes: 0 }];
       }
 
+      let index = 0;
+      let bytes = 0;
+      for (const char of chunk.data) {
+        const charBytes = utf8Encoder.encode(char).length;
+        if (bytes > 0 && bytes + charBytes > maxBytes) {
+          break;
+        }
+        index += char.length;
+        bytes += charBytes;
+        if (bytes >= maxBytes) {
+          break;
+        }
+      }
+
+      if (index <= 0) {
+        const [firstChar = ""] = chunk.data;
+        index = firstChar.length;
+        bytes = utf8Encoder.encode(firstChar).length;
+      }
+
+      return [
+        { data: chunk.data.slice(0, index), bytes },
+        { data: chunk.data.slice(index), bytes: Math.max(0, chunk.bytes - bytes) },
+      ];
+    };
+
+    const trimQueuedOutput = (maxBytes: number) => {
       let dropped = 0;
 
-      while (queuedOutputCharsRef.current > maxChars && queuedOutputChunksRef.current.length > 0) {
-        const overflow = queuedOutputCharsRef.current - maxChars;
+      while (queuedOutputBytesRef.current > maxBytes && queuedOutputChunksRef.current.length > 0) {
+        const overflow = queuedOutputBytesRef.current - maxBytes;
         const chunk = queuedOutputChunksRef.current[0];
         if (!chunk) break;
 
-        if (chunk.length <= overflow) {
+        if (chunk.bytes <= overflow) {
           queuedOutputChunksRef.current.shift();
-          queuedOutputCharsRef.current -= chunk.length;
-          dropped += chunk.length;
+          queuedOutputBytesRef.current -= chunk.bytes;
+          dropped += chunk.bytes;
           continue;
         }
 
-        queuedOutputChunksRef.current[0] = chunk.slice(overflow);
-        queuedOutputCharsRef.current -= overflow;
-        dropped += overflow;
+        const [head, tail] = splitOutputChunk(chunk, overflow);
+        queuedOutputChunksRef.current[0] = tail;
+        queuedOutputBytesRef.current -= head.bytes;
+        dropped += head.bytes;
       }
 
+      sendOutputAck(dropped);
       return dropped;
     };
 
-    const dequeueOutputChunk = (maxChars: number) => {
-      if (maxChars <= 0 || queuedOutputChunksRef.current.length === 0) {
-        return "";
+    const dequeueOutputChunk = (maxBytes: number): QueuedOutputChunk | null => {
+      if (maxBytes <= 0 || queuedOutputChunksRef.current.length === 0) {
+        return null;
       }
 
-      let remaining = maxChars;
+      let remaining = maxBytes;
       const parts: string[] = [];
+      let bytes = 0;
 
       while (remaining > 0 && queuedOutputChunksRef.current.length > 0) {
         const chunk = queuedOutputChunksRef.current[0];
         if (!chunk) break;
 
-        if (chunk.length <= remaining) {
-          parts.push(chunk);
+        if (chunk.bytes <= remaining) {
+          parts.push(chunk.data);
           queuedOutputChunksRef.current.shift();
-          queuedOutputCharsRef.current -= chunk.length;
-          remaining -= chunk.length;
+          queuedOutputBytesRef.current -= chunk.bytes;
+          remaining -= chunk.bytes;
+          bytes += chunk.bytes;
           continue;
         }
 
-        parts.push(chunk.slice(0, remaining));
-        queuedOutputChunksRef.current[0] = chunk.slice(remaining);
-        queuedOutputCharsRef.current -= remaining;
-        remaining = 0;
+        const [head, tail] = splitOutputChunk(chunk, remaining);
+        parts.push(head.data);
+        queuedOutputChunksRef.current[0] = tail;
+        queuedOutputBytesRef.current -= head.bytes;
+        bytes += head.bytes;
+        remaining -= head.bytes;
       }
 
-      return parts.join("");
+      return parts.length > 0 ? { data: parts.join(""), bytes } : null;
     };
 
     const maybeRecoverPerformanceMode = () => {
       if (!isTerminalAlive()) return;
       if (performanceModeRef.current !== "overloaded") return;
-      if (getPendingOutputChars() > getRecoveryThreshold()) return;
+      if (getPendingOutputBytes() > getRecoveryThresholdBytes()) return;
       exitOverloadedMode();
     };
 
-    const writeChunkToTerminal = (payload: string) => {
-      unackedOutputCharsRef.current += payload.length;
-      syncOutputBackpressure();
+    const writeChunkToTerminal = (payload: QueuedOutputChunk) => {
+      writingOutputBytesRef.current += payload.bytes;
       outputWriteInFlightRef.current = true;
       outputWriteQueueRef.current = outputWriteQueueRef.current
         .catch(() => {})
@@ -1506,12 +1586,11 @@ export default function XTerminal({
           () =>
             new Promise<void>((resolve) => {
               if (!isTerminalAlive()) {
-                unackedOutputCharsRef.current = Math.max(
+                writingOutputBytesRef.current = Math.max(
                   0,
-                  unackedOutputCharsRef.current - payload.length,
+                  writingOutputBytesRef.current - payload.bytes,
                 );
                 outputWriteInFlightRef.current = false;
-                syncOutputBackpressure();
                 resolve();
                 return;
               }
@@ -1522,15 +1601,15 @@ export default function XTerminal({
                 beforeOffset + terminal.buffer.active.baseY + terminal.buffer.active.cursorY;
 
               try {
-                terminal.write(payload, () => {
-                  unackedOutputCharsRef.current = Math.max(
+                terminal.write(payload.data, () => {
+                  writingOutputBytesRef.current = Math.max(
                     0,
-                    unackedOutputCharsRef.current - payload.length,
+                    writingOutputBytesRef.current - payload.bytes,
                   );
+                  pendingOutputAckBytesRef.current += payload.bytes;
                   outputWriteInFlightRef.current = false;
 
                   if (!isTerminalAlive()) {
-                    syncOutputBackpressure();
                     resolve();
                     return;
                   }
@@ -1541,26 +1620,28 @@ export default function XTerminal({
 
                   stampWrittenLines(beforeLine, afterLine, ts);
 
-                  syncOutputBackpressure();
+                  flushPendingOutputAck(queuedOutputBytesRef.current === 0);
                   maybeRecoverPerformanceMode();
                   resolve();
 
                   if (
                     visibleRef.current &&
                     isTerminalAlive() &&
-                    queuedOutputCharsRef.current > 0 &&
+                    queuedOutputBytesRef.current > 0 &&
                     pendingOutputFlushRef.current === null
                   ) {
                     pendingOutputFlushRef.current = requestAnimationFrame(flushPendingOutput);
                   }
                 });
               } catch {
-                unackedOutputCharsRef.current = Math.max(
+                writingOutputBytesRef.current = Math.max(
                   0,
-                  unackedOutputCharsRef.current - payload.length,
+                  writingOutputBytesRef.current - payload.bytes,
                 );
+                pendingOutputAckBytesRef.current += payload.bytes;
                 outputWriteInFlightRef.current = false;
-                syncOutputBackpressure();
+                noteSkippedOutput(payload.bytes);
+                flushPendingOutputAck(true);
                 maybeRecoverPerformanceMode();
                 resolve();
               }
@@ -1574,20 +1655,49 @@ export default function XTerminal({
         return;
       }
 
-      const payload = dequeueOutputChunk(XTERM_PERFORMANCE_CONFIG.output.writeChunkChars);
+      const dropped = trimQueuedOutput(getBacklogCapBytes());
+      noteSkippedOutput(dropped);
+
+      if (shouldThrottleAlternateScreenWrite()) {
+        const now = Date.now();
+        const intervalMs = getAlternateScreenWriteIntervalMs();
+        const elapsedMs = now - lastAlternateScreenWriteAtRef.current;
+        if (lastAlternateScreenWriteAtRef.current > 0 && elapsedMs < intervalMs) {
+          clearPendingOutputFlushTimer();
+          pendingOutputFlushTimerRef.current = window.setTimeout(
+            () => {
+              pendingOutputFlushTimerRef.current = null;
+              schedulePendingOutputFlush();
+            },
+            Math.max(1, intervalMs - elapsedMs),
+          );
+          return;
+        }
+      }
+
+      const payload = dequeueOutputChunk(getWriteChunkBytes());
 
       if (!payload) {
-        syncOutputBackpressure();
+        flushPendingOutputAck(true);
         maybeRecoverPerformanceMode();
         return;
       }
 
+      if (isAlternateScreenActive()) {
+        lastAlternateScreenWriteAtRef.current = Date.now();
+      }
       writeChunkToTerminal(payload);
     };
 
     const schedulePendingOutputFlush = () => {
       if (!visibleRef.current || !isTerminalAlive()) return;
-      if (outputWriteInFlightRef.current || pendingOutputFlushRef.current !== null) return;
+      if (
+        outputWriteInFlightRef.current ||
+        pendingOutputFlushRef.current !== null ||
+        pendingOutputFlushTimerRef.current !== null
+      ) {
+        return;
+      }
       pendingOutputFlushRef.current = requestAnimationFrame(flushPendingOutput);
     };
 
@@ -1598,10 +1708,15 @@ export default function XTerminal({
         cancelAnimationFrame(pendingOutputFlushRef.current);
         pendingOutputFlushRef.current = null;
       }
+      if (!visibleRef.current) {
+        clearPendingOutputFlushTimer();
+      }
 
-      syncOutputBackpressure();
-      const dropped = trimQueuedOutput(getBacklogCap());
-      noteSkippedOutput(dropped);
+      if (visibleRef.current) {
+        const dropped = trimQueuedOutput(getBacklogCapBytes());
+        noteSkippedOutput(dropped);
+      }
+      flushPendingOutputAck(!visibleRef.current);
       maybeRecoverPerformanceMode();
 
       if (visibleRef.current) {
@@ -1612,36 +1727,46 @@ export default function XTerminal({
     handleVisibilityChangeRef.current = applyVisibilityPolicy;
 
     const setupListeners = async () => {
-      const nextOutputUnlisten = await listen<string>(`terminal-output-${sessionId}`, (event) => {
-        if (!isTerminalAlive()) return;
-        queuedOutputChunksRef.current.push(event.payload);
-        queuedOutputCharsRef.current += event.payload.length;
-        syncOutputBackpressure();
-
-        const recentPayload =
-          event.payload.length > 4096 ? event.payload.slice(-4096) : event.payload;
-        updateCredentialPromptInputMode(recentPayload);
-        feedCredentialOutput(recentPayload);
-        if (visibleRef.current && hasErrorKeyword(recentPayload)) {
-          const now = Date.now();
-          if (now - lastErrorNoticeAtRef.current > 30_000) {
-            lastErrorNoticeAtRef.current = now;
-            emitAIErrorDetected({ sessionId, output: recentPayload.slice(-4000) });
+      const nextOutputUnlisten = await listen<TerminalOutputPayload>(
+        `terminal-output-${sessionId}`,
+        (event) => {
+          if (!isTerminalAlive()) return;
+          const payload = event.payload;
+          if (!payload.data || payload.bytes <= 0) {
+            noteSkippedOutput(payload.droppedBytes ?? 0);
+            return;
           }
-        }
 
-        const dropped = trimQueuedOutput(getBacklogCap());
-        noteSkippedOutput(dropped);
+          queuedOutputChunksRef.current.push({ data: payload.data, bytes: payload.bytes });
+          queuedOutputBytesRef.current += payload.bytes;
+          backendUnackedOutputBytesRef.current += payload.bytes;
 
-        if (!visibleRef.current) {
-          window.dispatchEvent(
-            new CustomEvent("nyaterm:session-output", { detail: { sessionId } }),
-          );
-          return;
-        }
+          const recentPayload =
+            payload.data.length > 4096 ? payload.data.slice(-4096) : payload.data;
+          updateCredentialPromptInputMode(recentPayload);
+          feedCredentialOutput(recentPayload);
+          if (visibleRef.current && hasErrorKeyword(recentPayload)) {
+            const now = Date.now();
+            if (now - lastErrorNoticeAtRef.current > 30_000) {
+              lastErrorNoticeAtRef.current = now;
+              emitAIErrorDetected({ sessionId, output: recentPayload.slice(-4000) });
+            }
+          }
 
-        schedulePendingOutputFlush();
-      });
+          noteSkippedOutput(payload.droppedBytes ?? 0);
+
+          if (!visibleRef.current) {
+            window.dispatchEvent(
+              new CustomEvent("nyaterm:session-output", { detail: { sessionId } }),
+            );
+            return;
+          }
+
+          const dropped = trimQueuedOutput(getBacklogCapBytes());
+          noteSkippedOutput(dropped);
+          schedulePendingOutputFlush();
+        },
+      );
       if (disposed) {
         nextOutputUnlisten();
         return;
@@ -2139,16 +2264,17 @@ export default function XTerminal({
         cancelAnimationFrame(pendingOutputFlushRef.current);
         pendingOutputFlushRef.current = null;
       }
-      if (backendOutputPausedRef.current && backendOutputPauseSupportedRef.current) {
-        invoke("set_session_output_paused", { sessionId, paused: false }).catch(() => {});
-      }
+      clearPendingOutputFlushTimer();
+      flushPendingOutputAck(true);
+      sendOutputAck(backendUnackedOutputBytesRef.current);
       clearPerformanceOverlayTimer();
       queuedOutputChunksRef.current = [];
-      queuedOutputCharsRef.current = 0;
-      unackedOutputCharsRef.current = 0;
-      backendOutputPausedRef.current = false;
-      backendOutputPauseRequestRef.current = null;
-      skippedOutputCharsRef.current = 0;
+      queuedOutputBytesRef.current = 0;
+      writingOutputBytesRef.current = 0;
+      pendingOutputAckBytesRef.current = 0;
+      backendUnackedOutputBytesRef.current = 0;
+      lastAlternateScreenWriteAtRef.current = 0;
+      skippedOutputBytesRef.current = 0;
       outputWriteInFlightRef.current = false;
       outputWriteQueueRef.current = Promise.resolve();
       const latestLifecycleState = terminalLifecycleStateRef.current;
@@ -2464,7 +2590,7 @@ export default function XTerminal({
                   performanceOverlay === "overloaded"
                     ? "terminal.largeOutputProtectionActiveDetail"
                     : "terminal.largeOutputProtectionRecoveredDetail",
-                  { skipped: formatSkippedCount(skippedOutputChars) },
+                  { skipped: formatSkippedCount(skippedOutputBytes) },
                 )}
               </div>
             </div>

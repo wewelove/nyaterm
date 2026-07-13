@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SelectItem } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,13 +17,27 @@ export function SecurityTab() {
   const { t } = useTranslation();
   const { appSettings, updateAppSettings } = useApp();
   const { committedSettings, isSaving } = useSettingsDraft();
-  const [newPassword, setNewPassword] = useState("");
 
   const masterPasswordValue = appSettings.security.master_password;
   const hasStoredMasterPassword =
     committedSettings.security.master_password === "__SET__" || masterPasswordValue === "__SET__";
+  const pendingNewPassword = useMemo(() => {
+    if (
+      typeof masterPasswordValue === "string" &&
+      masterPasswordValue !== "__SET__" &&
+      masterPasswordValue !== ""
+    ) {
+      return masterPasswordValue;
+    }
+    return "";
+  }, [masterPasswordValue]);
+  const [newPassword, setNewPassword] = useState(pendingNewPassword);
   const masterPasswordEnabled = appSettings.cloud_sync.enabled || masterPasswordValue !== undefined;
   const masterPasswordSwitchDisabled = appSettings.cloud_sync.enabled || isSaving;
+
+  useEffect(() => {
+    setNewPassword(pendingNewPassword);
+  }, [pendingNewPassword]);
 
   const handlePasswordChange = (val: string) => {
     setNewPassword(val);
@@ -94,6 +108,7 @@ export function SecurityTab() {
           }
           value={newPassword}
           disabled={!masterPasswordEnabled || isSaving}
+          autoComplete="new-password"
           onChange={(e) => handlePasswordChange(e.target.value)}
         />
       </SettingSection>

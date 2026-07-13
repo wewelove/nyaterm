@@ -4,6 +4,7 @@ fn serial_session_thread(
     manager: Arc<SessionManager>,
     mut cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
     reader_shutdown_tx: mpsc::UnboundedSender<SessionCommand>,
+    output_control_tx: mpsc::UnboundedSender<SessionCommand>,
     rt_handle: tokio::runtime::Handle,
     config: SerialConfig,
     connection_id: Option<String>,
@@ -14,7 +15,8 @@ fn serial_session_thread(
     let port_writer = Arc::new(Mutex::new(port));
     let output_event = format!("terminal-output-{}", session_id);
     let closed_event = format!("session-closed-{}", session_id);
-    let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
+    let output =
+        SessionOutputCoalescer::for_app(app.clone(), output_event.clone(), output_control_tx);
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
         .map(|state| state.inner().clone());
@@ -227,6 +229,9 @@ fn serial_session_thread(
                     *paused = false;
                     cvar.notify_all();
                 }
+            }
+            SessionCommand::AckOutput { bytes } => {
+                output.ack(bytes);
             }
             SessionCommand::ZmodemAcceptDownload { save_dir } => {
                 let mut zm = zmodem_state.lock().unwrap();

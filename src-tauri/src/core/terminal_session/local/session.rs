@@ -8,6 +8,7 @@ pub async fn create_local_session(
     tracing::info!("Creating local PTY session");
     let session_id = uuid::Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
+    let output_control_tx = cmd_tx.clone();
 
     let session_name = config
         .as_ref()
@@ -57,6 +58,7 @@ pub async fn create_local_session(
             sid,
             mgr,
             cmd_rx,
+            output_control_tx,
             rt_handle,
             cwd,
             config,
@@ -73,6 +75,7 @@ fn pty_session_thread(
     session_id: String,
     manager: Arc<SessionManager>,
     mut cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
+    output_control_tx: mpsc::UnboundedSender<SessionCommand>,
     rt_handle: tokio::runtime::Handle,
     cwd: SharedCwd,
     config: Option<LocalSessionConfig>,
@@ -201,7 +204,8 @@ fn pty_session_thread(
     let master = pair.master;
 
     let output_event = format!("terminal-output-{}", session_id);
-    let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
+    let output =
+        SessionOutputCoalescer::for_app(app.clone(), output_event.clone(), output_control_tx);
 
     let capture_processor = Arc::new(StdMutex::new(OutputCaptureProcessor::new()));
     let capture_for_reader = capture_processor.clone();
@@ -470,6 +474,9 @@ fn pty_session_thread(
                     *paused = false;
                     cvar.notify_all();
                 }
+            }
+            SessionCommand::AckOutput { bytes } => {
+                output.ack(bytes);
             }
             SessionCommand::ZmodemAcceptDownload { save_dir } => {
                 let mut zm = zmodem_state.lock().unwrap();

@@ -25,6 +25,7 @@ pub async fn create_telnet_session(
     });
     let session_id = uuid::Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
+    let output_control_tx = cmd_tx.clone();
 
     let session_info = SessionInfo {
         id: session_id.clone(),
@@ -52,7 +53,7 @@ pub async fn create_telnet_session(
     let mgr = manager.clone();
 
     tokio::spawn(async move {
-        telnet_session_task(app, sid, mgr, cmd_rx, config, connection_id).await;
+        telnet_session_task(app, sid, mgr, cmd_rx, output_control_tx, config, connection_id).await;
     });
 
     Ok(session_id)

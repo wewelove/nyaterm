@@ -543,6 +543,7 @@ pub(super) async fn ssh_io_loop(
     mut channel: russh::Channel<client::Msg>,
     _handle: SshHandle,
     mut cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
+    output_control_tx: mpsc::UnboundedSender<SessionCommand>,
     cwd: SharedCwd,
     connection_id: Option<String>,
     injection_script: Option<String>,
@@ -561,7 +562,8 @@ pub(super) async fn ssh_io_loop(
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
         .map(|state| state.inner().clone());
-    let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
+    let output =
+        SessionOutputCoalescer::for_app(app.clone(), output_event.clone(), output_control_tx);
     if let Some(notice) = initial_notice {
         output.push_owned(notice);
     }
@@ -641,6 +643,9 @@ pub(super) async fn ssh_io_loop(
                     }
                     Some(SessionCommand::ResumeOutput) => {
                         output_paused = false;
+                    }
+                    Some(SessionCommand::AckOutput { bytes }) => {
+                        output.ack(bytes);
                     }
                     Some(SessionCommand::CaptureExec { marker_id, wrapped_command, result_tx }) => {
                         capture_processor.register(marker_id, result_tx);

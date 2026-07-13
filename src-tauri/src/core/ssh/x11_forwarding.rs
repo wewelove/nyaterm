@@ -532,9 +532,14 @@ async fn handle_x11_channel(
         Ok(stream) => stream,
         Err(error) => {
             let _ = open.channel.close().await;
+            let message = local_x_server_error_message(&target.describe());
             let _ = app.emit(
                 &format!("terminal-output-{session_id}"),
-                local_x_server_error_message(&target.describe()),
+                crate::core::TerminalOutputPayload {
+                    bytes: message.len(),
+                    data: message,
+                    dropped_bytes: 0,
+                },
             );
             return Err(AppError::Channel(format!(
                 "Failed to connect local X11 server: {error}"

@@ -585,6 +585,17 @@ pub async fn set_session_output_paused(
 }
 
 #[tauri::command]
+pub async fn ack_session_output(
+    state: tauri::State<'_, Arc<SessionManager>>,
+    session_id: String,
+    bytes: usize,
+) -> AppResult<()> {
+    state
+        .send_command(&session_id, SessionCommand::AckOutput { bytes })
+        .await
+}
+
+#[tauri::command]
 pub async fn zmodem_accept_download(
     state: tauri::State<'_, Arc<SessionManager>>,
     session_id: String,

@@ -25,8 +25,20 @@ function isReloadShortcut(event: KeyboardEvent) {
   return (event.ctrlKey || event.metaKey) && event.code === "KeyR";
 }
 
-function preventWebviewReload(event: KeyboardEvent) {
-  if (!isReloadShortcut(event)) return;
+function isPrintShortcut(event: KeyboardEvent) {
+  if (event.code !== "KeyP" || event.altKey || event.shiftKey) return false;
+
+  const isMac = navigator.userAgent.includes("Mac");
+  if (isMac) return event.metaKey && !event.ctrlKey;
+  return event.ctrlKey && !event.metaKey;
+}
+
+function isReservedWebviewShortcut(event: KeyboardEvent) {
+  return isReloadShortcut(event) || isPrintShortcut(event);
+}
+
+function preventReservedWebviewShortcut(event: KeyboardEvent) {
+  if (!isReservedWebviewShortcut(event)) return;
   if (eventTargetIsInsideTerminalRoot(event)) return;
 
   event.preventDefault();
@@ -36,5 +48,5 @@ function preventWebviewReload(event: KeyboardEvent) {
 export function installWebviewReloadGuard() {
   if (installed) return;
   installed = true;
-  window.addEventListener("keydown", preventWebviewReload, true);
+  window.addEventListener("keydown", preventReservedWebviewShortcut, true);
 }

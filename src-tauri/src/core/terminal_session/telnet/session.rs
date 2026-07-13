@@ -3,6 +3,7 @@ async fn telnet_session_task(
     session_id: String,
     manager: Arc<SessionManager>,
     mut cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
+    output_control_tx: mpsc::UnboundedSender<SessionCommand>,
     config: TelnetSessionConfig,
     connection_id: Option<String>,
 ) {
@@ -46,7 +47,8 @@ async fn telnet_session_task(
     let recording_mgr: Option<Arc<RecordingManager>> = app
         .try_state::<Arc<RecordingManager>>()
         .map(|state| state.inner().clone());
-    let output = SessionOutputCoalescer::for_app(app.clone(), output_event.clone());
+    let output =
+        SessionOutputCoalescer::for_app(app.clone(), output_event.clone(), output_control_tx);
 
     let capture_processor = Arc::new(TokioMutex::new(OutputCaptureProcessor::new()));
     let capture_for_reader = capture_processor.clone();
@@ -372,6 +374,9 @@ async fn telnet_session_task(
                     }
                     Some(SessionCommand::ResumeOutput) => {
                         let _ = pause_tx.send(false);
+                    }
+                    Some(SessionCommand::AckOutput { bytes }) => {
+                        output.ack(bytes);
                     }
                     Some(SessionCommand::ZmodemAcceptDownload { save_dir }) => {
                         let mut zm = zmodem_state.lock().await;

@@ -20,6 +20,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "release": "node scripts/sync-version.mjs --commit && tsc && vite build && tauri build",
+    "build:unlock-rescue": "powershell -ExecutionPolicy Bypass -File scripts/build-unlock-rescue.ps1",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "node scripts/check-no-console.mjs && biome check src/",
@@ -32,7 +33,8 @@
     "fmt:frontend:check": "prettier --check .",
     "fmt:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "i18n:check": "prettier --check src/i18n/locales/*.json",
-    "i18n:fix": "prettier --write src/i18n/locales/*.json"
+    "i18n:fix": "prettier --write src/i18n/locales/*.json",
+    "postinstall": "node scripts/patch-xterm-webgl-clear-model.cjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

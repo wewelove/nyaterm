@@ -20,24 +20,24 @@ export const XTERM_PERFORMANCE_CONFIG = {
     maxRefreshTimeMs: 12,
   },
   output: {
-    /** Max characters to write into xterm in a single call. */
-    writeChunkChars: 32 * 1024,
-    /** Pause backend output when visible terminal backlog exceeds this size. */
-    visiblePauseHighWatermark: 256 * 1024,
-    /** Resume backend output when visible terminal backlog drops below this size. */
-    visiblePauseLowWatermark: 64 * 1024,
-    /** Pause backend output sooner while the terminal is hidden. */
-    hiddenPauseHighWatermark: 128 * 1024,
-    /** Resume backend output sooner while the terminal is hidden. */
-    hiddenPauseLowWatermark: 32 * 1024,
+    /** Max UTF-8 bytes to write into xterm in a single call. */
+    writeChunkBytes: 32 * 1024,
+    /** Lower per-frame write budget for repaint-heavy alternate-screen TUIs. */
+    alternateScreenWriteChunkBytes: 16 * 1024,
+    /** Max write rate while an alternate-screen TUI has queued repaint backlog. */
+    alternateScreenMaxWriteFps: 20,
+    /** Backlog threshold before alternate-screen repaint output is sampled. */
+    alternateScreenThrottleBacklogBytes: 32 * 1024,
     /** Queue cap while the terminal is visible. */
-    visibleBacklogCap: 1_000_000,
-    /** Queue cap while the terminal is hidden. */
-    hiddenBacklogCap: 250_000,
+    visibleBacklogCapBytes: 1_000_000,
+    /** Queue cap while an alternate-screen TUI is repainting; older frames are stale. */
+    alternateScreenBacklogCapBytes: 128 * 1024,
+    /** Queue cap while the terminal is hidden; backend flow control normally stops at 1 MiB. */
+    hiddenBacklogCapBytes: 2_000_000,
     /** Recovery threshold after overload while visible. */
-    visibleRecoveryThreshold: 200_000,
+    visibleRecoveryThresholdBytes: 200_000,
     /** Recovery threshold after overload while hidden. */
-    hiddenRecoveryThreshold: 50_000,
+    hiddenRecoveryThresholdBytes: 50_000,
     /** How long to keep the recovery notice visible. */
     recoveryNoticeMs: 3_000,
   },

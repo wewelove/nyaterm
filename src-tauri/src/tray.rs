@@ -591,9 +591,13 @@ fn toggle_minimize_to_tray(app: &AppHandle) {
         settings.general.minimize_to_tray = !settings.general.minimize_to_tray;
 
         if let Some(manager) = app_handle.try_state::<Arc<CloudSyncManager>>() {
-            if let Err(error) =
-                crate::cmd::settings::persist_app_settings(&app_handle, manager.inner(), settings)
-                    .await
+            if let Err(error) = crate::cmd::settings::persist_app_settings(
+                &app_handle,
+                manager.inner(),
+                settings,
+                false,
+            )
+            .await
             {
                 tracing::warn!("Failed to toggle minimize_to_tray from tray: {}", error);
             }

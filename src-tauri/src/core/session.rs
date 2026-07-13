@@ -104,6 +104,8 @@ pub enum SessionCommand {
     PauseOutput,
     /// Resume reading output from the underlying terminal source.
     ResumeOutput,
+    /// Renderer has finished consuming this many emitted output bytes.
+    AckOutput { bytes: usize },
     /// Terminal size change (cols × rows).
     Resize { cols: u32, rows: u32 },
     /// Close the session and clean up.
@@ -810,6 +812,15 @@ mod tests {
         assert!(matches!(
             cmd_rx.recv().await,
             Some(SessionCommand::ResumeOutput)
+        ));
+
+        manager
+            .send_command("local-flow", SessionCommand::AckOutput { bytes: 4096 })
+            .await
+            .expect("ack command");
+        assert!(matches!(
+            cmd_rx.recv().await,
+            Some(SessionCommand::AckOutput { bytes: 4096 })
         ));
     }
 

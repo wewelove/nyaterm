@@ -344,7 +344,13 @@ export default function SettingsPage() {
 
       setIsSaving(true);
       try {
-        await invoke("save_app_settings", { settings: draftSettings });
+        const allowMasterPasswordChange =
+          typeof draftSettings.security.master_password === "string" &&
+          draftSettings.security.master_password !== "__SET__";
+        await invoke("save_app_settings", {
+          settings: draftSettings,
+          allowMasterPasswordChange,
+        });
         const nextSettings = await invoke<AppSettings>("get_app_settings");
         app.replaceAppSettings(nextSettings);
         setDraftSettings(nextSettings);

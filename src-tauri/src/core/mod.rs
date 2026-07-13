@@ -25,7 +25,7 @@ pub mod watcher;
 pub mod zmodem;
 
 pub use cloud_sync::CloudSyncManager;
-pub(crate) use output::SessionOutputCoalescer;
+pub(crate) use output::{SessionOutputCoalescer, TerminalOutputPayload};
 pub use quick_commands::{
     QuickCommandsImportResult, QuickCommandsImportSource, QuickCommandsStore,
 };
