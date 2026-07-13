@@ -384,7 +384,13 @@ async fn send_command_without_capture(
     let mut bytes = command.as_bytes().to_vec();
     bytes.push(b'\n');
     session_manager
-        .send_command(terminal_session_id, SessionCommand::Write(bytes))
+        .send_command(
+            terminal_session_id,
+            SessionCommand::Write {
+                data: bytes,
+                automated: true,
+            },
+        )
         .await?;
 
     let observation = CommandObservation {

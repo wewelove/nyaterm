@@ -27,8 +27,8 @@ pub use cloud_sync::{
 pub use connection::{
     AiExecutionProfile, AppConfig, ConnectionAuth, ConnectionNetwork, ConnectionType, Group,
     SavedConnection, SessionsConfig, SftpCwdFollowMode, SftpSettings, SshAlgorithmMode,
-    SshAlgorithmPreferences, load_config, load_connection_by_id, load_sessions, save_config,
-    save_sessions,
+    SshAlgorithmPreferences, TelnetAutoLoginConfig, load_config, load_connection_by_id,
+    load_sessions, save_config, save_sessions,
 };
 #[allow(unused_imports)]
 pub use credential::{

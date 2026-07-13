@@ -227,6 +227,10 @@ export default function NewSessionPage() {
         } else if (found.type === "telnet") {
           setHost(found.host || "");
           setTelnetPort(found.port || 23);
+          setUsername(found.username || "");
+          setAuthType((found.auth?.mode === "none" ? "none" : "password") as SshAuthMode);
+          setPasswordId(found.auth?.password_id || "");
+          setHasPassword(found.auth?.has_password || false);
           setTelnetBackspaceMode(found.backspace_mode || "del");
           setTelnetRawTcpCli(found.raw_tcp_cli ?? false);
           setTelnetEnterMode(found.enter_mode || "cr");
@@ -571,16 +575,24 @@ export default function NewSessionPage() {
             })()
           : undefined;
       const auth =
-        currentTab === "ssh"
+        currentTab === "ssh" || currentTab === "telnet"
           ? (() => {
               const resolvedAuthMode: SshAuthMode =
-                authType === "password" ? "password" : authType === "key" && keyId ? "key" : "none";
+                currentTab === "telnet"
+                  ? authType === "none"
+                    ? "none"
+                    : "password"
+                  : authType === "password"
+                    ? "password"
+                    : authType === "key" && keyId
+                      ? "key"
+                      : "none";
               const nextAuth: NonNullable<SavedConnection["auth"]> = {
                 mode: resolvedAuthMode,
                 password_id: resolvedAuthMode === "password" ? passwordId || "" : "",
-                key_id: resolvedAuthMode === "key" ? keyId : undefined,
-                otp_id: otpId || undefined,
-                auto_fill_otp: otpId ? autoFillOtp : undefined,
+                key_id: currentTab === "ssh" && resolvedAuthMode === "key" ? keyId : undefined,
+                otp_id: currentTab === "ssh" ? otpId || undefined : undefined,
+                auto_fill_otp: currentTab === "ssh" && otpId ? autoFillOtp : undefined,
               };
 
               if (resolvedAuthMode !== "password" || passwordId) {
@@ -656,6 +668,8 @@ export default function NewSessionPage() {
           ? {
               host: normalizedHost,
               port: telnetPort,
+              username: normalizedUsername,
+              auth,
               backspace_mode: telnetBackspaceMode,
               raw_tcp_cli: telnetRawTcpCli,
               enter_mode: telnetEnterMode,
@@ -1056,6 +1070,16 @@ export default function NewSessionPage() {
               setHost={setHost}
               port={telnetPort}
               setPort={setTelnetPort}
+              username={username}
+              setUsername={setUsername}
+              authType={authType === "none" ? "none" : "password"}
+              setAuthType={(value) => setAuthType(value)}
+              passwordId={passwordId}
+              setPasswordId={setPasswordId}
+              password={password}
+              setPassword={setPassword}
+              hasPassword={hasPassword}
+              setHasPassword={setHasPassword}
               backspaceMode={telnetBackspaceMode}
               setBackspaceMode={setTelnetBackspaceMode}
               rawTcpCli={telnetRawTcpCli}
@@ -1072,6 +1096,7 @@ export default function NewSessionPage() {
               setSendNaws={setTelnetSendNaws}
               sendSga={telnetSendSga}
               setSendSga={setTelnetSendSga}
+              connectionId={initialData?.id || editId}
             />
           </TabsContent>
 

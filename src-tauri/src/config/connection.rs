@@ -104,6 +104,8 @@ pub enum ConnectionType {
         host: String,
         #[serde(default = "default_telnet_port")]
         port: u16,
+        #[serde(default)]
+        username: String,
         #[serde(default, skip_serializing_if = "is_ai_execution_profile_auto")]
         ai_execution_profile: AiExecutionProfile,
         #[serde(default = "default_backspace_mode_telnet")]
@@ -125,6 +127,8 @@ pub enum ConnectionType {
         send_naws: bool,
         #[serde(default = "default_true", skip_serializing_if = "is_true")]
         send_sga: bool,
+        #[serde(default, skip_serializing_if = "is_default_telnet_auto_login")]
+        auto_login: TelnetAutoLoginConfig,
     },
     Serial {
         port_name: String,
@@ -217,6 +221,51 @@ fn is_true(value: &bool) -> bool {
 }
 fn is_default_telnet_enter_mode(value: &str) -> bool {
     value == "cr"
+}
+
+// ── Telnet auto-login ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelnetAutoLoginConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub send_wake_enter: bool,
+    #[serde(default = "default_telnet_auto_login_timeout_ms")]
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub username_prompt_regex: Option<String>,
+    #[serde(default)]
+    pub password_prompt_regex: Option<String>,
+    #[serde(default)]
+    pub success_prompt_regex: Option<String>,
+    #[serde(default)]
+    pub failure_prompt_regex: Option<String>,
+    #[serde(default)]
+    pub max_retries: u8,
+}
+
+impl Default for TelnetAutoLoginConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            send_wake_enter: true,
+            timeout_ms: default_telnet_auto_login_timeout_ms(),
+            username_prompt_regex: None,
+            password_prompt_regex: None,
+            success_prompt_regex: None,
+            failure_prompt_regex: None,
+            max_retries: 0,
+        }
+    }
+}
+
+fn default_telnet_auto_login_timeout_ms() -> u64 {
+    60_000
+}
+
+fn is_default_telnet_auto_login(value: &TelnetAutoLoginConfig) -> bool {
+    value == &TelnetAutoLoginConfig::default()
 }
 
 // ── Network block ───────────────────────────────────────────────────────────
@@ -555,6 +604,7 @@ mod tests {
         .expect("connection");
 
         let ConnectionType::Telnet {
+            username,
             raw_tcp_cli,
             enter_mode,
             local_echo,
@@ -568,6 +618,7 @@ mod tests {
             panic!("expected telnet connection");
         };
 
+        assert!(username.is_empty());
         assert!(!raw_tcp_cli);
         assert_eq!(enter_mode, "cr");
         assert!(!local_echo);

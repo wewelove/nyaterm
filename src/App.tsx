@@ -164,6 +164,7 @@ async function createSessionForConnection(
       return invoke<string>("create_telnet_session", {
         connectionId: connection.id,
         createRequestId,
+        startupCommand: buildStartupCommandPayload(startupCommand),
       });
     case "serial":
       return invoke<string>("create_serial_session", {
@@ -1070,6 +1071,7 @@ function App() {
           return invoke<string>("create_telnet_session", {
             connectionId: pane.connectionId,
             createRequestId,
+            startupCommand: buildStartupCommandPayload(startupCommand),
           });
         case "Serial":
           if (!pane.connectionId) throw new Error("Missing Serial connection id");
@@ -1621,7 +1623,7 @@ function App() {
             return;
           }
           updateTabSession(tabId, sessionId);
-          if (startupCommand && pane.type !== "SSH") {
+          if (startupCommand && pane.type !== "SSH" && pane.type !== "Telnet") {
             void sendStartupCommandToSession(sessionId, startupCommand).catch((error) => {
               logger.error({
                 domain: "session.lifecycle",

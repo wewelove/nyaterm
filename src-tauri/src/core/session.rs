@@ -98,8 +98,8 @@ fn default_remote_file_browser_enabled() -> bool {
 pub enum SessionCommand {
     /// Frontend listener is ready — flush buffered output and start emitting.
     Attach,
-    /// User input to send to the terminal.
-    Write(Vec<u8>),
+    /// Input to send to the terminal.
+    Write { data: Vec<u8>, automated: bool },
     /// Temporarily stop reading output from the underlying terminal source.
     PauseOutput,
     /// Resume reading output from the underlying terminal source.

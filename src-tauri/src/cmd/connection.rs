@@ -324,6 +324,7 @@ mod tests {
             config: ConnectionType::Telnet {
                 host: "example.com".to_string(),
                 port: 23,
+                username: String::new(),
                 ai_execution_profile: AiExecutionProfile::Auto,
                 backspace_mode: "del".to_string(),
                 raw_tcp_cli: false,
@@ -333,6 +334,7 @@ mod tests {
                 force_character_at_a_time: false,
                 send_naws: true,
                 send_sga: true,
+                auto_login: Default::default(),
             },
             group_id: None,
             description: None,

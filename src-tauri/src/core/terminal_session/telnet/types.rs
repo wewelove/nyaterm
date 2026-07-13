@@ -26,6 +26,8 @@ pub struct TelnetSessionConfig {
     pub host: String,
     pub port: u16,
     pub name: String,
+    pub username: String,
+    pub password: Option<String>,
     pub backspace_mode: String,
     pub raw_tcp_cli: bool,
     pub enter_mode: TelnetEnterMode,
@@ -34,6 +36,7 @@ pub struct TelnetSessionConfig {
     pub force_character_at_a_time: bool,
     pub send_naws: bool,
     pub send_sga: bool,
+    pub auto_login: TelnetAutoLoginConfig,
 }
 
 impl Default for TelnetSessionConfig {
@@ -42,6 +45,8 @@ impl Default for TelnetSessionConfig {
             host: String::new(),
             port: 23,
             name: "Telnet".to_string(),
+            username: String::new(),
+            password: None,
             backspace_mode: "del".to_string(),
             raw_tcp_cli: false,
             enter_mode: TelnetEnterMode::Cr,
@@ -50,7 +55,14 @@ impl Default for TelnetSessionConfig {
             force_character_at_a_time: false,
             send_naws: true,
             send_sga: true,
+            auto_login: TelnetAutoLoginConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TelnetStartupCommand {
+    pub command: String,
+    pub delay_ms: u64,
 }
 

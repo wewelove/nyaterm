@@ -621,7 +621,7 @@ pub(super) async fn ssh_io_loop(
                     Some(SessionCommand::Attach) => {
                         output.attach();
                     }
-                    Some(SessionCommand::Write(mut data)) => {
+                    Some(SessionCommand::Write { mut data, .. }) => {
                         if zmodem_transfer.is_some()
                             || zmodem_upload_drain.should_suppress(std::time::Instant::now())
                         {

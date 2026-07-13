@@ -195,6 +195,17 @@ export interface ConnectionPostLogin {
   delay_ms: number;
 }
 
+export interface TelnetAutoLoginConfig {
+  enabled?: boolean;
+  send_wake_enter?: boolean;
+  timeout_ms?: number;
+  username_prompt_regex?: string | null;
+  password_prompt_regex?: string | null;
+  success_prompt_regex?: string | null;
+  failure_prompt_regex?: string | null;
+  max_retries?: number;
+}
+
 export type SshAlgorithmMode = "compatible" | "secure" | "custom";
 
 export interface SshAlgorithmPreferences {
@@ -284,6 +295,8 @@ export interface SavedConnection {
   send_naws?: boolean;
   /** Telnet-only: accept/respond to SGA negotiation in standard Telnet mode. */
   send_sga?: boolean;
+  /** Telnet-only: prompt-driven automatic login. */
+  auto_login?: TelnetAutoLoginConfig;
   /** SSH-only: enables X11 forwarding for remote graphical applications. */
   x11_forwarding?: boolean;
 }

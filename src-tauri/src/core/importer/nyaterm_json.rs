@@ -176,6 +176,7 @@ fn prepare_nyaterm_json_session(
                 config: ConnectionType::Telnet {
                     host: required_string(host, "host", &context)?,
                     port,
+                    username: String::new(),
                     ai_execution_profile: AiExecutionProfile::Auto,
                     backspace_mode,
                     raw_tcp_cli: false,
@@ -185,6 +186,7 @@ fn prepare_nyaterm_json_session(
                     force_character_at_a_time: false,
                     send_naws: true,
                     send_sga: true,
+                    auto_login: Default::default(),
                 },
                 group_path: normalize_optional_group_path(group_path, &context)?,
                 description: normalize_optional_string(description),
