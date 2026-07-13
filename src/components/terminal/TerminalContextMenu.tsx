@@ -17,6 +17,7 @@ import {
 import { useTerminalAppSettings } from "@/context/AppContext";
 import { resolveDisplayKeys } from "@/hooks/useShortcutMap";
 import { openAIAssistant } from "@/lib/aiEvents";
+import { writeClipboardText } from "@/lib/clipboard";
 import { sendTerminalClearInput } from "@/lib/terminalControlInput";
 import type { SearchEngine } from "@/types/global";
 import TranslationDialog from "../dialog/terminal/TranslationDialog";
@@ -123,8 +124,9 @@ export default function TerminalContextMenu({
 
   const doCopy = useCallback(
     (text: string) => {
-      navigator.clipboard.writeText(text);
-      terminalRef.current?.focus();
+      void writeClipboardText(text)
+        .catch(() => {})
+        .finally(() => terminalRef.current?.focus());
     },
     [terminalRef],
   );
