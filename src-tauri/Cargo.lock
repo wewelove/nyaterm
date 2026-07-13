@@ -4185,6 +4185,7 @@ dependencies = [
  "arboard",
  "async-http-proxy",
  "async-trait",
+ "aws-lc-sys",
  "base64 0.22.1",
  "crypto_secretbox",
  "dirs",
