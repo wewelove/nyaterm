@@ -80,6 +80,7 @@ import ActionLinkMenu from "./ActionLinkMenu";
 import ActionLinkTooltip from "./ActionLinkTooltip";
 import CommandSuggestions from "./CommandSuggestions";
 import CredentialSuggestions from "./CredentialSuggestions";
+import { installRemoteColorOscGuard } from "./remoteColorOscGuard";
 import SyncActionOverlay from "./SyncActionOverlay";
 import TerminalContextMenu from "./TerminalContextMenu";
 import TerminalGutter from "./TerminalGutter";
@@ -1249,6 +1250,27 @@ export default function XTerminal({
       return true;
     });
 
+    const blockedColorOscIds = new Set<number>();
+    const remoteColorOscGuardDisposable = installRemoteColorOscGuard(
+      terminal,
+      sessionTypeRef.current,
+      (oscId) => {
+        if (blockedColorOscIds.has(oscId)) return;
+        blockedColorOscIds.add(oscId);
+
+        logger.debug({
+          domain: "terminal.input",
+          event: "serial.remote_color_osc_blocked",
+          message: "Blocked remote color OSC for serial session",
+          ids: { session_id: sessionId },
+          data: {
+            session_type: sessionTypeRef.current,
+            osc_id: oscId,
+          },
+        });
+      },
+    );
+
     const oscDisposable = terminal.parser.registerOscHandler(133, (data) => {
       const si = shellIntegrationRef.current;
 
@@ -2239,6 +2261,7 @@ export default function XTerminal({
       resetCredentialAutofill();
 
       oscDisposable.dispose();
+      remoteColorOscGuardDisposable.dispose();
       clipboardOscDisposable.dispose();
       writeParsedDisposable.dispose();
       dataDisposable.dispose();
