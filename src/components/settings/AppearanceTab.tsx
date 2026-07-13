@@ -49,6 +49,7 @@ interface FontInfo {
 }
 
 const PACKAGE_FONT_INFOS: FontInfo[] = [
+  { family: "JetBrainsMono Nerd Font Mono", monospace: true },
   { family: "JetBrains Mono", monospace: true },
   { family: "Noto Sans SC Variable", monospace: false },
   { family: "Inter", monospace: false },
@@ -78,7 +79,7 @@ const SYSTEM_UI_FONT_OPTIONS = [
   "monospace",
 ];
 const UI_FALLBACK_FONT = "Inter";
-const TERMINAL_FALLBACK_FONT = "JetBrains Mono";
+const TERMINAL_FALLBACK_FONT = "JetBrainsMono Nerd Font Mono";
 const GENERIC_FONT_FAMILIES = new Set([
   "serif",
   "sans-serif",

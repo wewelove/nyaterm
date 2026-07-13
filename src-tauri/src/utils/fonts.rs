@@ -2,7 +2,8 @@ use font_kit::font::Font;
 use font_kit::source::SystemSource;
 use serde::Serialize;
 
-pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "\"JetBrains Mono\", \"Cascadia Mono\", \"SF Mono\", Menlo, Monaco, Consolas, \"Liberation Mono\", monospace";
+pub const DEFAULT_TERMINAL_FONT_FAMILY: &str = "\"JetBrainsMono Nerd Font Mono\", \"JetBrains Mono\", \"Cascadia Mono\", \"SF Mono\", Menlo, Monaco, Consolas, \"Liberation Mono\", monospace";
+const LEGACY_DEFAULT_TERMINAL_FONT_FAMILY: &str = "\"JetBrains Mono\", \"Cascadia Mono\", \"SF Mono\", Menlo, Monaco, Consolas, \"Liberation Mono\", monospace";
 
 #[cfg(target_os = "macos")]
 pub const DEFAULT_UI_FONT_FAMILY: &str = "system-ui, -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Helvetica Neue\", Arial, sans-serif";
@@ -15,7 +16,7 @@ pub const DEFAULT_UI_FONT_FAMILY: &str =
 pub const DEFAULT_UI_FONT_FAMILY: &str =
     "system-ui, \"Noto Sans SC\", \"Noto Sans CJK SC\", \"Helvetica Neue\", Arial, sans-serif";
 
-const BUILT_IN_MONOSPACE_FONTS: &[&str] = &["JetBrains Mono"];
+const BUILT_IN_MONOSPACE_FONTS: &[&str] = &["JetBrainsMono Nerd Font Mono", "JetBrains Mono"];
 const GENERIC_MONOSPACE_FAMILY: &str = "monospace";
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +53,14 @@ pub fn list_system_font_families() -> Vec<String> {
 }
 
 pub fn normalize_terminal_font_family(font_family: &str) -> String {
+    if is_default_terminal_font_family(font_family) {
+        return DEFAULT_TERMINAL_FONT_FAMILY.to_string();
+    }
+
+    if is_legacy_default_terminal_font_family(font_family) {
+        return DEFAULT_TERMINAL_FONT_FAMILY.to_string();
+    }
+
     let source = SystemSource::new();
     let mut kept = Vec::new();
 
@@ -80,6 +89,18 @@ fn is_built_in_monospace_family(family: &str) -> bool {
     BUILT_IN_MONOSPACE_FONTS
         .iter()
         .any(|known| known.eq_ignore_ascii_case(family))
+}
+
+fn is_default_terminal_font_family(font_family: &str) -> bool {
+    font_family
+        .trim()
+        .eq_ignore_ascii_case(DEFAULT_TERMINAL_FONT_FAMILY)
+}
+
+fn is_legacy_default_terminal_font_family(font_family: &str) -> bool {
+    font_family
+        .trim()
+        .eq_ignore_ascii_case(LEGACY_DEFAULT_TERMINAL_FONT_FAMILY)
 }
 
 fn is_generic_monospace_family(family: &str) -> bool {
@@ -200,7 +221,10 @@ fn push_unique_font_family(families: &mut Vec<String>, family: String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{split_font_family_stack, unquote_font_family};
+    use super::{
+        DEFAULT_TERMINAL_FONT_FAMILY, normalize_terminal_font_family, split_font_family_stack,
+        unquote_font_family,
+    };
 
     #[test]
     fn splits_font_stack_without_splitting_inside_quotes() {
@@ -214,5 +238,31 @@ mod tests {
     fn removes_matching_wrapping_quotes() {
         assert_eq!(unquote_font_family("\"Cascadia Mono\""), "Cascadia Mono");
         assert_eq!(unquote_font_family("'JetBrains Mono'"), "JetBrains Mono");
+    }
+
+    #[test]
+    fn normalizes_legacy_default_to_nerd_font_default() {
+        assert_eq!(
+            normalize_terminal_font_family(
+                "\"JetBrains Mono\", \"Cascadia Mono\", \"SF Mono\", Menlo, Monaco, Consolas, \"Liberation Mono\", monospace"
+            ),
+            DEFAULT_TERMINAL_FONT_FAMILY
+        );
+    }
+
+    #[test]
+    fn keeps_current_default_terminal_font_stack() {
+        assert_eq!(
+            normalize_terminal_font_family(DEFAULT_TERMINAL_FONT_FAMILY),
+            DEFAULT_TERMINAL_FONT_FAMILY
+        );
+    }
+
+    #[test]
+    fn keeps_custom_jetbrains_mono_stack_without_forcing_nerd_font() {
+        assert_eq!(
+            normalize_terminal_font_family("\"JetBrains Mono\", monospace"),
+            "\"JetBrains Mono\", monospace"
+        );
     }
 }
