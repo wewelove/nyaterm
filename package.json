@@ -32,7 +32,8 @@
     "fmt:frontend:check": "prettier --check .",
     "fmt:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "i18n:check": "prettier --check src/i18n/locales/*.json",
-    "i18n:fix": "prettier --write src/i18n/locales/*.json"
+    "i18n:fix": "prettier --write src/i18n/locales/*.json",
+    "postinstall": "node scripts/patch-xterm-webgl-clear-model.cjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
