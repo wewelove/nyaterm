@@ -389,6 +389,7 @@ export interface ActivityBarLayout {
 /** Layout preferences: panel widths, active panels, theme. */
 export type QuickCommandViewMode = "list" | "compact" | "tile";
 export type QuickCommandSortMode = "created" | "name" | "useCount";
+export type HeaderStatusMode = "session" | "resources" | "host";
 
 export type RestorableTerminalWindowNode =
   | {
@@ -429,6 +430,7 @@ export interface UiConfig {
   serial_send_height: number;
   zoom_level: number;
   language?: string;
+  header_status_mode?: HeaderStatusMode;
   show_remote_stats: boolean;
   remote_stats_interval: number;
   show_gpu_monitor: boolean;
@@ -481,6 +483,11 @@ export interface RemoteStatsNetwork {
   tx_bytes_per_sec: number;
 }
 
+export interface RemoteStatsNetworkSummary {
+  rx_bytes_per_sec: number;
+  tx_bytes_per_sec: number;
+}
+
 export interface RemoteStatsDisk {
   device: string;
   mount: string;
@@ -495,6 +502,7 @@ export interface RemoteStats {
   cpu: RemoteStatsCpu;
   memory: RemoteStatsMemory;
   networks: RemoteStatsNetwork[];
+  network_summary: RemoteStatsNetworkSummary;
   disks: RemoteStatsDisk[];
 }
 

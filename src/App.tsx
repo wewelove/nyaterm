@@ -2813,6 +2813,8 @@ function App() {
           onHelpMenuOpen: () => setHelpDotVisible(false),
           activeTab,
           savedConnections,
+          remoteStatsEnabled,
+          remoteStats,
           onSmartSplit: handleSmartSplit,
           onUnsplit: handleUnsplit,
           canUnsplit: terminalWindows?.kind === "split",

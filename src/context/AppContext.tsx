@@ -328,6 +328,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     serial_send_height: 180,
     zoom_level: 1.0,
     language: "en",
+    header_status_mode: "session",
     show_remote_stats: true,
     remote_stats_interval: 3,
     show_gpu_monitor: false,

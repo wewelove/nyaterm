@@ -1,19 +1,25 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BiExport, BiImport, BiServer } from "react-icons/bi";
 import { GrUpgrade } from "react-icons/gr";
 import {
+  MdAccessTime,
   MdAdd,
   MdArticle,
   MdCellTower,
+  MdComputer,
   MdContentCopy,
   MdContentPaste,
   MdDashboard,
   MdDeleteSweep,
+  MdDns,
+  MdDownload,
   MdFitScreen,
   MdInfo,
+  MdKeyboardArrowDown,
+  MdMemory,
   MdMenu,
   MdMenuBook,
   MdMerge,
@@ -22,6 +28,7 @@ import {
   MdSearch,
   MdSelectAll,
   MdSettings,
+  MdSpeed,
   MdSplitscreen,
   MdSwapHoriz,
   MdSwapVert,
@@ -29,6 +36,7 @@ import {
   MdTerminal,
   MdTranslate,
   MdUpdate,
+  MdUpload,
   MdViewSidebar,
   MdZoomIn,
   MdZoomOut,
@@ -42,9 +50,17 @@ import {
 import packageJson from "@/../package.json";
 import QuitConfirmDialog from "@/components/dialog/app/QuitConfirmDialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useConfigTransfer } from "@/hooks/useConfigTransfer";
+import type { RemoteStatsState } from "@/hooks/useRemoteStats";
 import { resolveDisplayKeys } from "@/hooks/useShortcutMap";
 import { AVAILABLE_LANGUAGES } from "@/i18n";
 import { invoke } from "@/lib/invoke";
@@ -56,7 +72,7 @@ import {
   resetTerminalFontSizeDelta,
 } from "@/lib/terminalFontSize";
 import { getActivePane, getTabDisplayName } from "@/lib/workspaceTabs";
-import type { SavedConnection, Tab } from "@/types/global";
+import type { HeaderStatusMode, SavedConnection, Tab } from "@/types/global";
 import ImportDialog from "../dialog/connections/ImportDialog";
 import { resolveConnectionIcon } from "../icons";
 import NyaTermLogo from "../NyaTermLogo";
@@ -114,6 +130,86 @@ function DynamicIcon({ name, className }: { name: string; className?: string }) 
   return <Icon className={className} />;
 }
 
+function HeaderStatusPart({
+  icon,
+  children,
+  color = "var(--df-text-muted)",
+  iconColor = "var(--df-text-dimmed)",
+  className,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  color?: string;
+  iconColor?: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex min-w-0 items-center gap-1 whitespace-nowrap ${className ?? ""}`}
+      style={{ color }}
+    >
+      <span
+        className="inline-flex shrink-0 text-[0.875rem]"
+        style={{ color: iconColor, opacity: 0.78 }}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 truncate">{children}</span>
+    </span>
+  );
+}
+
+function HeaderStatusDivider() {
+  return (
+    <span className="px-0.5 font-sans" style={{ color: "var(--df-text-dimmed)" }}>
+      -
+    </span>
+  );
+}
+
+const HEADER_STATUS_MODES: HeaderStatusMode[] = ["session", "resources", "host"];
+
+function normalizeHeaderStatusMode(value?: string): HeaderStatusMode {
+  return HEADER_STATUS_MODES.includes(value as HeaderStatusMode)
+    ? (value as HeaderStatusMode)
+    : "session";
+}
+
+function formatPct(value: number): string {
+  return `${Math.round(Math.min(100, Math.max(0, value)))}%`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / 1024 ** i;
+  return `${val < 10 ? val.toFixed(1) : val < 100 ? val.toFixed(1) : val.toFixed(0)} ${units[i]}`;
+}
+
+function formatRate(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/s`;
+}
+
+function getPressureColor(usagePercent: number): string | undefined {
+  if (usagePercent >= 90) return "#f87171";
+  if (usagePercent >= 75) return "#f59e0b";
+  return undefined;
+}
+
+function formatUptimeShort(
+  seconds: number,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (seconds >= 86400) {
+    return t("headerStatus.uptimeDays", { count: Math.floor(seconds / 86400) });
+  }
+  if (seconds >= 3600) {
+    return t("headerStatus.uptimeHours", { count: Math.floor(seconds / 3600) });
+  }
+  return t("headerStatus.uptimeMinutes", { count: Math.max(1, Math.floor(seconds / 60)) });
+}
+
 interface HeaderProps {
   onNewSession: () => void;
   onToggleLeft?: () => void;
@@ -125,6 +221,8 @@ interface HeaderProps {
   onHelpMenuOpen?: () => void;
   activeTab?: Tab | null;
   savedConnections?: SavedConnection[];
+  remoteStatsEnabled?: boolean;
+  remoteStats?: RemoteStatsState;
   onSmartSplit?: (mode: "auto" | "horizontal" | "vertical") => void;
   onUnsplit?: () => void;
   canUnsplit?: boolean;
@@ -159,6 +257,8 @@ export default function Header({
   onHelpMenuOpen,
   activeTab,
   savedConnections,
+  remoteStatsEnabled = true,
+  remoteStats,
   onSmartSplit,
   onUnsplit,
   canUnsplit,
@@ -184,6 +284,7 @@ export default function Header({
     : undefined;
   const activeDisplayName = activeTab ? getTabDisplayName(activeTab) : "NyaTerm";
   const terminalZoomEnabled = appSettings.interaction.terminal_zoom_enabled;
+  const headerStatusMode = normalizeHeaderStatusMode(appSettings.ui.header_status_mode);
 
   useEffect(() => {
     let mounted = true;
@@ -504,6 +605,134 @@ export default function Header({
     appWindow.close().catch(() => {});
   };
 
+  const hasActiveStatsSession = Boolean(
+    activePane && activePane.type === "SSH" && !activePane.connecting && !activePane.connectError,
+  );
+
+  const sessionStatus = useMemo(() => {
+    if (!activeTab || !activePane) {
+      return {
+        icon: null,
+        text: "NyaTerm",
+        title: "NyaTerm",
+      };
+    }
+
+    if (activePane.type === "SSH" && activeConnection && !activeTab.customName) {
+      const def = resolveConnectionIcon(activeConnection.icon);
+      const IconComp = def.icon;
+      const text = `${activeConnection.name} - ${activeConnection.username}@${activeConnection.host}:${activeConnection.port}`;
+      return {
+        icon: <IconComp className="text-sm shrink-0" style={{ color: def.color }} />,
+        text,
+        title: text,
+      };
+    }
+
+    if (activePane.type === "SSH") {
+      return {
+        icon: <BiServer className="text-sm shrink-0" />,
+        text: activeDisplayName,
+        title: activeDisplayName,
+      };
+    }
+
+    return {
+      icon: <MdTerminal className="text-sm shrink-0" />,
+      text: activeDisplayName,
+      title: activeDisplayName,
+    };
+  }, [activeConnection, activeDisplayName, activePane, activeTab]);
+
+  const remoteStatusFallback = useMemo(() => {
+    if (!hasActiveStatsSession) return t("panel.resourceMonitorNoSession");
+    if (!remoteStatsEnabled) return t("panel.resourceMonitorDisabled");
+    if (remoteStats?.stats) return null;
+    if (remoteStats?.error) return t("panel.resourceMonitorError");
+    return t("common.loading");
+  }, [hasActiveStatsSession, remoteStats?.error, remoteStats?.stats, remoteStatsEnabled, t]);
+
+  const headerStatus = useMemo(() => {
+    if (headerStatusMode === "session") {
+      return {
+        icon: sessionStatus.icon,
+        text: sessionStatus.text,
+        title: sessionStatus.title,
+      };
+    }
+
+    const stats = remoteStats?.stats;
+    if (remoteStatusFallback || !stats) {
+      return {
+        icon: null,
+        text: remoteStatusFallback ?? t("common.loading"),
+        title: remoteStatusFallback ?? t("common.loading"),
+      };
+    }
+
+    if (headerStatusMode === "host") {
+      const uptime = formatUptimeShort(stats.system.uptime_sec, t);
+      const text = `${stats.system.hostname} - ${stats.system.os}/${stats.system.arch} - ${uptime}`;
+      return {
+        icon: null,
+        text: (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <HeaderStatusPart icon={<MdDns />} iconColor="#38bdf8">
+              {stats.system.hostname}
+            </HeaderStatusPart>
+            <HeaderStatusDivider />
+            <HeaderStatusPart icon={<MdComputer />} iconColor="#a78bfa">
+              {stats.system.os}/{stats.system.arch}
+            </HeaderStatusPart>
+            <HeaderStatusDivider />
+            <HeaderStatusPart icon={<MdAccessTime />} iconColor="#34d399">
+              {uptime}
+            </HeaderStatusPart>
+          </span>
+        ),
+        title: text,
+      };
+    }
+
+    const memTotal = stats.memory.used + stats.memory.available;
+    const memoryUsedText = formatBytes(stats.memory.used);
+    const memoryTotalText = formatBytes(memTotal);
+    const memoryText = `${memoryUsedText}/${memoryTotalText}`;
+    const cpuColor = getPressureColor(stats.cpu.usage);
+    const memoryUsagePercent = memTotal > 0 ? (stats.memory.used / memTotal) * 100 : 0;
+    const memoryColor = getPressureColor(memoryUsagePercent);
+    const txText = formatRate(stats.network_summary.tx_bytes_per_sec);
+    const rxText = formatRate(stats.network_summary.rx_bytes_per_sec);
+    const text = `CPU ${formatPct(stats.cpu.usage)} - RAM ${memoryText} - NET ↑ ${txText} ↓ ${rxText}`;
+    return {
+      icon: null,
+      text: (
+        <span className="flex min-w-0 items-center gap-1.5 font-mono tabular-nums">
+          <HeaderStatusPart icon={<MdSpeed />} iconColor="#38bdf8">
+            CPU{" "}
+            <span style={cpuColor ? { color: cpuColor } : undefined}>
+              {formatPct(stats.cpu.usage)}
+            </span>
+          </HeaderStatusPart>
+          <HeaderStatusDivider />
+          <HeaderStatusPart icon={<MdMemory />} iconColor="#a78bfa">
+            RAM{" "}
+            <span style={memoryColor ? { color: memoryColor } : undefined}>{memoryUsedText}</span>
+            /{memoryTotalText}
+          </HeaderStatusPart>
+          <HeaderStatusDivider />
+          <HeaderStatusPart icon={<MdUpload />} iconColor="#f59e0b">
+            {txText}
+          </HeaderStatusPart>
+          <HeaderStatusPart icon={<MdDownload />} iconColor="#34d399">
+            {rxText}
+          </HeaderStatusPart>
+        </span>
+      ),
+      title: text,
+    };
+  }, [headerStatusMode, remoteStats?.stats, remoteStatusFallback, sessionStatus, t]);
+
   return (
     <header
       className="h-10 border-b flex items-center gap-2 px-2 select-none shrink-0"
@@ -549,46 +778,40 @@ export default function Header({
         </Menubar>
       </div>
 
-      <div
-        className="flex-1 min-w-0 h-full flex items-center justify-center gap-2 px-2"
-        data-tauri-drag-region
-      >
-        <div
-          className="flex items-center gap-2 min-w-0 pointer-events-none"
-          style={{ color: "var(--df-text-muted)" }}
-        >
-          {activeTab && activePane ? (
-            activePane.type === "SSH" && activeConnection && !activeTab.customName ? (
-              <>
-                {(() => {
-                  const def = resolveConnectionIcon(activeConnection.icon);
-                  const IconComp = def.icon;
-                  return (
-                    <span className="text-sm shrink-0">
-                      <IconComp className="text-sm shrink-0" style={{ color: def.color }} />
-                    </span>
-                  );
-                })()}
-                <span className="text-xs font-medium truncate">
-                  {activeConnection.name} — {activeConnection.username}@{activeConnection.host}:
-                  {activeConnection.port}
-                </span>
-              </>
-            ) : activePane.type === "SSH" ? (
-              <>
-                <BiServer className="text-sm shrink-0" />
-                <span className="text-xs font-medium truncate">{activeDisplayName}</span>
-              </>
-            ) : (
-              <>
-                <MdTerminal className="text-sm shrink-0" />
-                <span className="text-xs font-medium truncate">{activeDisplayName}</span>
-              </>
-            )
-          ) : (
-            <span className="text-xs font-medium truncate">NyaTerm</span>
-          )}
-        </div>
+      <div className="flex-1 min-w-0 h-full flex items-center justify-center gap-2 px-2">
+        <div className="h-full min-w-0 flex-1" data-tauri-drag-region />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="group flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-[color-mix(in_srgb,var(--df-text-muted)_10%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--df-primary)]"
+              style={{ color: "var(--df-text-muted)" }}
+              title={headerStatus.title}
+              aria-label={t("headerStatus.select")}
+            >
+              {headerStatus.icon}
+              <span className="flex min-w-0 items-center overflow-hidden whitespace-nowrap">
+                {headerStatus.text}
+              </span>
+              <MdKeyboardArrowDown className="text-sm shrink-0 opacity-60 transition-opacity group-hover:opacity-100" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center" className="min-w-[190px]">
+            <DropdownMenuRadioGroup
+              value={headerStatusMode}
+              onValueChange={(value) => {
+                updateUi({ header_status_mode: normalizeHeaderStatusMode(value) });
+              }}
+            >
+              {HEADER_STATUS_MODES.map((mode) => (
+                <DropdownMenuRadioItem key={mode} value={mode}>
+                  {t(`headerStatus.${mode}`)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="h-full min-w-0 flex-1" data-tauri-drag-region />
       </div>
 
       <div className="flex items-center gap-1 shrink-0" style={{ color: "var(--df-text-muted)" }}>
