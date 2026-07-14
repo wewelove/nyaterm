@@ -1459,10 +1459,14 @@ function AIAssistantPanel({ activePane, activeConnection, intent }: AIAssistantP
                     models={enabledModels}
                     credentials={aiSettings.provider_credentials}
                     selectedModel={selectedModel}
+                    selectedReasoningEffort={aiSettings.default_reasoning_effort ?? "auto"}
                     open={modelPopoverOpen}
                     onOpenChange={setModelPopoverOpen}
                     onSelect={(model) =>
                       updateAppSettings({ ai: { ...aiSettings, default_model_id: model.id } })
+                    }
+                    onSelectReasoningEffort={(default_reasoning_effort) =>
+                      updateAppSettings({ ai: { ...aiSettings, default_reasoning_effort } })
                     }
                     className="w-full truncate"
                   />

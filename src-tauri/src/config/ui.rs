@@ -79,6 +79,8 @@ pub struct RestorableTab {
     pub connection_id: Option<String>,
     pub custom_name: Option<String>,
     pub tab_color: Option<String>,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 impl RestorableTab {

@@ -1,7 +1,6 @@
 import type { ElementType } from "react";
 import type { IconType } from "react-icons";
 import { DiBingSmall, DiYahooSmall } from "react-icons/di";
-import { FaWindows } from "react-icons/fa";
 import { FaServer } from "react-icons/fa6";
 import {
   MdApps,
@@ -26,12 +25,8 @@ import {
   MdTerminal,
 } from "react-icons/md";
 import {
-  SiAlmalinux,
-  SiAlpinelinux,
   SiAmazonwebservices,
-  SiAndroid,
   SiApple,
-  SiArchlinux,
   SiBaidu,
   SiBilibili,
   SiCentos,
@@ -41,8 +36,6 @@ import {
   SiDocker,
   SiDuckduckgo,
   SiFedora,
-  SiFreebsd,
-  SiGentoo,
   SiGithub,
   SiGitlab,
   SiGo,
@@ -51,31 +44,51 @@ import {
   SiGooglegemini,
   SiHtml5,
   SiJavascript,
-  SiKalilinux,
   SiKubernetes,
   SiLinux,
-  SiLinuxmint,
-  SiManjaro,
   SiMongodb,
   SiMysql,
   SiNginx,
-  SiNixos,
   SiNodedotjs,
   SiOpenai,
-  SiOpensuse,
   SiPhp,
   SiPostgresql,
   SiPython,
-  SiRaspberrypi,
   SiRedis,
-  SiRockylinux,
   SiRust,
   SiTypescript,
   SiUbuntu,
   SiYoutube,
   SiZhihu,
 } from "react-icons/si";
-import type { FileEntry } from "@/types/global";
+import type { FileEntry, RemoteStatsSystem } from "@/types/global";
+
+function createLocalSvgIcon(src: string): IconType {
+  const LocalSvgIcon: IconType = ({ className, size, style, title }) => {
+    const dimension = size ?? "1em";
+
+    return (
+      <img
+        src={src}
+        alt=""
+        aria-hidden={title ? undefined : true}
+        title={title}
+        className={className}
+        draggable={false}
+        style={{
+          display: "inline-block",
+          width: dimension,
+          height: dimension,
+          objectFit: "contain",
+          verticalAlign: "-0.125em",
+          ...style,
+        }}
+      />
+    );
+  };
+
+  return LocalSvgIcon;
+}
 
 export interface QuickIconDef {
   icon: IconType;
@@ -113,29 +126,94 @@ export type QuickIconName = keyof typeof QUICK_ICONS;
 
 /** Mainstream OS / distro icons. */
 export const SYSTEM_ICONS: Record<string, QuickIconDef> = {
-  windows: { icon: FaWindows, color: "#0078D4" },
-  apple: { icon: SiApple, color: "#A2AAAD" },
-  android: { icon: SiAndroid, color: "#3DDC84" },
-  linux: { icon: SiLinux, color: "#FCC624" },
-  ubuntu: { icon: SiUbuntu, color: "#E95420" },
-  debian: { icon: SiDebian, color: "#A81D33" },
-  centos: { icon: SiCentos, color: "#A14F8C" },
-  fedora: { icon: SiFedora, color: "#3C4FB1" },
-  arch: { icon: SiArchlinux, color: "#1793D1" },
-  manjaro: { icon: SiManjaro, color: "#35BF5C" },
-  opensuse: { icon: SiOpensuse, color: "#73BA25" },
-  rocky: { icon: SiRockylinux, color: "#10B981" },
-  alma: { icon: SiAlmalinux, color: "#FF4649" },
-  alpine: { icon: SiAlpinelinux, color: "#0D597F" },
-  kali: { icon: SiKalilinux, color: "#268BEE" },
-  mint: { icon: SiLinuxmint, color: "#87CF3E" },
-  nixos: { icon: SiNixos, color: "#5277C3" },
-  gentoo: { icon: SiGentoo, color: "#54487A" },
-  freebsd: { icon: SiFreebsd, color: "#AB2B28" },
-  raspberrypi: { icon: SiRaspberrypi, color: "#A22846" },
+  windows: { icon: createLocalSvgIcon("/icons/os/windows.svg"), color: "currentColor" },
+  apple: { icon: createLocalSvgIcon("/icons/os/apple.svg"), color: "currentColor" },
+  android: { icon: createLocalSvgIcon("/icons/os/android.svg"), color: "currentColor" },
+  linux: { icon: createLocalSvgIcon("/icons/os/linux.svg"), color: "currentColor" },
+  ubuntu: { icon: createLocalSvgIcon("/icons/os/Ubuntu.svg"), color: "currentColor" },
+  debian: { icon: createLocalSvgIcon("/icons/os/Debian.svg"), color: "currentColor" },
+  centos: { icon: createLocalSvgIcon("/icons/os/Centos.svg"), color: "currentColor" },
+  fedora: { icon: createLocalSvgIcon("/icons/os/Fedora.svg"), color: "currentColor" },
+  arch: { icon: createLocalSvgIcon("/icons/os/archlinux.svg"), color: "currentColor" },
+  manjaro: { icon: createLocalSvgIcon("/icons/os/manjaro.svg"), color: "currentColor" },
+  opensuse: { icon: createLocalSvgIcon("/icons/os/openSUSE.svg"), color: "currentColor" },
+  rocky: { icon: createLocalSvgIcon("/icons/os/rocky-linux.svg"), color: "currentColor" },
+  alma: { icon: createLocalSvgIcon("/icons/os/AlmaLinux.svg"), color: "currentColor" },
+  alpine: { icon: createLocalSvgIcon("/icons/os/Alpine-Linux.svg"), color: "currentColor" },
+  kali: { icon: createLocalSvgIcon("/icons/os/kalilinux.svg"), color: "currentColor" },
+  mint: { icon: createLocalSvgIcon("/icons/os/linux-mint.svg"), color: "currentColor" },
+  nixos: { icon: createLocalSvgIcon("/icons/os/Nixos.svg"), color: "currentColor" },
+  h3c: { icon: createLocalSvgIcon("/icons/os/H3C.svg"), color: "currentColor" },
+  gentoo: { icon: createLocalSvgIcon("/icons/os/Gentoo.svg"), color: "currentColor" },
+  raspberrypi: { icon: createLocalSvgIcon("/icons/os/Raspberrypi.svg"), color: "currentColor" },
+  "alibaba-cloud-linux": {
+    icon: createLocalSvgIcon("/icons/os/AlibabaCloudLinux.svg"),
+    color: "currentColor",
+  },
+  anolis: { icon: createLocalSvgIcon("/icons/os/AnolisOS.svg"), color: "currentColor" },
+  deepin: { icon: createLocalSvgIcon("/icons/os/Deepin_A.svg"), color: "currentColor" },
+  kylin: { icon: createLocalSvgIcon("/icons/os/kylin.svg"), color: "currentColor" },
+  openeuler: { icon: createLocalSvgIcon("/icons/os/OpenEuler.svg"), color: "currentColor" },
+  tencentos: { icon: createLocalSvgIcon("/icons/os/TencentOS.svg"), color: "currentColor" },
+  uos: { icon: createLocalSvgIcon("/icons/os/uos.svg"), color: "currentColor" },
+  aws: { icon: createLocalSvgIcon("/icons/os/aws.svg"), color: "currentColor" },
+  huawei: { icon: createLocalSvgIcon("/icons/os/huawei.svg"), color: "currentColor" },
+  git: { icon: createLocalSvgIcon("/icons/os/git.svg"), color: "currentColor" },
+  cmd: { icon: createLocalSvgIcon("/icons/os/cmd.svg"), color: "currentColor" },
+  powershell: { icon: createLocalSvgIcon("/icons/os/powershell.svg"), color: "currentColor" },
 };
 
 export type SystemIconName = keyof typeof SYSTEM_ICONS;
+
+const CONNECTION_ICON_ALIASES: Record<string, string> = {
+  "alibaba-cloudlinux": "alibaba-cloud-linux",
+  alibabacloudlinux: "alibaba-cloud-linux",
+  "alibaba-linux": "alibaba-cloud-linux",
+  almalinux: "alma",
+  "alma-linux": "alma",
+  "alpine-linux": "alpine",
+  alpinelinux: "alpine",
+  anolisos: "anolis",
+  "anolis-os": "anolis",
+  archlinux: "arch",
+  "arch-linux": "arch",
+  amazon: "aws",
+  "amazon-linux": "aws",
+  amazonlinux: "aws",
+  "aws-linux": "aws",
+  "deepin-a": "deepin",
+  "command-prompt": "cmd",
+  commandprompt: "cmd",
+  gitbash: "git",
+  "git-bash": "git",
+  "huawei-cloud": "huawei",
+  huaweicloud: "huawei",
+  "kali-linux": "kali",
+  kalilinux: "kali",
+  linuxmint: "mint",
+  "linux-mint": "mint",
+  "nix-os": "nixos",
+  "open-euler": "openeuler",
+  "open-suse": "opensuse",
+  raspberry: "raspberrypi",
+  "raspberry-pi": "raspberrypi",
+  "rocky-linux": "rocky",
+  rockylinux: "rocky",
+  tencent: "tencentos",
+  "tencent-os": "tencentos",
+  tencentlinux: "tencentos",
+  ps: "powershell",
+  pwsh: "powershell",
+  "power-shell": "powershell",
+};
+
+function normalizeConnectionIconKey(iconKey: string): string {
+  return iconKey
+    .trim()
+    .replace(/\.svg$/i, "")
+    .replace(/_/g, "-")
+    .toLowerCase();
+}
 
 /**
  * Default "server" glyph offered in several theme-friendly colors.
@@ -158,6 +236,40 @@ export const SERVER_ICONS: Record<string, QuickIconDef> = {
 
 export type ServerIconName = keyof typeof SERVER_ICONS;
 
+/** Linux-flavored default glyphs mirroring the server default color row. */
+export const LINUX_ICONS: Record<string, QuickIconDef> = {
+  "linux-default": {
+    icon: SiLinux,
+    color: SERVER_ICONS.server.color,
+  },
+  "linux-emerald": {
+    icon: SiLinux,
+    color: SERVER_ICONS["server-emerald"].color,
+  },
+  "linux-amber": {
+    icon: SiLinux,
+    color: SERVER_ICONS["server-amber"].color,
+  },
+  "linux-rose": {
+    icon: SiLinux,
+    color: SERVER_ICONS["server-rose"].color,
+  },
+  "linux-violet": {
+    icon: SiLinux,
+    color: SERVER_ICONS["server-violet"].color,
+  },
+  "linux-cyan": {
+    icon: SiLinux,
+    color: SERVER_ICONS["server-cyan"].color,
+  },
+  "linux-slate": {
+    icon: SiLinux,
+    color: SERVER_ICONS["server-slate"].color,
+  },
+};
+
+export type LinuxIconName = keyof typeof LINUX_ICONS;
+
 /** Canonical default icon used when a connection has no icon configured. */
 export const DEFAULT_CONNECTION_ICON: ServerIconName = "server";
 export const DEFAULT_CONNECTION_ICON_COLOR = SERVER_ICONS[DEFAULT_CONNECTION_ICON].color;
@@ -165,6 +277,7 @@ export const DEFAULT_CONNECTION_ICON_COLOR = SERVER_ICONS[DEFAULT_CONNECTION_ICO
 /** Merged lookup for all connection icons (default servers + services + systems). */
 export const CONNECTION_ICONS: Record<string, QuickIconDef> = {
   ...SERVER_ICONS,
+  ...LINUX_ICONS,
   ...QUICK_ICONS,
   ...SYSTEM_ICONS,
 };
@@ -180,7 +293,83 @@ export function resolveConnectionIcon(iconKey?: string | null): QuickIconDef {
   if (iconKey && CONNECTION_ICONS[iconKey]) {
     return CONNECTION_ICONS[iconKey];
   }
+
+  if (iconKey) {
+    const normalizedKey = normalizeConnectionIconKey(iconKey);
+    const resolvedKey = CONNECTION_ICON_ALIASES[normalizedKey] ?? normalizedKey;
+    if (CONNECTION_ICONS[resolvedKey]) {
+      return CONNECTION_ICONS[resolvedKey];
+    }
+  }
+
   return SERVER_ICONS[DEFAULT_CONNECTION_ICON];
+}
+
+function normalizeRemoteSystemText(system: Pick<RemoteStatsSystem, "os" | "arch">): string {
+  return `${system.os ?? ""} ${system.arch ?? ""}`
+    .trim()
+    .replace(/[_./]/g, "-")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+export function inferConnectionIconKeyFromRemoteSystem(
+  system: Pick<RemoteStatsSystem, "os" | "arch"> | null | undefined,
+): string | null {
+  if (!system) return null;
+
+  const text = normalizeRemoteSystemText(system);
+  if (!text) return null;
+
+  const distroMatches: Array<[string[], string]> = [
+    [
+      ["alibaba cloud linux", "alibaba-cloud-linux", "aliyun linux", "alinux"],
+      "alibaba-cloud-linux",
+    ],
+    [["amazon linux", "amzn", "aws linux"], "aws"],
+    [["alma linux", "almalinux"], "alma"],
+    [["alpine"], "alpine"],
+    [["anolis"], "anolis"],
+    [["arch"], "arch"],
+    [["centos", "cent os"], "centos"],
+    [["debian"], "debian"],
+    [["deepin"], "deepin"],
+    [["fedora"], "fedora"],
+    [["huawei", "opencloudos"], "huawei"],
+    [["kali"], "kali"],
+    [["kylin"], "kylin"],
+    [["linux mint", "linuxmint"], "mint"],
+    [["nixos", "nix os"], "nixos"],
+    [["open euler", "openeuler"], "openeuler"],
+    [["opensuse", "open suse", "sles", "suse"], "opensuse"],
+    [["rocky"], "rocky"],
+    [["tencent", "tlinux"], "tencentos"],
+    [["ubuntu"], "ubuntu"],
+    [["uniontech", "uos"], "uos"],
+  ];
+
+  for (const [needles, iconKey] of distroMatches) {
+    if (needles.some((needle) => text.includes(needle))) {
+      return iconKey;
+    }
+  }
+
+  if (text.includes("windows") || text.includes("mingw") || text.includes("msys")) {
+    return "windows";
+  }
+  if (
+    text.includes("darwin") ||
+    text.includes("macos") ||
+    text.includes("mac os") ||
+    text.includes("os x")
+  ) {
+    return "apple";
+  }
+  if (text.includes("linux") || text.includes("gnu")) {
+    return "linux";
+  }
+
+  return null;
 }
 
 export const SEARCH_ICONS: Record<string, QuickIconDef> = {

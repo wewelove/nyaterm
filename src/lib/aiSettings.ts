@@ -558,6 +558,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   active_profile_id: "openai",
   provider_profiles: DEFAULT_PROVIDER_PROFILES,
   default_mode: "ask",
+  default_reasoning_effort: "auto",
   default_model_id: null,
   models: [],
   provider_credentials: DEFAULT_PROVIDER_PROFILES.map(credentialFromProfile),

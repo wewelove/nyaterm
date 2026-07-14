@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/nyaterm.svg" alt="NyaTerm" width="128" height="128">
+  <img src="./public/icons/app/nyaterm.svg" alt="NyaTerm" width="128" height="128">
 </p>
 
 <h1 align="center">NyaTerm</h1>

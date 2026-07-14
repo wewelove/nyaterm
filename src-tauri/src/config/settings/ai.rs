@@ -30,6 +30,23 @@ pub enum AiMode {
     Agent,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AiReasoningEffort {
+    Auto,
+    None,
+    Low,
+    Medium,
+    High,
+    XHigh,
+}
+
+impl Default for AiReasoningEffort {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
@@ -142,6 +159,8 @@ pub struct AiSettings {
     pub provider_profiles: Vec<AiProviderProfile>,
     #[serde(default = "default_mode")]
     pub default_mode: AiMode,
+    #[serde(default)]
+    pub default_reasoning_effort: AiReasoningEffort,
     #[serde(default)]
     pub default_model_id: Option<String>,
     #[serde(default)]
@@ -430,6 +449,7 @@ impl Default for AiSettings {
             active_profile_id: default_active_profile_id(),
             provider_profiles: default_provider_profiles(),
             default_mode: default_mode(),
+            default_reasoning_effort: AiReasoningEffort::Auto,
             default_model_id,
             models,
             provider_credentials: default_provider_credentials(),

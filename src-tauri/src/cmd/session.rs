@@ -216,6 +216,7 @@ pub async fn create_telnet_session(
     port: Option<u16>,
     name: Option<String>,
     create_request_id: Option<String>,
+    startup_command: Option<StartupCommandPayload>,
 ) -> AppResult<String> {
     let pending_creation = state.begin_session_creation(create_request_id).await;
     let (guard, _cancel_rx) = match pending_creation {
@@ -224,10 +225,12 @@ pub async fn create_telnet_session(
     };
     let cfg = if let Some(ref cid) = connection_id {
         let conn = config::load_connection_by_id(&app, cid)?;
+        let telnet_password = resolve_telnet_connection_password(&app, conn.auth.as_ref())?;
         match conn.config {
             config::ConnectionType::Telnet {
                 host: ref ch,
                 port: cp,
+                username,
                 backspace_mode,
                 raw_tcp_cli,
                 enter_mode,
@@ -236,11 +239,14 @@ pub async fn create_telnet_session(
                 force_character_at_a_time,
                 send_naws,
                 send_sga,
+                auto_login,
                 ..
             } => core::TelnetSessionConfig {
                 host: ch.clone(),
                 port: cp,
                 name: conn.name.clone(),
+                username,
+                password: telnet_password,
                 backspace_mode,
                 raw_tcp_cli,
                 enter_mode: core::TelnetEnterMode::from_config_value(&enter_mode),
@@ -249,6 +255,7 @@ pub async fn create_telnet_session(
                 force_character_at_a_time,
                 send_naws,
                 send_sga,
+                auto_login: core::TelnetAutoLoginConfig::from(auto_login),
             },
             _ => {
                 return Err(AppError::Config(
@@ -271,6 +278,10 @@ pub async fn create_telnet_session(
         cfg,
         connection_id,
         Some(window.label().to_string()),
+        startup_command.map(|command| core::TelnetStartupCommand {
+            command: command.command,
+            delay_ms: command.delay_ms,
+        }),
     )
     .await?;
     drop(guard);
@@ -287,6 +298,36 @@ pub async fn create_telnet_session(
     )
     .await;
     Ok(session_id)
+}
+
+fn resolve_telnet_connection_password(
+    app: &tauri::AppHandle,
+    auth: Option<&config::ConnectionAuth>,
+) -> AppResult<Option<String>> {
+    resolve_telnet_connection_password_with(auth, |password_id| {
+        Ok(config::load_password_by_id(app, password_id)?.password)
+    })
+}
+
+fn resolve_telnet_connection_password_with<F>(
+    auth: Option<&config::ConnectionAuth>,
+    mut load_saved_password: F,
+) -> AppResult<Option<String>>
+where
+    F: FnMut(&str) -> AppResult<Option<String>>,
+{
+    let Some(auth) = auth else {
+        return Ok(None);
+    };
+    if auth.mode != "password" {
+        return Ok(None);
+    }
+
+    if let Some(password_id) = auth.password_id.as_deref().filter(|id| !id.is_empty()) {
+        return load_saved_password(password_id);
+    }
+
+    crate::utils::crypto::decrypt_optional(&auth.password)
 }
 
 #[tauri::command]
@@ -490,7 +531,11 @@ fn safe_recording_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_temporary_ssh_config, safe_recording_name};
+    use super::{
+        normalize_temporary_ssh_config, resolve_telnet_connection_password_with,
+        safe_recording_name,
+    };
+    use crate::config::ConnectionAuth;
 
     #[test]
     fn safe_recording_name_preserves_readable_parts() {
@@ -544,6 +589,54 @@ mod tests {
         assert!(normalized.proxy_jump.is_none());
         assert!(normalized.post_login.is_none());
     }
+
+    #[test]
+    fn telnet_password_resolution_ignores_non_password_auth() {
+        let auth = ConnectionAuth {
+            mode: "none".to_string(),
+            password: Some("ignored".to_string()),
+            ..ConnectionAuth::default()
+        };
+
+        let resolved =
+            resolve_telnet_connection_password_with(Some(&auth), |_| Ok(Some("saved".to_string())))
+                .expect("password resolution");
+
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn telnet_password_resolution_decrypts_inline_password() {
+        crate::utils::crypto::set_master_password(None);
+        let auth = ConnectionAuth {
+            mode: "password".to_string(),
+            password: Some(crate::utils::crypto::encrypt("inline-secret").expect("encrypt")),
+            ..ConnectionAuth::default()
+        };
+
+        let resolved = resolve_telnet_connection_password_with(Some(&auth), |_| Ok(None))
+            .expect("password resolution");
+
+        assert_eq!(resolved.as_deref(), Some("inline-secret"));
+    }
+
+    #[test]
+    fn telnet_password_resolution_prefers_saved_password_id() {
+        let auth = ConnectionAuth {
+            mode: "password".to_string(),
+            password_id: Some("saved-1".to_string()),
+            password: Some("ignored".to_string()),
+            ..ConnectionAuth::default()
+        };
+
+        let resolved = resolve_telnet_connection_password_with(Some(&auth), |id| {
+            assert_eq!(id, "saved-1");
+            Ok(Some("saved-secret".to_string()))
+        })
+        .expect("password resolution");
+
+        assert_eq!(resolved.as_deref(), Some("saved-secret"));
+    }
 }
 
 #[tauri::command]
@@ -566,7 +659,13 @@ pub async fn write_to_session(
     data: String,
 ) -> AppResult<()> {
     state
-        .send_command(&session_id, SessionCommand::Write(data.into_bytes()))
+        .send_command(
+            &session_id,
+            SessionCommand::Write {
+                data: data.into_bytes(),
+                automated: false,
+            },
+        )
         .await
 }
 

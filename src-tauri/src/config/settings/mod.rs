@@ -13,7 +13,7 @@ mod translation;
 pub use ai::{
     AI_REQUEST_USER_AGENT_DEFAULT, AgentCommandExecutionMode, AiCustomActionConfig, AiMode,
     AiModelConfigItem, AiModelSource, AiProviderCredential, AiProviderKind, AiProviderProfile,
-    AiSettings, RiskLevel, ai_model_id_for_credential, ai_model_id_for_provider,
+    AiReasoningEffort, AiSettings, RiskLevel, ai_model_id_for_credential, ai_model_id_for_provider,
     decrypt_ai_settings, encrypt_ai_settings, mask_ai_settings, merge_masked_ai_settings,
     normalize_ai_settings,
 };

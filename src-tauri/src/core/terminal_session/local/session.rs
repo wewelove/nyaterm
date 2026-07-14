@@ -418,7 +418,7 @@ fn pty_session_thread(
             SessionCommand::Attach => {
                 output.attach();
             }
-            SessionCommand::Write(data) => {
+            SessionCommand::Write { data, .. } => {
                 if zmodem_state.lock().unwrap().is_some() {
                     continue;
                 }

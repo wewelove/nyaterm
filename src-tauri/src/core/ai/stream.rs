@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent};
+use genai::chat::{ChatMessage, ChatRequest, ChatStreamEvent};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 
 use super::agent::{AgentApprovalManager, run_agent_stream};
 use super::history::{append_message, load_history, save_user_message};
-use super::model::{build_client, resolve_request_model};
+use super::model::{build_chat_options, build_client, resolve_request_model};
 use super::parser::{
     extract_text_from_assistant, parse_model_output, trim_string_to_option, truncate_preview,
 };
@@ -375,9 +375,7 @@ pub(super) async fn run_model_stream(
     );
 
     let chat_req = ChatRequest::new(messages);
-    let chat_options = ChatOptions::default()
-        .with_capture_reasoning_content(true)
-        .with_normalize_reasoning_content(true);
+    let chat_options = build_chat_options(settings);
 
     let stream_result = tokio::time::timeout(
         Duration::from_millis(settings.timeout_ms),

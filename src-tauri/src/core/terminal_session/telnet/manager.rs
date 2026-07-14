@@ -4,6 +4,7 @@ pub async fn create_telnet_session(
     config: TelnetSessionConfig,
     connection_id: Option<String>,
     owner_window_label: Option<String>,
+    startup_command: Option<TelnetStartupCommand>,
 ) -> AppResult<String> {
     let host = config.host.clone();
     let port = config.port;
@@ -53,7 +54,17 @@ pub async fn create_telnet_session(
     let mgr = manager.clone();
 
     tokio::spawn(async move {
-        telnet_session_task(app, sid, mgr, cmd_rx, output_control_tx, config, connection_id).await;
+        telnet_session_task(
+            app,
+            sid,
+            mgr,
+            cmd_rx,
+            output_control_tx,
+            config,
+            connection_id,
+            startup_command,
+        )
+        .await;
     });
 
     Ok(session_id)

@@ -249,6 +249,7 @@ export function serializeTabsForPersistence(tabs: Tab[]): RestorableTab[] {
       connection_id: getActivePane(tab)?.connectionId,
       custom_name: tab.customName,
       tab_color: tab.tabColor,
+      locked: tab.locked,
       active_pane_id: tab.activePaneId,
       root: serializePane(tab.root),
     }));
@@ -328,6 +329,7 @@ export function restoreTabFromPersistence(tab: RestorableTab, persistOrder: numb
     root,
     customName: tab.custom_name,
     tabColor: tab.tab_color,
+    locked: tab.locked,
   };
 
   return ensureActivePane(restored);

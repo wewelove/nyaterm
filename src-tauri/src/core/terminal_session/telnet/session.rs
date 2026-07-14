@@ -1,3 +1,37 @@
+struct PendingTelnetStartupCommand {
+    input: Vec<u8>,
+    delay_ms: u64,
+}
+
+fn build_telnet_startup_command_input(
+    command: &str,
+    enter_mode: TelnetEnterMode,
+) -> Option<Vec<u8>> {
+    if command.trim().is_empty() {
+        return None;
+    }
+
+    let normalized = command.replace("\r\n", "\r").replace('\n', "\r");
+    let mut input = normalized.into_bytes();
+    if !input.ends_with(b"\r") {
+        input.push(b'\r');
+    }
+    Some(normalize_enter_bytes(&input, enter_mode))
+}
+
+fn arm_telnet_startup_timer(
+    pending_startup: &Option<PendingTelnetStartupCommand>,
+    startup_deadline: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+) {
+    if startup_deadline.is_none() {
+        if let Some(pending) = pending_startup.as_ref() {
+            *startup_deadline = Some(Box::pin(tokio::time::sleep(
+                std::time::Duration::from_millis(pending.delay_ms),
+            )));
+        }
+    }
+}
+
 async fn telnet_session_task(
     app: AppHandle,
     session_id: String,
@@ -6,6 +40,7 @@ async fn telnet_session_task(
     output_control_tx: mpsc::UnboundedSender<SessionCommand>,
     config: TelnetSessionConfig,
     connection_id: Option<String>,
+    startup_command: Option<TelnetStartupCommand>,
 ) {
     let backspace_as_bs = config.backspace_mode == "ctrl_h";
     let host = config.host.clone();
@@ -52,6 +87,16 @@ async fn telnet_session_task(
 
     let capture_processor = Arc::new(TokioMutex::new(OutputCaptureProcessor::new()));
     let capture_for_reader = capture_processor.clone();
+    let auto_login = Arc::new(TokioMutex::new(TelnetAutoLogin::new(
+        config.auto_login.clone(),
+        TelnetAutoLoginCredentials {
+            username: config.username.clone(),
+            password: config.password.clone(),
+        },
+        config.enter_mode,
+        std::time::Instant::now(),
+    )));
+    let auto_login_for_reader = auto_login.clone();
 
     let zmodem_state: Arc<TokioMutex<Option<ZmodemTransfer>>> = Arc::new(TokioMutex::new(None));
     let zmodem_state_reader = zmodem_state.clone();
@@ -72,6 +117,7 @@ async fn telnet_session_task(
     let (pause_tx, mut pause_rx) = tokio::sync::watch::channel(false);
 
     let (negotiate_tx, mut negotiate_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (auto_login_tx, mut auto_login_rx) = mpsc::unbounded_channel::<TelnetAutoLoginAction>();
     let (reader_done_tx, mut reader_done_rx) = mpsc::unbounded_channel::<()>();
 
     let reader_config = config.clone();
@@ -217,6 +263,16 @@ async fn telnet_session_task(
                     }
                     drop(proc);
                     if !text.is_empty() {
+                        {
+                            let mut auto = auto_login_for_reader.lock().await;
+                            if let Some(auto) = auto.as_mut() {
+                                for action in
+                                    auto.handle_text(&text, std::time::Instant::now())
+                                {
+                                    let _ = auto_login_tx.send(action);
+                                }
+                            }
+                        }
                         if let Some(ref recorder) = recording_mgr_reader {
                             recorder.write_output(&sid_reader, &text);
                         }
@@ -249,6 +305,18 @@ async fn telnet_session_task(
 
     let line_edit_active = config.raw_tcp_cli && config.local_line_edit;
     let mut line_editor = TelnetLineEditor::default();
+    let mut pending_startup = startup_command.and_then(|command| {
+        build_telnet_startup_command_input(&command.command, config.enter_mode).map(|input| {
+            PendingTelnetStartupCommand {
+                input,
+                delay_ms: command.delay_ms,
+            }
+        })
+    });
+    let mut startup_deadline: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
+    if auto_login.lock().await.is_none() {
+        arm_telnet_startup_timer(&pending_startup, &mut startup_deadline);
+    }
 
     loop {
         tokio::select! {
@@ -275,6 +343,50 @@ async fn telnet_session_task(
             Some(zdata) = zmodem_out_rx.recv() => {
                 let _ = writer.write_all(&zdata).await;
             }
+            Some(action) = auto_login_rx.recv() => {
+                match action {
+                    TelnetAutoLoginAction::Send(data) => {
+                        let _ = writer.write_all(&data).await;
+                    }
+                    TelnetAutoLoginAction::Complete => {
+                        arm_telnet_startup_timer(&pending_startup, &mut startup_deadline);
+                    }
+                    TelnetAutoLoginAction::Disable => {
+                        pending_startup = None;
+                        startup_deadline = None;
+                    }
+                }
+            }
+            _ = async {
+                if let Some(deadline) = startup_deadline.as_mut() {
+                    deadline.as_mut().await;
+                }
+            }, if startup_deadline.is_some() => {
+                startup_deadline = None;
+                if let Some(pending) = pending_startup.take() {
+                    if let Some(ref recorder) = recording_mgr {
+                        recorder.write_input(&session_id, &pending.input);
+                    }
+                    if let Err(e) = writer.write_all(&pending.input).await {
+                        log_rate_limited(StructuredLog {
+                            level: StructuredLogLevel::Warn,
+                            domain: "session.lifecycle".to_string(),
+                            event: "telnet.startup_command_write_error".to_string(),
+                            message: "Telnet startup command write error".to_string(),
+                            ids: Some(serde_json::json!({
+                                "session_id": session_id.clone(),
+                                "connection_id": connection_id.clone(),
+                            })),
+                            data: Some(serde_json::json!({
+                                "session_type": "Telnet",
+                            })),
+                            error: Some(serde_json::json!({ "message": e.to_string() })),
+                            client_timestamp: None,
+                        });
+                        break;
+                    }
+                }
+            }
             reader_done = reader_done_rx.recv() => {
                 let _ = reader_done;
                 break;
@@ -284,7 +396,19 @@ async fn telnet_session_task(
                     Some(SessionCommand::Attach) => {
                         output.attach();
                     }
-                    Some(SessionCommand::Write(mut data)) => {
+                    Some(SessionCommand::Write { mut data, automated }) => {
+                        if !automated {
+                            let mut auto = auto_login.lock().await;
+                            if let Some(auto) = auto.as_mut() {
+                                if let Some(TelnetAutoLoginAction::Disable) =
+                                    auto.handle_user_input(false)
+                                {
+                                    pending_startup = None;
+                                    startup_deadline = None;
+                                }
+                            }
+                        }
+
                         if zmodem_state.lock().await.is_some()
                             || zmodem_upload_drain
                                 .lock()

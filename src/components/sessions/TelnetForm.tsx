@@ -1,7 +1,18 @@
-import { useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Eye, EyeOff } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MdChevronRight } from "react-icons/md";
+import { MdChevronRight, MdClose, MdSettings } from "react-icons/md";
+import { PasswordManagementTab } from "@/components/panel/security-auth/PasswordManagementTab";
+import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
@@ -14,15 +25,30 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { invoke } from "@/lib/invoke";
 import { cn } from "@/lib/utils";
+import type { SavedPassword } from "@/types/global";
 
+const MASKED_PASSWORD_PLACEHOLDER = "••••••••";
 type TelnetEnterMode = "crlf" | "cr" | "lf";
+type TelnetAuthMode = "none" | "password";
+type PasswordSource = "direct" | "saved";
 
 interface TelnetFormProps {
   host: string;
   setHost: (v: string) => void;
   port: number;
   setPort: (v: number) => void;
+  username: string;
+  setUsername: (v: string) => void;
+  authType: TelnetAuthMode;
+  setAuthType: (v: TelnetAuthMode) => void;
+  passwordId: string;
+  setPasswordId: (v: string) => void;
+  password: string;
+  setPassword: (v: string) => void;
+  hasPassword: boolean;
+  setHasPassword: (v: boolean) => void;
   backspaceMode: string;
   setBackspaceMode: (v: string) => void;
   rawTcpCli: boolean;
@@ -39,6 +65,7 @@ interface TelnetFormProps {
   setSendNaws: (v: boolean) => void;
   sendSga: boolean;
   setSendSga: (v: boolean) => void;
+  connectionId?: string;
 }
 
 function RequiredMark() {
@@ -50,6 +77,16 @@ export function TelnetForm({
   setHost,
   port,
   setPort,
+  username,
+  setUsername,
+  authType,
+  setAuthType,
+  passwordId,
+  setPasswordId,
+  password,
+  setPassword,
+  hasPassword,
+  setHasPassword,
   backspaceMode,
   setBackspaceMode,
   rawTcpCli,
@@ -66,9 +103,80 @@ export function TelnetForm({
   setSendNaws,
   sendSga,
   setSendSga,
+  connectionId,
 }: TelnetFormProps) {
   const { t } = useTranslation();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [savedPasswords, setSavedPasswords] = useState<SavedPassword[]>([]);
+  const [showPasswordManagement, setShowPasswordManagement] = useState(false);
+  const [showDirectPassword, setShowDirectPassword] = useState(false);
+  const [directPasswordLoading, setDirectPasswordLoading] = useState(false);
+  const [passwordSource, setPasswordSource] = useState<PasswordSource>(
+    passwordId ? "saved" : "direct",
+  );
+
+  const loadPasswords = useCallback(async () => {
+    try {
+      const passwords = await invoke<SavedPassword[]>("get_saved_passwords");
+      setSavedPasswords(passwords);
+      if (passwordId && !passwords.some((p) => p.id === passwordId)) {
+        setPasswordId("");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [passwordId, setPasswordId]);
+
+  useEffect(() => {
+    if (passwordId) {
+      setPasswordSource("saved");
+    } else {
+      setPasswordSource("direct");
+    }
+  }, [passwordId]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onFocusChanged((event) => {
+        if (event.payload) void loadPasswords();
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    void loadPasswords();
+    return () => {
+      unlisten?.();
+    };
+  }, [loadPasswords]);
+
+  const selectedPasswordName = savedPasswords.find((p) => p.id === passwordId)?.name;
+
+  const toggleDirectPasswordVisibility = async () => {
+    if (showDirectPassword) {
+      setShowDirectPassword(false);
+      return;
+    }
+
+    if (!password && hasPassword && connectionId) {
+      setDirectPasswordLoading(true);
+      try {
+        const value = await invoke<string | null>("get_connection_password_value", {
+          id: connectionId,
+        });
+        if (value) {
+          setPassword(value);
+          setHasPassword(false);
+        }
+      } catch {
+        return;
+      } finally {
+        setDirectPasswordLoading(false);
+      }
+    }
+
+    setShowDirectPassword(true);
+  };
 
   const renderSwitchRow = (
     label: string,
@@ -121,6 +229,177 @@ export function TelnetForm({
             max={65535}
           />
         </div>
+      </div>
+
+      <div>
+        <Label className="text-xs font-medium text-foreground/80">{t("dialog.username")}</Label>
+        <Input
+          className="mt-1 text-xs h-8"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+      </div>
+
+      <div>
+        <Label className="text-xs font-medium text-foreground/80">
+          {t("dialog.authentication")}
+        </Label>
+        <Tabs
+          value={authType}
+          onValueChange={(value) => {
+            const next = value as TelnetAuthMode;
+            setAuthType(next);
+            if (next === "none") {
+              setPasswordId("");
+              setPassword("");
+              setHasPassword(false);
+            }
+          }}
+          className="mt-1 w-full"
+        >
+          <TabsList className="grid h-8 w-full grid-cols-2 pointer-events-auto">
+            <TabsTrigger value="none" className="text-xs">
+              {t("dialog.noAuthentication", "None")}
+            </TabsTrigger>
+            <TabsTrigger value="password" className="text-xs">
+              {t("dialog.password")}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="none" className="mt-3 border-0 outline-none">
+            <div className="rounded-md border border-dashed bg-accent/25 px-3 py-2 text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {t("dialog.telnetNoAuthenticationDescription")}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="password" className="mt-3 border-0 outline-none">
+            <Label className="text-xs font-medium text-foreground/80">
+              {t("dialog.passwordSource")}
+            </Label>
+            <Tabs
+              value={passwordSource}
+              onValueChange={(value) => {
+                const next = value as PasswordSource;
+                setPasswordSource(next);
+                if (next === "direct") {
+                  setPasswordId("");
+                } else {
+                  setPassword("");
+                  setHasPassword(false);
+                }
+              }}
+              className="mt-1 w-full"
+            >
+              <TabsList className="grid h-8 w-full grid-cols-2 pointer-events-auto">
+                <TabsTrigger value="direct" className="text-xs">
+                  {t("dialog.directPassword")}
+                </TabsTrigger>
+                <TabsTrigger value="saved" className="text-xs">
+                  {t("dialog.savedPassword")}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="direct" className="mt-3 border-0 outline-none">
+                <Label className="text-xs font-medium text-foreground/80">
+                  {t("dialog.password")}
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    type={showDirectPassword ? "text" : "password"}
+                    className="text-xs h-8 pr-16"
+                    placeholder={
+                      hasPassword && !password
+                        ? MASKED_PASSWORD_PLACEHOLDER
+                        : t("dialog.passwordPlaceholder")
+                    }
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setPasswordId("");
+                      if (e.target.value) setHasPassword(false);
+                    }}
+                    disabled={directPasswordLoading}
+                  />
+                  {(password || hasPassword) && (
+                    <button
+                      type="button"
+                      className="absolute right-7 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      title={
+                        showDirectPassword ? t("dialog.hidePassword") : t("dialog.showPassword")
+                      }
+                      disabled={directPasswordLoading}
+                      onClick={() => {
+                        void toggleDirectPasswordVisibility();
+                      }}
+                    >
+                      {showDirectPassword ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                  {(password || hasPassword) && (
+                    <button
+                      type="button"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                      title={t("dialog.clearPassword", "Clear password")}
+                      onClick={() => {
+                        setPassword("");
+                        setHasPassword(false);
+                        setShowDirectPassword(false);
+                      }}
+                    >
+                      <MdClose className="text-sm" />
+                    </button>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="saved" className="mt-3 border-0 outline-none">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="min-w-0">
+                    <Label className="text-xs font-medium text-foreground/80">
+                      {t("dialog.savedPassword")}
+                    </Label>
+                    <Select
+                      value={passwordId || "__none__"}
+                      onValueChange={(value) => {
+                        setPasswordId(value === "__none__" ? "" : value);
+                        setPassword("");
+                        setHasPassword(false);
+                      }}
+                    >
+                      <SelectTrigger className="mt-1 h-8 text-xs font-normal">
+                        <SelectValue placeholder={t("dialog.selectPassword")}>
+                          {selectedPasswordName || t("dialog.none")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">{t("dialog.none")}</SelectItem>
+                        {savedPasswords.map((entry) => (
+                          <SelectItem key={entry.id} value={entry.id}>
+                            {entry.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-6 h-8 gap-1.5 text-xs"
+                    onClick={() => setShowPasswordManagement(true)}
+                  >
+                    <MdSettings className="text-sm" />
+                    {t("dialog.managePasswords")}
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
@@ -196,73 +475,50 @@ export function TelnetForm({
                     {t("dialog.telnetCompatibility", "Compatibility")}
                   </div>
                   <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-                    {t(
-                      "dialog.telnetRawTcpCliDesc",
-                      "Suitable for non-standard Telnet, embedded debug ports, and device CLIs. When enabled, Telnet negotiation is disabled and input is passed through directly.",
-                    )}
+                    {t("dialog.telnetRawTcpCliDesc")}
                   </p>
                 </div>
 
                 <div className="mt-3 grid gap-2">
                   {renderSwitchRow(
                     t("dialog.telnetRawTcpCli", "Embedded debug port / Raw TCP CLI"),
-                    t(
-                      "dialog.telnetRawTcpCliLongDesc",
-                      "Disables Telnet negotiation and passes input directly through for TVs, routers, switches, and embedded debug ports.",
-                    ),
+                    t("dialog.telnetRawTcpCliLongDesc"),
                     rawTcpCli,
                     (checked) => {
                       setRawTcpCli(checked);
-                      if (checked) {
-                        setEnterMode("cr");
-                      }
+                      if (checked) setEnterMode("cr");
                     },
                   )}
 
                   <div className="grid gap-2 md:grid-cols-2">
                     {renderSwitchRow(
                       t("dialog.telnetLocalEcho", "Local Echo"),
-                      t(
-                        "dialog.telnetLocalEchoDesc",
-                        "Show typed input locally when the device does not echo.",
-                      ),
+                      t("dialog.telnetLocalEchoDesc"),
                       localEcho,
                       setLocalEcho,
                     )}
                     {renderSwitchRow(
                       t("dialog.telnetLocalLineEdit", "Local line editing / Send line on Enter"),
-                      t(
-                        "dialog.telnetLocalLineEditDesc",
-                        "Edit input locally and send the full command when Enter is pressed. Useful for debug ports that do not support remote Backspace.",
-                      ),
+                      t("dialog.telnetLocalLineEditDesc"),
                       localLineEdit,
                       setLocalLineEdit,
                     )}
                     {renderSwitchRow(
                       t("dialog.telnetForceCharAtATime", "Force character-at-a-time"),
-                      t(
-                        "dialog.telnetForceCharAtATimeDesc",
-                        "Write each input character to the TCP stream immediately.",
-                      ),
+                      t("dialog.telnetForceCharAtATimeDesc"),
                       forceCharacterAtATime,
                       setForceCharacterAtATime,
                     )}
                     {renderSwitchRow(
                       t("dialog.telnetSendNaws", "Send NAWS"),
-                      t(
-                        "dialog.telnetSendNawsDesc",
-                        "Send terminal size changes in standard Telnet mode.",
-                      ),
+                      t("dialog.telnetSendNawsDesc"),
                       sendNaws,
                       setSendNaws,
                       rawTcpCli,
                     )}
                     {renderSwitchRow(
                       t("dialog.telnetSendSga", "Send SGA"),
-                      t(
-                        "dialog.telnetSendSgaDesc",
-                        "Accept Suppress Go Ahead negotiation in standard Telnet mode.",
-                      ),
+                      t("dialog.telnetSendSgaDesc"),
                       sendSga,
                       setSendSga,
                       rawTcpCli,
@@ -274,6 +530,27 @@ export function TelnetForm({
           </Tabs>
         </CollapsibleContent>
       </Collapsible>
+
+      <Dialog
+        open={showPasswordManagement}
+        onOpenChange={(open) => {
+          setShowPasswordManagement(open);
+          if (!open) void loadPasswords();
+        }}
+      >
+        <DialogContent
+          className="w-[min(27rem,calc(100vw-3rem))] max-w-none max-h-[76vh] overflow-hidden"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("passwordManager.title")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("passwordManager.title")}</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto px-1 pb-1">
+            <PasswordManagementTab />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

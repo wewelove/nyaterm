@@ -38,4 +38,7 @@ pub use session::{
 };
 pub use terminal_session::local::{LocalSessionConfig, create_local_session};
 pub use terminal_session::serial::{SerialConfig, create_serial_session, list_serial_ports};
-pub use terminal_session::telnet::{TelnetEnterMode, TelnetSessionConfig, create_telnet_session};
+pub use terminal_session::telnet::{
+    TelnetAutoLoginConfig, TelnetEnterMode, TelnetSessionConfig, TelnetStartupCommand,
+    create_telnet_session,
+};

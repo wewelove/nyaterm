@@ -137,6 +137,14 @@
     "quickPrompt": "예: CPU 사용량이 가장 높은 프로세스 찾기",
     "quote": "인용",
     "reasoning": "추론",
+    "reasoningEffort": {
+      "auto": "자동",
+      "high": "높음",
+      "low": "가벼움",
+      "medium": "보통",
+      "none": "끄기",
+      "xhigh": "매우 높음"
+    },
     "recordHistory": "AI 채팅 기록 저장",
     "redaction": "민감한 데이터 마스킹",
     "refreshModels": "모델 목록 새로고침",
@@ -409,6 +417,7 @@
     "telnetLocalEchoDesc": "장치가 에코하지 않을 때 입력한 내용을 로컬에 표시합니다.",
     "telnetLocalLineEdit": "로컬 줄 편집 / Enter 시 줄 전송",
     "telnetLocalLineEditDesc": "로컬에서 입력을 편집하고 Enter를 누르면 전체 명령을 전송합니다. 원격 백스페이스를 지원하지 않는 디버그 포트에 유용합니다.",
+    "telnetNoAuthenticationDescription": "저장된 Telnet 비밀번호를 자동으로 전송하지 않고 연결합니다.",
     "telnetRawTcpCli": "내장 디버그 포트 / Raw TCP CLI",
     "telnetRawTcpCliDesc": "비표준 Telnet, 내장 디버그 포트, 장치 CLI에 적합합니다. 활성화하면 Telnet 협상이 비활성화되고 입력이 직접 전달됩니다.",
     "telnetRawTcpCliLongDesc": "Telnet 협상을 비활성화하고 TV, 라우터, 스위치, 내장 디버그 포트를 위해 입력을 직접 전달합니다.",
@@ -1926,6 +1935,11 @@
     "duplicateFailed": "복제 실패",
     "duplicateWithCommand": "복제 및 명령 실행",
     "ipCopied": "IP 주소가 복사되었습니다",
+    "lockTab": "탭 잠금",
+    "lockToggleFailed": "탭 잠금 상태를 업데이트하지 못했습니다",
+    "locked": "잠김",
+    "lockedCloseBlocked": "이 탭을 닫으려면 먼저 잠금을 해제하세요",
+    "lockedTabsSkipped": "잠긴 탭은 건너뛰었습니다",
     "multiplexSsh": "SSH 연결 재사용",
     "multiplexSshFailed": "SSH 채널을 재사용하지 못했습니다",
     "multiplexSshWithCommand": "SSH 연결 재사용 및 명령 실행",
@@ -1948,6 +1962,7 @@
     "splitVertical": "세로로 분할",
     "sshAddressCopied": "SSH 주소가 복사되었습니다",
     "sshAdvanced": "SSH 고급",
+    "unlockTab": "탭 잠금 해제",
     "unsplit": "모든 창 병합"
   },
   "temporarySsh": {

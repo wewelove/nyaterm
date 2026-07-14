@@ -35,7 +35,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "nyaterm",
     name: "NyaTerm",
-    icon: "/nyaterm.svg",
+    icon: "/icons/app/nyaterm.svg",
     extensions: ["nya"],
     hint: ".nya",
     type: "backup",
@@ -43,7 +43,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "xshell",
     name: "Xshell",
-    icon: "/Xshell.svg",
+    icon: "/icons/brands/Xshell.svg",
     extensions: ["xts"],
     hint: ".xts",
     type: "sessions",
@@ -51,7 +51,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "mobaxterm",
     name: "MobaXterm",
-    icon: "/MobaXterm.svg",
+    icon: "/icons/brands/MobaXterm.svg",
     extensions: ["mxtsessions"],
     hint: ".mxtsessions",
     type: "sessions",
@@ -59,7 +59,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "windterm",
     name: "WindTerm",
-    icon: "/WindTerm.svg",
+    icon: "/icons/brands/WindTerm.svg",
     extensions: ["sessions"],
     hint: ".sessions",
     type: "sessions",
@@ -67,7 +67,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "securecrt",
     name: "SecureCRT",
-    icon: "/SecureCRT.svg",
+    icon: "/icons/brands/SecureCRT.svg",
     extensions: ["xml"],
     hint: ".xml",
     type: "sessions",
@@ -75,7 +75,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "finalshell",
     name: "FinalShell",
-    icon: "/FinalShell.svg",
+    icon: "/icons/brands/FinalShell.svg",
     hint: "conn directory",
     type: "sessions",
     picker: "directory",
@@ -83,7 +83,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "termius",
     name: "Termius",
-    icon: "/Termius.svg",
+    icon: "/icons/brands/Termius.svg",
     hint: "local IndexedDB",
     type: "sessions",
     picker: "directory",
@@ -91,7 +91,7 @@ const IMPORT_SOURCES: ImportSource[] = [
   {
     id: "electerm",
     name: "Electerm",
-    icon: "/electerm.svg",
+    icon: "/icons/brands/electerm.svg",
     extensions: ["json"],
     hint: ".json",
     type: "sessions",

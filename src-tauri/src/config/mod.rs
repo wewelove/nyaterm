@@ -27,8 +27,8 @@ pub use cloud_sync::{
 pub use connection::{
     AiExecutionProfile, AppConfig, ConnectionAuth, ConnectionNetwork, ConnectionType, Group,
     SavedConnection, SessionsConfig, SftpCwdFollowMode, SftpSettings, SshAlgorithmMode,
-    SshAlgorithmPreferences, load_config, load_connection_by_id, load_sessions, save_config,
-    save_sessions,
+    SshAlgorithmPreferences, TelnetAutoLoginConfig, load_config, load_connection_by_id,
+    load_sessions, save_config, save_sessions,
 };
 #[allow(unused_imports)]
 pub use credential::{
@@ -59,12 +59,13 @@ pub use quick_command::{
 pub use settings::{
     AI_REQUEST_USER_AGENT_DEFAULT, ActionLinksMatcherSettings, AgentCommandExecutionMode,
     AiCustomActionConfig, AiMode, AiModelConfigItem, AiModelSource, AiProviderCredential,
-    AiProviderKind, AiProviderProfile, AiSettings, AppSettings, AppearanceSettings,
-    DiagnosticsLogLevel, DiagnosticsSettings, GeneralSettings, InteractionSettings,
-    KeywordHighlightRule, ProxySettings, RiskLevel, SearchEngine, SearchSettings, SecuritySettings,
-    TerminalSettings, TransferSettings, TranslationSettings, ai_model_id_for_credential,
-    ai_model_id_for_provider, decrypt_ai_settings, encrypt_ai_settings, load_app_settings,
-    mask_ai_settings, merge_masked_ai_settings, normalize_ai_settings, save_app_settings,
+    AiProviderKind, AiProviderProfile, AiReasoningEffort, AiSettings, AppSettings,
+    AppearanceSettings, DiagnosticsLogLevel, DiagnosticsSettings, GeneralSettings,
+    InteractionSettings, KeywordHighlightRule, ProxySettings, RiskLevel, SearchEngine,
+    SearchSettings, SecuritySettings, TerminalSettings, TransferSettings, TranslationSettings,
+    ai_model_id_for_credential, ai_model_id_for_provider, decrypt_ai_settings, encrypt_ai_settings,
+    load_app_settings, mask_ai_settings, merge_masked_ai_settings, normalize_ai_settings,
+    save_app_settings,
 };
 #[allow(unused_imports)]
 pub use tunnel::{

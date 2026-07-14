@@ -23,6 +23,7 @@ import {
   MdExpandMore,
   MdFolder,
   MdHistory,
+  MdLock,
   MdTerminal,
 } from "react-icons/md";
 import { toast } from "sonner";
@@ -35,7 +36,7 @@ import { getActiveGroupForSession, isSessionPausedInGroup } from "@/lib/syncInpu
 import { getActivePane, getTabDisplayName } from "@/lib/workspaceTabs";
 import type { Group, PaneSplitDirection, SavedConnection, Tab } from "@/types/global";
 import { useApp } from "../../context/AppContext";
-import { CONNECTION_ICONS } from "../icons";
+import { resolveConnectionIcon } from "../icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -642,7 +643,7 @@ function TabBar({
         case "disconnect_session":
           return canDisconnectTab(tab);
         case "close_tab":
-          return true;
+          return !tab.locked;
       }
     },
     [savedConnections],
@@ -700,12 +701,13 @@ function TabBar({
   const handleConfiguredTabMouseAction = useCallback(
     (event: MouseEvent<HTMLDivElement>, tab: Tab, action: TabMouseAction) => {
       if (action === "none") return false;
+      if (!isTabMouseActionEnabled(tab, action)) return false;
 
       event.preventDefault();
       event.stopPropagation();
       return runTabMouseAction(tab, action);
     },
-    [runTabMouseAction],
+    [isTabMouseActionEnabled, runTabMouseAction],
   );
 
   const getInsertionIndex = useCallback((event: DragEvent<HTMLDivElement>, index: number) => {
@@ -942,8 +944,8 @@ function TabBar({
     const conn = pane?.connectionId
       ? savedConnections.find((connection) => connection.id === pane.connectionId)
       : undefined;
-    const iconDef = conn?.icon ? CONNECTION_ICONS[conn.icon] : null;
-    if (iconDef) {
+    if (conn?.icon) {
+      const iconDef = resolveConnectionIcon(conn.icon);
       const IconComp = iconDef.icon;
       return <IconComp className="text-sm shrink-0" style={{ color: iconDef.color }} />;
     }
@@ -987,8 +989,8 @@ function TabBar({
   };
 
   const renderConnectionIcon = (connection: SavedConnection) => {
-    const iconDef = connection.icon ? CONNECTION_ICONS[connection.icon] : null;
-    if (iconDef) {
+    if (connection.icon) {
+      const iconDef = resolveConnectionIcon(connection.icon);
       const IconComp = iconDef.icon;
       return <IconComp className="text-sm shrink-0" style={{ color: iconDef.color }} />;
     }
@@ -1044,8 +1046,14 @@ function TabBar({
     );
 
     const tooltipContent =
-      host || sshAddress ? (
+      tab.locked || host || sshAddress ? (
         <div className="flex max-w-[260px] min-w-0 flex-col gap-1">
+          {tab.locked && (
+            <div className="flex min-w-0 items-center gap-2 text-[var(--df-text-muted)]">
+              <MdLock className="text-[12px] shrink-0" />
+              <span className="min-w-0 truncate">{t("tabCtx.locked")}</span>
+            </div>
+          )}
           {host && renderTooltipCopyRow(host, t("tabCtx.copyIp"), t("tabCtx.ipCopied"))}
           {sshAddress &&
             renderTooltipCopyRow(
@@ -1153,7 +1161,25 @@ function TabBar({
         <SyncIndicator tab={tab} syncGroups={syncGroups} broadcastToAll={broadcastToAll} />
 
         <div className="relative ml-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center">
-          {showUnreadIndicator ? (
+          {tab.locked ? (
+            <div
+              className={`absolute inset-0 flex items-center justify-center rounded transition-all duration-200 ${
+                isActive
+                  ? "text-[var(--df-primary)]"
+                  : "text-[var(--df-text-dimmed)] opacity-0 group-hover:opacity-100"
+              } hover:!bg-accent hover:!text-[var(--df-primary)] active:scale-90`}
+              title={t("tabCtx.lockedCloseBlocked")}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                toast.info(t("tabCtx.lockedCloseBlocked"));
+              }}
+            >
+              <MdLock className="text-[12px]" />
+            </div>
+          ) : showUnreadIndicator ? (
             <span className="h-2 w-2 rounded-full bg-green-500 animate-breathing" />
           ) : (
             <div
@@ -1252,7 +1278,7 @@ function TabBar({
         className="w-full py-1.5"
         onSelect={() => handleSelectOpenTab(tab)}
       >
-        <span className="grid w-full grid-cols-[1rem_1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+        <span className="grid w-full grid-cols-[1rem_1rem_minmax(0,1fr)_1rem] items-center gap-x-2 gap-y-1.5">
           <span className="flex h-4 w-4 items-center justify-center">
             {isActive ? (
               <MdCheck className="text-sm" style={{ color: "var(--df-primary)" }} />
@@ -1266,6 +1292,9 @@ function TabBar({
           <span className="min-w-0 truncate">
             <span className="mr-1.5 text-[var(--df-text-dimmed)] tabular-nums">{index + 1}</span>
             {displayName}
+          </span>
+          <span className="flex h-4 w-4 items-center justify-center text-[var(--df-text-dimmed)]">
+            {tab.locked ? <MdLock className="text-[12px]" aria-label={t("tabCtx.locked")} /> : null}
           </span>
         </span>
       </DropdownMenuItem>

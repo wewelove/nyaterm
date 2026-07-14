@@ -130,7 +130,11 @@ export default function QuickCommandsImportDialog({
               >
                 {source.icon === "windterm" || source.icon === "xshell" ? (
                   <img
-                    src={source.icon === "windterm" ? "/WindTerm.svg" : "/Xshell.svg"}
+                    src={
+                      source.icon === "windterm"
+                        ? "/icons/brands/WindTerm.svg"
+                        : "/icons/brands/Xshell.svg"
+                    }
                     alt=""
                     className="h-10 w-10"
                     draggable={false}

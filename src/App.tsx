@@ -8,11 +8,12 @@ import AppPanelContent from "./components/app/AppPanelContent";
 import type { HostKeyVerifyRequest } from "./components/dialog/connections/HostKeyVerifyDialog";
 import type { OtpRequest } from "./components/dialog/connections/OtpDialog";
 import type { SshAuthRequest } from "./components/dialog/connections/SshAuthDialog";
-import type { DockerSudoPasswordRequest } from "./components/dialog/docker/DockerSudoPasswordDialog";
 import TemporarySshLinkDialog from "./components/dialog/connections/TemporarySshLinkDialog";
+import type { DockerSudoPasswordRequest } from "./components/dialog/docker/DockerSudoPasswordDialog";
 import SessionQuickSwitcher, {
   type QuickSwitcherSession,
 } from "./components/dialog/terminal/SessionQuickSwitcherDialog";
+import { inferConnectionIconKeyFromRemoteSystem } from "./components/icons";
 import { useApp } from "./context/AppContext";
 import { TransferProvider } from "./context/TransferContext";
 import { useActivityBarController } from "./hooks/useActivityBarController";
@@ -20,6 +21,7 @@ import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useIdleLock } from "./hooks/useIdleLock";
 import { useMacSelectionGuard } from "./hooks/useMacSelectionGuard";
 import { useModalChildWindows } from "./hooks/useModalChildWindows";
+import { useRemoteStats } from "./hooks/useRemoteStats";
 import { resolveDisplayKeys } from "./hooks/useShortcutMap";
 import { useTerminalZoom } from "./hooks/useTerminalZoom";
 import { useUnreadTabs } from "./hooks/useUnreadTabs";
@@ -41,7 +43,6 @@ import {
 import { getErrorMessage, shouldPromptConnectionEditOnFailure } from "./lib/errors";
 import { invoke } from "./lib/invoke";
 import { logger } from "./lib/logger";
-import { isMacOS } from "./lib/platform";
 import {
   listenOpenSendCommandPanel,
   type SendCommandPanelDraft,
@@ -119,6 +120,10 @@ function getConnectionSessionType(
   return connection ? CONNECTION_SESSION_TYPES[connection.type] : "SSH";
 }
 
+function isConnectionIconAutoDetectEnabled(connection: SavedConnection): boolean {
+  return connection.icon_auto_detect ?? !connection.icon;
+}
+
 function isSessionCreationCancelled(error: unknown) {
   return getErrorMessage(error).toLowerCase().includes("session creation cancelled");
 }
@@ -158,6 +163,7 @@ async function createSessionForConnection(
       return invoke<string>("create_telnet_session", {
         connectionId: connection.id,
         createRequestId,
+        startupCommand: buildStartupCommandPayload(startupCommand),
       });
     case "serial":
       return invoke<string>("create_serial_session", {
@@ -1064,6 +1070,7 @@ function App() {
           return invoke<string>("create_telnet_session", {
             connectionId: pane.connectionId,
             createRequestId,
+            startupCommand: buildStartupCommandPayload(startupCommand),
           });
         case "Serial":
           if (!pane.connectionId) throw new Error("Missing Serial connection id");
@@ -1156,8 +1163,17 @@ function App() {
     [persistTabsNow],
   );
 
+  const notifyLockedTabCloseBlocked = useCallback(() => {
+    toast.info(t("tabCtx.lockedCloseBlocked"));
+  }, [t]);
+
   const handleCloseWorkspaceTab = useCallback(
     async (tab: Tab) => {
+      if (tab.locked) {
+        notifyLockedTabCloseBlocked();
+        return;
+      }
+
       const allClosed = await closeWorkspaceTabSessions(tab);
       if (!allClosed) {
         toast.error(t("tabCtx.closeFailed"));
@@ -1166,7 +1182,7 @@ function App() {
       closeTabs([tab.id]);
       await persistWorkspaceNow(t("tabCtx.closeFailed"));
     },
-    [closeTabs, closeWorkspaceTabSessions, persistWorkspaceNow, t],
+    [closeTabs, closeWorkspaceTabSessions, notifyLockedTabCloseBlocked, persistWorkspaceNow, t],
   );
 
   const handleCloseDisconnectedPane = useCallback(
@@ -1174,6 +1190,10 @@ function App() {
       const tab = tabs.find((item) => item.id === tabId);
       const pane = tab ? findSessionPaneById(tab.root, paneId) : null;
       if (!tab || !pane) return;
+      if (tab.locked) {
+        notifyLockedTabCloseBlocked();
+        return;
+      }
 
       const closed = await closePaneBackendSession(pane);
       if (!closed) {
@@ -1184,7 +1204,7 @@ function App() {
       closePane(tab.id, pane.id);
       await persistWorkspaceNow(t("tabCtx.closeFailed"));
     },
-    [closePane, closePaneBackendSession, persistWorkspaceNow, t, tabs],
+    [closePane, closePaneBackendSession, notifyLockedTabCloseBlocked, persistWorkspaceNow, t, tabs],
   );
 
   const handleSessionClick = useCallback(
@@ -1306,8 +1326,12 @@ function App() {
 
   const handleCloseActiveTab = useCallback(() => {
     if (!activeTab) return;
+    if (activeTab.locked) {
+      notifyLockedTabCloseBlocked();
+      return;
+    }
     void handleCloseWorkspaceTab(activeTab);
-  }, [activeTab, handleCloseWorkspaceTab]);
+  }, [activeTab, handleCloseWorkspaceTab, notifyLockedTabCloseBlocked]);
 
   const handleNextTab = useCallback(() => {
     if (tabs.length < 2 || !activeTabId) return;
@@ -1445,11 +1469,6 @@ function App() {
 
           event.preventDefault();
 
-          if (isMacOS) {
-            handleCloseActiveTab();
-            return;
-          }
-
           try {
             await persistWorkspaceLayoutNow();
           } catch (error) {
@@ -1483,12 +1502,7 @@ function App() {
     return () => {
       unlistenCloseRequested?.();
     };
-  }, [
-    appSettings.general.minimize_to_tray,
-    handleCloseActiveTab,
-    persistWorkspaceLayoutNow,
-    settingsLoaded,
-  ]);
+  }, [appSettings.general.minimize_to_tray, persistWorkspaceLayoutNow, settingsLoaded]);
 
   const handleRequestQuit = useCallback(() => {
     if (tabs.length > 0 && appSettings.general.confirm_on_close !== false) {
@@ -1512,10 +1526,12 @@ function App() {
     import("@tauri-apps/api/window")
       .then(({ getCurrentWindow }) => {
         allowProgrammaticWindowCloseRef.current = true;
-        return getCurrentWindow().close().catch((error) => {
-          allowProgrammaticWindowCloseRef.current = false;
-          throw error;
-        });
+        return getCurrentWindow()
+          .close()
+          .catch((error) => {
+            allowProgrammaticWindowCloseRef.current = false;
+            throw error;
+          });
       })
       .catch(() => {})
       .finally(() => {
@@ -1596,7 +1612,7 @@ function App() {
             return;
           }
           updateTabSession(tabId, sessionId);
-          if (startupCommand && pane.type !== "SSH") {
+          if (startupCommand && pane.type !== "SSH" && pane.type !== "Telnet") {
             void sendStartupCommandToSession(sessionId, startupCommand).catch((error) => {
               logger.error({
                 domain: "session.lifecycle",
@@ -2035,6 +2051,11 @@ function App() {
 
   const handleCloseSession = useCallback(
     async (tab: Tab) => {
+      if (tab.locked) {
+        notifyLockedTabCloseBlocked();
+        return;
+      }
+
       const pane = getActivePane(tab);
       if (!pane) return;
 
@@ -2047,7 +2068,7 @@ function App() {
       closePane(tab.id, pane.id);
       await persistWorkspaceNow(t("tabCtx.closeFailed"));
     },
-    [closePane, closePaneBackendSession, persistWorkspaceNow, t],
+    [closePane, closePaneBackendSession, notifyLockedTabCloseBlocked, persistWorkspaceNow, t],
   );
 
   const handleDisconnectSessionById = useCallback(
@@ -2094,15 +2115,21 @@ function App() {
   );
 
   const handleCloseAllTabs = useCallback(async () => {
-    const results = await Promise.all(tabs.map((tab) => closeWorkspaceTabSessions(tab)));
-    const successfulTabIds = tabs.filter((_, index) => results[index]).map((tab) => tab.id);
+    const tabsToClose = tabs.filter((tab) => !tab.locked);
+    const skippedLockedCount = tabs.length - tabsToClose.length;
+    const results = await Promise.all(tabsToClose.map((tab) => closeWorkspaceTabSessions(tab)));
+    const successfulTabIds = tabsToClose.filter((_, index) => results[index]).map((tab) => tab.id);
 
     if (successfulTabIds.length > 0) {
       closeTabs(successfulTabIds);
       await persistWorkspaceNow(t("tabCtx.closeFailed"));
     }
 
-    if (successfulTabIds.length !== tabs.length) {
+    if (skippedLockedCount > 0) {
+      toast.info(t("tabCtx.lockedTabsSkipped"));
+    }
+
+    if (successfulTabIds.length !== tabsToClose.length) {
       toast.error(t("tabCtx.closeFailed"));
     }
   }, [closeTabs, closeWorkspaceTabSessions, persistWorkspaceNow, t, tabs]);
@@ -2113,7 +2140,11 @@ function App() {
         ? findTerminalWindowLeafByTabId(terminalWindows, keepTabId)
         : null;
       const targetTabs = leaf?.tabIds ?? tabs.map((tab) => tab.id);
-      const tabsToClose = tabs.filter((tab) => targetTabs.includes(tab.id) && tab.id !== keepTabId);
+      const targetTabsToClose = tabs.filter(
+        (tab) => targetTabs.includes(tab.id) && tab.id !== keepTabId,
+      );
+      const tabsToClose = targetTabsToClose.filter((tab) => !tab.locked);
+      const skippedLockedCount = targetTabsToClose.length - tabsToClose.length;
       const results = await Promise.all(tabsToClose.map((tab) => closeWorkspaceTabSessions(tab)));
 
       const successfulTabIds = tabsToClose
@@ -2127,6 +2158,10 @@ function App() {
 
       if (!successfulTabIds.length && activeTabId !== keepTabId) {
         setActiveTabId(keepTabId);
+      }
+
+      if (skippedLockedCount > 0) {
+        toast.info(t("tabCtx.lockedTabsSkipped"));
       }
 
       if (successfulTabIds.length !== tabsToClose.length) {
@@ -2153,7 +2188,9 @@ function App() {
       if (idx === -1) return;
 
       const rightTabIds = tabOrder.slice(idx + 1);
-      const tabsToClose = tabs.filter((tab) => rightTabIds.includes(tab.id));
+      const targetTabsToClose = tabs.filter((tab) => rightTabIds.includes(tab.id));
+      const tabsToClose = targetTabsToClose.filter((tab) => !tab.locked);
+      const skippedLockedCount = targetTabsToClose.length - tabsToClose.length;
       const results = await Promise.all(tabsToClose.map((tab) => closeWorkspaceTabSessions(tab)));
 
       const successfulTabIds = tabsToClose
@@ -2163,6 +2200,10 @@ function App() {
       if (successfulTabIds.length > 0) {
         closeTabs(successfulTabIds);
         await persistWorkspaceNow(t("tabCtx.closeFailed"));
+      }
+
+      if (skippedLockedCount > 0) {
+        toast.info(t("tabCtx.lockedTabsSkipped"));
       }
 
       if (successfulTabIds.length !== tabsToClose.length) {
@@ -2435,6 +2476,13 @@ function App() {
     activeSshSessionId && (liveSessionIds === null || liveSessionIds.has(activeSshSessionId))
       ? activeSshSessionId
       : null;
+  const remoteStatsEnabled = uiConfig.show_remote_stats ?? true;
+  const remoteStats = useRemoteStats(
+    activeLiveSshSessionId,
+    remoteStatsEnabled,
+    uiConfig.remote_stats_interval ?? 3,
+  );
+  const pendingAutoIconUpdatesRef = useRef<Map<string, string>>(new Map());
   const activeSerialSessionId =
     activePane && !activePane.connecting && !activePane.connectError && activePane.type === "Serial"
       ? activePane.sessionId
@@ -2478,6 +2526,42 @@ function App() {
     visit(terminalWindows);
     return targets;
   }, [tabsById, terminalWindows]);
+
+  useEffect(() => {
+    const stats = remoteStats.stats;
+    if (!remoteStatsEnabled || !stats || !activeConnection) return;
+    if (activeConnection.type !== "ssh") return;
+    if (!isConnectionIconAutoDetectEnabled(activeConnection)) return;
+
+    const iconKey = inferConnectionIconKeyFromRemoteSystem(stats.system);
+    if (!iconKey || iconKey === activeConnection.icon) return;
+
+    const pendingKey = `${iconKey}:auto`;
+    const pendingUpdates = pendingAutoIconUpdatesRef.current;
+    if (pendingUpdates.get(activeConnection.id) === pendingKey) return;
+
+    pendingUpdates.set(activeConnection.id, pendingKey);
+    invoke("update_connection_icon", {
+      connectionId: activeConnection.id,
+      icon: iconKey,
+      iconAutoDetect: true,
+    })
+      .catch((error) => {
+        logger.error({
+          domain: "ui.error",
+          event: "connection.auto_icon_update_failed",
+          message: "Failed to update auto-detected connection icon",
+          ids: { connection_id: activeConnection.id },
+          error,
+        });
+      })
+      .finally(() => {
+        if (pendingUpdates.get(activeConnection.id) === pendingKey) {
+          pendingUpdates.delete(activeConnection.id);
+        }
+      });
+  }, [activeConnection, remoteStats.stats, remoteStatsEnabled]);
+
   const activeBottomPanel = uiConfig.show_serial_send_panel
     ? "serialSend"
     : uiConfig.show_quick_cmd_bar
@@ -2672,6 +2756,8 @@ function App() {
         activeConnection={activeConnection}
         activeSessionId={activeSessionId}
         activeSshSessionId={activeLiveSshSessionId}
+        remoteStatsEnabled={remoteStatsEnabled}
+        remoteStats={remoteStats}
         recordingSessions={recordingSessions}
         aiIntent={aiIntent}
         transferHeight={uiConfig.transfer_height || 180}
@@ -2695,6 +2781,8 @@ function App() {
       activeSessionId,
       aiIntent,
       canReconnectSessionById,
+      remoteStats,
+      remoteStatsEnabled,
       handleSaveSessionTranscript,
       handleDisconnectSessionById,
       handleEditConnection,

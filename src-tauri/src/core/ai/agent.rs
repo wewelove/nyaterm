@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use genai::chat::{
-    ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent, Tool, ToolCall, ToolChoice,
-    ToolResponse,
+    ChatMessage, ChatRequest, ChatStreamEvent, Tool, ToolCall, ToolChoice, ToolResponse,
 };
 use russh::ChannelMsg;
 use serde::Deserialize;
@@ -22,7 +21,7 @@ use crate::core::ssh::SshConnectionHandles;
 use crate::error::{AppError, AppResult};
 
 use super::history::{append_ai_audit, append_message, save_user_message};
-use super::model::{ResolvedAiModel, build_client, resolve_request_model};
+use super::model::{ResolvedAiModel, build_chat_options, build_client, resolve_request_model};
 use super::parser::{extract_json_object, parse_model_output, trim_string_to_option};
 use super::prompt::{
     agent_execution_disabled_message, agent_max_steps_message, agent_send_only_observation,
@@ -385,7 +384,13 @@ async fn send_command_without_capture(
     let mut bytes = command.as_bytes().to_vec();
     bytes.push(b'\n');
     session_manager
-        .send_command(terminal_session_id, SessionCommand::Write(bytes))
+        .send_command(
+            terminal_session_id,
+            SessionCommand::Write {
+                data: bytes,
+                automated: true,
+            },
+        )
         .await?;
 
     let observation = CommandObservation {
@@ -1094,9 +1099,7 @@ async fn run_agent_tool_step(
 ) -> AppResult<AgentToolInvocation> {
     let client = build_client(resolved_model, settings)?;
     let chat_req = ChatRequest::new(conversation.to_vec()).with_tools(agent_tools());
-    let chat_options = ChatOptions::default()
-        .with_capture_reasoning_content(true)
-        .with_normalize_reasoning_content(true)
+    let chat_options = build_chat_options(settings)
         .with_capture_tool_calls(true)
         .with_tool_choice(ToolChoice::Required);
 
@@ -1184,9 +1187,7 @@ async fn run_agent_legacy_json_step(
         r#"Fallback protocol: tool calling is unavailable for this step. Return exactly one JSON object and no Markdown. For command execution use {"thought":"...","action":"execute_command","command":"...","riskLevel":"low|medium|high|critical","riskReason":"..."}. For final answer use {"thought":"...","action":"final_answer","answer":"..."}."#,
     ));
     let chat_req = ChatRequest::new(legacy_conversation);
-    let chat_options = ChatOptions::default()
-        .with_capture_reasoning_content(true)
-        .with_normalize_reasoning_content(true);
+    let chat_options = build_chat_options(settings);
 
     let stream_result = tokio::time::timeout(
         Duration::from_millis(settings.timeout_ms),

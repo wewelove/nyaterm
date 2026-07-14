@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use genai::adapter::AdapterKind;
+use genai::chat::{ChatOptions, ReasoningEffort};
 use genai::resolver::{AuthData, Endpoint, ServiceTargetResolver};
 use genai::{Client, ModelIden, WebConfig};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
@@ -9,7 +10,7 @@ use serde_json::Value;
 
 use crate::config::{
     self, AI_REQUEST_USER_AGENT_DEFAULT, AiModelConfigItem, AiModelSource, AiProviderCredential,
-    AiProviderKind, AiSettings, ai_model_id_for_credential,
+    AiProviderKind, AiReasoningEffort, AiSettings, ai_model_id_for_credential,
 };
 use crate::error::{AppError, AppResult};
 use crate::utils::url::{join_api_base_url, normalize_api_base_url};
@@ -21,6 +22,29 @@ pub(super) struct ResolvedAiModel {
     pub model_name: String,
     pub provider_kind: AiProviderKind,
     pub credential: Option<AiProviderCredential>,
+}
+
+pub(super) fn build_chat_options(settings: &AiSettings) -> ChatOptions {
+    let mut options = ChatOptions::default()
+        .with_capture_reasoning_content(true)
+        .with_normalize_reasoning_content(true);
+
+    if let Some(reasoning_effort) = genai_reasoning_effort(&settings.default_reasoning_effort) {
+        options = options.with_reasoning_effort(reasoning_effort);
+    }
+
+    options
+}
+
+fn genai_reasoning_effort(value: &AiReasoningEffort) -> Option<ReasoningEffort> {
+    match value {
+        AiReasoningEffort::Auto => None,
+        AiReasoningEffort::None => Some(ReasoningEffort::None),
+        AiReasoningEffort::Low => Some(ReasoningEffort::Low),
+        AiReasoningEffort::Medium => Some(ReasoningEffort::Medium),
+        AiReasoningEffort::High => Some(ReasoningEffort::High),
+        AiReasoningEffort::XHigh => Some(ReasoningEffort::XHigh),
+    }
 }
 
 pub(super) fn resolve_request_model(
@@ -526,6 +550,40 @@ mod tests {
                 .to_string()
                 .contains("No API key configured for AI credential")
         );
+    }
+
+    #[test]
+    fn default_reasoning_effort_auto_is_not_sent_to_genai() {
+        let settings = AiSettings::default();
+        let options = build_chat_options(&settings);
+
+        assert!(options.reasoning_effort.is_none());
+    }
+
+    #[test]
+    fn explicit_reasoning_effort_maps_to_genai_options() {
+        let cases = [
+            (AiReasoningEffort::None, "none"),
+            (AiReasoningEffort::Low, "low"),
+            (AiReasoningEffort::Medium, "medium"),
+            (AiReasoningEffort::High, "high"),
+            (AiReasoningEffort::XHigh, "xhigh"),
+        ];
+
+        for (effort, expected) in cases {
+            let mut settings = AiSettings::default();
+            settings.default_reasoning_effort = effort;
+
+            let options = build_chat_options(&settings);
+
+            assert_eq!(
+                options
+                    .reasoning_effort
+                    .as_ref()
+                    .map(ReasoningEffort::variant_name),
+                Some(expected)
+            );
+        }
     }
 
     #[test]

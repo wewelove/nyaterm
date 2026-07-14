@@ -1,13 +1,14 @@
 name: Publish Gitee Release
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Build and Release"]
+    types: [completed]
 
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v1.1.13"
+        description: "Release tag, for example v1.1.14"
         required: true
         type: string
       upload_small_assets:
@@ -20,7 +21,7 @@ on:
           - "false"
 
 concurrency:
-  group: gitee-release-${{ github.event.release.tag_name || inputs.tag }}
+  group: gitee-release-${{ github.event.workflow_run.id || inputs.tag || github.run_id }}
   cancel-in-progress: false
 
 permissions:
@@ -38,20 +39,55 @@ env:
 jobs:
   publish-gitee-release:
     name: Create or update Gitee Release
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success'
+        )
+      }}
     runs-on: [self-hosted, linux, x64, gitee-release]
 
     steps:
       - name: Resolve release tag
+        env:
+          MANUAL_TAG: ${{ inputs.tag }}
+          UPSTREAM_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            TAG="${{ github.event.release.tag_name }}"
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="${MANUAL_TAG}"
           else
-            TAG="${{ inputs.tag }}"
+            HEAD_SHA="${UPSTREAM_HEAD_SHA}"
+
+            if [[ -z "$HEAD_SHA" ]]; then
+              echo "::error::Upstream workflow head SHA is empty"
+              exit 1
+            fi
+
+            echo "Resolving release tag for upstream commit: ${HEAD_SHA}"
+
+            TAG="$(
+              git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" |
+                awk -v sha="$HEAD_SHA" '
+                  $1 == sha {
+                    ref = $2
+                    sub(/^refs\/tags\//, "", ref)
+                    sub(/\^\{\}$/, "", ref)
+                    print ref
+                  }
+                ' |
+                sort -Vu |
+                tail -n 1
+            )"
           fi
 
           if [[ -z "$TAG" ]]; then
-            echo "::error::Release tag is empty"
+            echo "::error::Unable to resolve release tag"
+            echo "::error::For workflow_run, make sure Build and Release runs against the tagged commit."
             exit 1
           fi
 
@@ -61,6 +97,8 @@ jobs:
       - name: Validate Gitee config
         shell: bash
         run: |
+          set -euo pipefail
+
           if [[ -z "${GITEE_OWNER}" ]]; then
             echo "::error::GITEE_OWNER is empty. Please set it in GitHub repository Variables."
             exit 1
@@ -73,13 +111,100 @@ jobs:
 
           echo "Gitee repository: ${GITEE_OWNER}/${GITEE_REPO}"
 
+      - name: Prepare clean workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf release-assets
+          rm -f github-release.json github-release.json.tmp
+          rm -rf "$RUNNER_TEMP/gitee-release-venv"
+          mkdir -p release-assets
+
+      - name: Wait for GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Waiting for GitHub release and assets: ${TAG}"
+
+          for i in {1..30}; do
+            rm -f github-release.json.tmp
+
+            if gh release view "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json tagName,name,body,isPrerelease,isDraft,url,targetCommitish,assets \
+              > github-release.json.tmp; then
+
+              IS_DRAFT="$(jq -r '.isDraft' github-release.json.tmp)"
+              ASSET_COUNT="$(jq '.assets | length' github-release.json.tmp)"
+
+              echo "GitHub release found: draft=${IS_DRAFT}, assets=${ASSET_COUNT}"
+
+              if [[ "$IS_DRAFT" == "false" && "$ASSET_COUNT" -gt 0 ]]; then
+                mv github-release.json.tmp github-release.json
+
+                echo "GitHub release metadata:"
+                jq '{
+                  tagName,
+                  name,
+                  isPrerelease,
+                  isDraft,
+                  url,
+                  targetCommitish,
+                  assetCount: (.assets | length)
+                }' github-release.json
+
+                exit 0
+              fi
+            else
+              echo "GitHub release ${TAG} is not available yet."
+            fi
+
+            echo "Release assets are not ready, waiting 10s... ($i/30)"
+            sleep 10
+          done
+
+          echo "::error::GitHub release ${TAG} did not expose any assets after waiting."
+          echo "::error::Make sure Build and Release uploads all assets before the workflow completes."
+          exit 1
+
+      - name: Download GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --clobber
+
+          ASSET_COUNT="$(find release-assets -maxdepth 1 -type f | wc -l)"
+
+          if [[ "$ASSET_COUNT" -eq 0 ]]; then
+            echo "::error::No GitHub release assets were downloaded for ${TAG}"
+            exit 1
+          fi
+
+          echo "Downloaded assets (${ASSET_COUNT}):"
+          find release-assets -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
       - name: Wait for Gitee mirror tag
         shell: bash
         run: |
+          set -euo pipefail
+
           echo "Waiting for Gitee mirror tag: ${TAG}"
 
           for i in {1..30}; do
-            if git ls-remote --tags "https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" "refs/tags/${TAG}" | grep -q "refs/tags/${TAG}$"; then
+            if git ls-remote --tags \
+              "https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" \
+              "refs/tags/${TAG}" |
+              grep -q "refs/tags/${TAG}$"; then
               echo "Gitee tag found: ${TAG}"
               exit 0
             fi
@@ -91,42 +216,6 @@ jobs:
           echo "::error::Gitee tag ${TAG} was not found after waiting."
           echo "::error::Make sure GitHub -> Gitee mirror has synced tags."
           exit 1
-
-      - name: Read GitHub release metadata
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release view "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json tagName,name,body,isPrerelease,isDraft,url,targetCommitish \
-            > github-release.json
-
-          echo "GitHub release metadata:"
-          jq '{ tagName, name, isPrerelease, isDraft, url, targetCommitish }' github-release.json
-
-      - name: Prepare clean workspace
-        shell: bash
-        run: |
-          rm -rf release-assets
-          rm -f github-release.json
-          rm -rf "$RUNNER_TEMP/gitee-release-venv"
-          mkdir -p release-assets
-
-      - name: Download GitHub release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          mkdir -p release-assets
-
-          gh release download "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir release-assets \
-            --clobber || true
-
-          echo "Downloaded assets:"
-          find release-assets -maxdepth 1 -type f -printf '%f %s bytes\n' | sort || true
 
       - name: Install Python dependencies
         shell: bash

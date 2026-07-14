@@ -2,9 +2,11 @@
 mod tests {
     use super::{
         DO, IAC, OPT_NAWS, OPT_SUPPRESS_GO_AHEAD, TelnetEnterMode, TelnetLineEditor,
-        TelnetSessionConfig, WILL, maybe_build_naws, negotiate_response, normalize_enter_bytes,
-        split_write_chunks, strip_telnet_commands,
+        TelnetAutoLogin, TelnetAutoLoginAction, TelnetAutoLoginConfig,
+        TelnetAutoLoginCredentials, TelnetSessionConfig, WILL, maybe_build_naws,
+        negotiate_response, normalize_enter_bytes, split_write_chunks, strip_telnet_commands,
     };
+    use std::time::Instant;
 
     #[test]
     fn standard_negotiation_responds_by_default() {
@@ -157,5 +159,171 @@ mod tests {
             vec![vec![0x03], vec![0x04], b"\x1b[A".to_vec()]
         );
         assert_eq!(result.display, "a\x08 \x08");
+    }
+
+    fn auto_login() -> TelnetAutoLogin {
+        TelnetAutoLogin::new(
+            TelnetAutoLoginConfig::default(),
+            TelnetAutoLoginCredentials {
+                username: "admin".to_string(),
+                password: Some("secret".to_string()),
+            },
+            TelnetEnterMode::Cr,
+            Instant::now(),
+        )
+        .expect("auto login")
+    }
+
+    fn sent_payloads(actions: Vec<TelnetAutoLoginAction>) -> Vec<Vec<u8>> {
+        actions
+            .into_iter()
+            .filter_map(|action| match action {
+                TelnetAutoLoginAction::Send(data) => Some(data),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn auto_login_detects_split_username_and_password_prompts() {
+        let mut login = auto_login();
+
+        assert!(login.handle_text("User", Instant::now()).is_empty());
+        assert_eq!(
+            sent_payloads(login.handle_text("name:", Instant::now())),
+            vec![b"admin\r".to_vec()]
+        );
+        assert!(login.handle_text("Pass", Instant::now()).is_empty());
+        assert_eq!(
+            sent_payloads(login.handle_text("word:", Instant::now())),
+            vec![b"secret\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn auto_login_detects_chinese_prompts() {
+        let mut login = auto_login();
+
+        assert_eq!(
+            sent_payloads(login.handle_text("用户名：", Instant::now())),
+            vec![b"admin\r".to_vec()]
+        );
+        assert_eq!(
+            sent_payloads(login.handle_text("密码：", Instant::now())),
+            vec![b"secret\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn auto_login_detects_linux_getty_host_login_prompt() {
+        let mut login = auto_login();
+
+        assert_eq!(
+            sent_payloads(login.handle_text(
+                "\r\nLinux 6.8.0-107-generic (kaikai) (pts/3)\r\n\r\nkaikai login: ",
+                Instant::now()
+            )),
+            vec![b"admin\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn auto_login_detects_password_prompt_without_colon() {
+        let mut login = auto_login();
+
+        assert_eq!(
+            sent_payloads(login.handle_text("Input Password", Instant::now())),
+            vec![b"secret\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn auto_login_sends_wake_enter_once() {
+        let mut login = auto_login();
+
+        assert_eq!(
+            sent_payloads(login.handle_text("Press RETURN to get started.", Instant::now())),
+            vec![b"\r".to_vec()]
+        );
+        assert!(login
+            .handle_text("Press RETURN to get started.", Instant::now())
+            .is_empty());
+    }
+
+    #[test]
+    fn auto_login_does_not_treat_last_login_as_username_prompt() {
+        let mut login = auto_login();
+
+        assert!(login
+            .handle_text("Last login: Mon Jul 13 12:00:00", Instant::now())
+            .is_empty());
+        assert!(login
+            .handle_text("Previous login: Mon Jul 13 12:00:00", Instant::now())
+            .is_empty());
+    }
+
+    #[test]
+    fn auto_login_sends_username_before_password_in_same_chunk() {
+        let mut login = auto_login();
+
+        assert_eq!(
+            sent_payloads(login.handle_text("Username:\nPassword:", Instant::now())),
+            vec![b"admin\r".to_vec(), b"secret\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn auto_login_completes_on_shell_prompt_after_credentials() {
+        let mut login = auto_login();
+        let _ = login.handle_text("Username:", Instant::now());
+        let _ = login.handle_text("Password:", Instant::now());
+
+        assert!(login
+            .handle_text("router#", Instant::now())
+            .contains(&TelnetAutoLoginAction::Complete));
+    }
+
+    #[test]
+    fn auto_login_failure_retries_then_disables() {
+        let mut login = TelnetAutoLogin::new(
+            TelnetAutoLoginConfig {
+                max_retries: 1,
+                ..TelnetAutoLoginConfig::default()
+            },
+            TelnetAutoLoginCredentials {
+                username: String::new(),
+                password: Some("secret".to_string()),
+            },
+            TelnetEnterMode::Cr,
+            Instant::now(),
+        )
+        .expect("auto login");
+
+        assert_eq!(
+            sent_payloads(login.handle_text("Password:", Instant::now())),
+            vec![b"secret\r".to_vec()]
+        );
+        assert!(login
+            .handle_text("Authentication failed", Instant::now())
+            .is_empty());
+        assert_eq!(
+            sent_payloads(login.handle_text("Password:", Instant::now())),
+            vec![b"secret\r".to_vec()]
+        );
+        assert!(login
+            .handle_text("Authentication failed", Instant::now())
+            .contains(&TelnetAutoLoginAction::Disable));
+    }
+
+    #[test]
+    fn auto_login_user_input_disables_but_automated_input_does_not() {
+        let mut login = auto_login();
+
+        assert_eq!(login.handle_user_input(true), None);
+        assert_eq!(
+            login.handle_user_input(false),
+            Some(TelnetAutoLoginAction::Disable)
+        );
+        assert!(login.handle_text("Username:", Instant::now()).is_empty());
     }
 }

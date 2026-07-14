@@ -11,26 +11,33 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getModelProviderLabel } from "@/lib/aiSettings";
-import type { AIModelConfigItem, AIProviderCredential } from "@/types/global";
+import type { AIModelConfigItem, AIProviderCredential, AIReasoningEffort } from "@/types/global";
+
+const REASONING_OPTIONS: AIReasoningEffort[] = ["auto", "none", "low", "medium", "high", "xhigh"];
 
 export function ModelCombobox({
   models,
   credentials,
   selectedModel,
+  selectedReasoningEffort = "auto",
   open,
   onOpenChange,
   onSelect,
+  onSelectReasoningEffort,
   className,
 }: {
   models: AIModelConfigItem[];
   credentials: AIProviderCredential[];
   selectedModel: AIModelConfigItem | null;
+  selectedReasoningEffort?: AIReasoningEffort;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (model: AIModelConfigItem) => void;
+  onSelectReasoningEffort: (effort: AIReasoningEffort) => void;
   className?: string;
 }) {
   const { t } = useTranslation();
+  const reasoningLabel = t(`ai.reasoningEffort.${selectedReasoningEffort}`);
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -42,7 +49,12 @@ export function ModelCombobox({
           className={`h-8 min-w-0 max-w-[12rem] justify-between gap-2 px-2 text-xs ${className}`}
           disabled={models.length === 0}
         >
-          <span className="truncate">{selectedModel?.name ?? t("ai.modelSelect")}</span>
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="truncate">{selectedModel?.name ?? t("ai.modelSelect")}</span>
+            {selectedModel ? (
+              <span className="shrink-0 text-muted-foreground">· {reasoningLabel}</span>
+            ) : null}
+          </span>
           <MdExpandMore className="shrink-0 text-sm" />
         </Button>
       </PopoverTrigger>
@@ -51,7 +63,23 @@ export function ModelCombobox({
           <CommandInput placeholder={t("ai.searchModels")} className="text-xs" />
           <CommandList className="max-h-64 terminal-scroll">
             <CommandEmpty>{t("ai.noModelMatches")}</CommandEmpty>
-            <CommandGroup>
+            <CommandGroup heading={t("ai.reasoning")}>
+              {REASONING_OPTIONS.map((effort) => (
+                <CommandItem
+                  key={effort}
+                  value={`${t(`ai.reasoningEffort.${effort}`)} ${effort}`}
+                  onSelect={() => onSelectReasoningEffort(effort)}
+                >
+                  <MdCheck
+                    className={`text-sm ${selectedReasoningEffort === effort ? "opacity-100" : "opacity-0"}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {t(`ai.reasoningEffort.${effort}`)}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandGroup heading={t("ai.models")}>
               {models.map((model) => {
                 const providerLabel = getModelProviderLabel(model, credentials);
                 return (

@@ -103,10 +103,10 @@ interface AppContextType {
   ) => string | null;
   closePane: (tabId: string, paneId: string, options?: { immediatePersist?: boolean }) => void;
   reorderTabs: (fromTabId: string, toIndex: number) => void;
-  /** Update user-editable tab properties (customName, tabColor). */
+  /** Update user-editable tab properties (customName, tabColor, locked). */
   updateTab: (
     tabId: string,
-    updates: Partial<Pick<Tab, "customName" | "tabColor">>,
+    updates: Partial<Pick<Tab, "customName" | "tabColor" | "locked">>,
     options?: { immediatePersist?: boolean },
   ) => Promise<void>;
   closeTabs: (
@@ -981,7 +981,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateTab = useCallback(
     async (
       tabId: string,
-      updates: Partial<Pick<Tab, "customName" | "tabColor">>,
+      updates: Partial<Pick<Tab, "customName" | "tabColor" | "locked">>,
       options?: { immediatePersist?: boolean },
     ) => {
       const nextTabs = tabsRef.current.map((tab) =>

@@ -87,6 +87,8 @@ export interface Tab {
   customName?: string;
   /** Hex color string for the tab accent line and background tint. */
   tabColor?: string;
+  /** True when the tab is protected from accidental close actions. */
+  locked?: boolean;
 }
 
 /** SSH connection config for creating a session. */
@@ -193,6 +195,17 @@ export interface ConnectionPostLogin {
   delay_ms: number;
 }
 
+export interface TelnetAutoLoginConfig {
+  enabled?: boolean;
+  send_wake_enter?: boolean;
+  timeout_ms?: number;
+  username_prompt_regex?: string | null;
+  password_prompt_regex?: string | null;
+  success_prompt_regex?: string | null;
+  failure_prompt_regex?: string | null;
+  max_retries?: number;
+}
+
 export type SshAlgorithmMode = "compatible" | "secure" | "custom";
 
 export interface SshAlgorithmPreferences {
@@ -244,6 +257,7 @@ export interface SavedConnection {
   description?: string;
   sort_order?: number;
   icon?: string;
+  icon_auto_detect?: boolean;
   auth?: ConnectionAuth;
   network?: ConnectionNetwork;
   post_login?: ConnectionPostLogin;
@@ -281,6 +295,8 @@ export interface SavedConnection {
   send_naws?: boolean;
   /** Telnet-only: accept/respond to SGA negotiation in standard Telnet mode. */
   send_sga?: boolean;
+  /** Telnet-only: prompt-driven automatic login. */
+  auto_login?: TelnetAutoLoginConfig;
   /** SSH-only: enables X11 forwarding for remote graphical applications. */
   x11_forwarding?: boolean;
 }
@@ -342,6 +358,7 @@ export interface RestorableTab {
   connection_id?: string;
   custom_name?: string;
   tab_color?: string;
+  locked?: boolean;
 }
 
 export type LeftPanelId = "fileExplorer" | "network" | "securityAuth" | "syncBackupHistory";
@@ -856,6 +873,7 @@ export interface DiagnosticsSettings {
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type AIMode = "ask" | "agent";
 export type AIAgentCommandExecutionMode = "confirm_each" | "smart" | "auto";
+export type AIReasoningEffort = "auto" | "none" | "low" | "medium" | "high" | "xhigh";
 export type AIModelSource = "rust-genai" | "manual";
 
 export type AIProviderKind =
@@ -919,6 +937,7 @@ export interface AISettings {
   active_profile_id: string;
   provider_profiles: AIProviderProfile[];
   default_mode: AIMode;
+  default_reasoning_effort?: AIReasoningEffort;
   default_model_id?: string | null;
   models: AIModelConfigItem[];
   provider_credentials: AIProviderCredential[];

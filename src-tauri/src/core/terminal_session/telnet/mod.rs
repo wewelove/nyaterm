@@ -34,6 +34,7 @@ const OPT_NAWS: u8 = 31;
 include!("types.rs");
 include!("negotiation.rs");
 include!("line_editor.rs");
+include!("auto_login.rs");
 include!("tests.rs");
 include!("manager.rs");
 include!("session.rs");

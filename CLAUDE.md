@@ -33,6 +33,7 @@ Example single-test command:
 - `pnpm --dir docs-site start` — build and serve the docs site locally for all locales (`/` and `/en/`)
 - `pnpm --dir docs-site start:zh` — run the zh-CN docs dev server with hot reload
 - `pnpm --dir docs-site start:en` — run the English docs dev server with hot reload
+- `pnpm --dir docs-site start:ko` — run the Korean docs dev server with hot reload
 - `pnpm --dir docs-site build` — build the docs site
 
 ## Big-picture architecture
@@ -114,6 +115,7 @@ Example single-test command:
 - When changing user-facing UI text, update both locale files:
   - `src/i18n/locales/en.json`
   - `src/i18n/locales/zh-CN.json`
+  - `src/i18n/locales/ko.json`
 - The root app currently has no dedicated frontend unit test runner configured in `package.json`; the automated tests in this repo are Rust tests under `src-tauri/` and `src-tauri/crates/otp/`.
 - Frontend linting includes a no-`console` check before Biome (`pnpm lint` runs `scripts/check-no-console.mjs` and `biome check src/`).
 - Vite uses the `@` alias for `src/`.

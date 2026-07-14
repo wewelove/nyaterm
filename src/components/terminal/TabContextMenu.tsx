@@ -12,6 +12,8 @@ import {
   MdInfoOutline,
   MdInput,
   MdLinkOff,
+  MdLock,
+  MdLockOpen,
   MdMerge,
   MdPlayArrow,
   MdRefresh,
@@ -117,6 +119,7 @@ export default function TabContextMenu({
   const canUseAI = !!activePane && !activePane.connecting && !activePane.connectError;
   const canCloseInactive = tabs.length > 1;
   const canCloseRight = tabIndex !== -1 && tabIndex < tabs.length - 1;
+  const canCloseTab = !!activePane && !tab.locked;
   const canSessionInfo = !!activePane?.connectionId;
   const iconClass = "mr-2 text-[0.875rem] text-muted-foreground";
 
@@ -130,6 +133,14 @@ export default function TabContextMenu({
     },
     [t, tab.id, updateTab],
   );
+
+  const handleToggleLocked = useCallback(async () => {
+    try {
+      await updateTab(tab.id, { locked: !tab.locked }, { immediatePersist: true });
+    } catch {
+      toast.error(t("tabCtx.lockToggleFailed"));
+    }
+  }, [t, tab.id, tab.locked, updateTab]);
 
   const handleOpenAI = useCallback(
     (action: "explain_output" | "analyze_error") => {
@@ -192,6 +203,11 @@ export default function TabContextMenu({
         <ContextMenuItem onClick={() => onRenameTab(tab)}>
           <MdDriveFileRenameOutline className={iconClass} />
           {t("tabCtx.rename")}
+        </ContextMenuItem>
+
+        <ContextMenuItem onClick={() => void handleToggleLocked()}>
+          {tab.locked ? <MdLockOpen className={iconClass} /> : <MdLock className={iconClass} />}
+          {tab.locked ? t("tabCtx.unlockTab") : t("tabCtx.lockTab")}
         </ContextMenuItem>
 
         <ContextMenuItem onClick={() => void onCopyTabName(tab)}>
@@ -291,7 +307,7 @@ export default function TabContextMenu({
 
         <ContextMenuSeparator />
 
-        <ContextMenuItem disabled={!activePane} onClick={() => void onCloseSession(tab)}>
+        <ContextMenuItem disabled={!canCloseTab} onClick={() => void onCloseSession(tab)}>
           <MdClose className={iconClass} />
           {t("tabCtx.close")}
         </ContextMenuItem>
