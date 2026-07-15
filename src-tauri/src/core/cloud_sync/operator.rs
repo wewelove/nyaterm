@@ -8,10 +8,12 @@ use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_P
 use http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
 use http::{HeaderValue, Request, Response};
 use md5::{Digest as Md5Digest, Md5};
-use opendal::layers::{HttpClientLayer, RetryLayer, TimeoutLayer, TracingLayer};
-use opendal::raw::{HttpBody, HttpClient, HttpFetch};
+use opendal::layers::{RetryLayer, TimeoutLayer, TracingLayer};
 use opendal::services::{AliyunDrive, Gdrive, Onedrive, S3, Webdav};
-use opendal::{Buffer, EntryMode, Error, ErrorKind, Operator};
+use opendal::{
+    Buffer, EntryMode, Error, ErrorKind, HttpBody, HttpTransport, HttpTransporter,
+    OperationContext, Operator,
+};
 use rand::RngCore;
 use sha2::Sha256;
 
@@ -128,6 +130,7 @@ impl CloudRemote {
 }
 
 pub(super) fn build_remote(settings: &CloudSyncSettings) -> AppResult<CloudRemote> {
+    opendal::install_default();
     match settings.provider.as_str() {
         "webdav" => build_webdav_operator(settings).map(CloudRemote::OpenDal),
         "s3" => build_s3_operator(settings).map(CloudRemote::OpenDal),
@@ -164,13 +167,13 @@ fn build_webdav_operator(settings: &CloudSyncSettings) -> AppResult<Operator> {
         settings.webdav.username.clone(),
         settings.webdav.password.clone().unwrap_or_default(),
     );
+    let transport = HttpTransporter::new(digest_client);
     Ok(Operator::new(builder)
         .map_err(map_storage_error)?
+        .with_context(OperationContext::new().with_http_transport(transport))
         .layer(storage_timeout_layer())
-        .layer(HttpClientLayer::new(HttpClient::with(digest_client)))
         .layer(RetryLayer::new().with_max_times(3))
-        .layer(TracingLayer::new())
-        .finish())
+        .layer(TracingLayer::new()))
 }
 
 fn build_s3_operator(settings: &CloudSyncSettings) -> AppResult<Operator> {
@@ -343,8 +346,7 @@ fn finish_opendal_operator(builder: impl opendal::Builder) -> AppResult<Operator
         .map_err(map_storage_error)?
         .layer(storage_timeout_layer())
         .layer(RetryLayer::new().with_max_times(3))
-        .layer(TracingLayer::new())
-        .finish())
+        .layer(TracingLayer::new()))
 }
 
 fn storage_timeout_layer() -> TimeoutLayer {
@@ -916,7 +918,7 @@ fn is_github_gist_update_conflict(error: &AppError) -> bool {
 
 #[derive(Clone)]
 struct WebdavDigestHttpClient {
-    inner: HttpClient,
+    inner: HttpTransporter,
     username: Arc<str>,
     password: Arc<str>,
 }
@@ -924,14 +926,14 @@ struct WebdavDigestHttpClient {
 impl WebdavDigestHttpClient {
     fn new(username: String, password: String) -> Self {
         Self {
-            inner: HttpClient::default(),
+            inner: HttpTransporter::default(),
             username: Arc::from(username),
             password: Arc::from(password),
         }
     }
 }
 
-impl HttpFetch for WebdavDigestHttpClient {
+impl HttpTransport for WebdavDigestHttpClient {
     async fn fetch(&self, req: Request<Buffer>) -> opendal::Result<Response<HttpBody>> {
         let retry_req = clone_request(&req)?;
         let resp = self.inner.fetch(req).await?;
