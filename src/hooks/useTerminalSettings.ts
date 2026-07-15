@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { isTerminalTransparencyEnabled } from "@/lib/backgroundImage";
 import { resolveTerminalFontSize } from "@/lib/terminalFontSize";
 import type { TerminalColors } from "@/lib/themes";
-import { installMacImeCompatibilityPatch } from "@/lib/xtermMacImeCompatibility";
+import { installImeCompatibilityPatch } from "@/lib/xtermImeCompatibility";
 import type { AppSettings } from "@/types/global";
 
 export function useTerminalSettings(
@@ -139,7 +139,7 @@ export function useTerminalSettings(
     const terminal = terminalInstance ?? terminalRef.current;
     if (!terminal) return;
 
-    const patch = installMacImeCompatibilityPatch(terminal, true, sessionId);
+    const patch = installImeCompatibilityPatch(terminal, interaction.ime_compatibility, sessionId);
     return () => patch.dispose();
-  }, [terminalInstance, terminalRef, sessionId]);
+  }, [interaction.ime_compatibility, terminalInstance, terminalRef, sessionId]);
 }

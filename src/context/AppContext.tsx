@@ -275,7 +275,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     duplicate_session_command_delay_ms: 1000,
     word_separators: " ()[]{}\"':=,;|&<>",
     alt_as_meta: false,
-    mac_ime_compatibility: false,
+    ime_compatibility: false,
     default_encoding: "UTF-8",
     tab_double_click_action: DEFAULT_TAB_DOUBLE_CLICK_ACTION,
     tab_middle_click_action: DEFAULT_TAB_MIDDLE_CLICK_ACTION,
