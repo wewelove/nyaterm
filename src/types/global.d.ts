@@ -1144,7 +1144,7 @@ export interface InteractionSettings {
   duplicate_session_command_delay_ms: number;
   word_separators: string;
   alt_as_meta: boolean;
-  mac_ime_compatibility: boolean;
+  ime_compatibility: boolean;
   default_encoding: string;
   tab_double_click_action: import("@/lib/interactionSettings").TabMouseAction;
   tab_middle_click_action: import("@/lib/interactionSettings").TabMouseAction;

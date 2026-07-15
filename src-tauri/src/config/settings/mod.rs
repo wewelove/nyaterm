@@ -33,7 +33,7 @@ use super::cloud_sync::{
     load_cloud_sync_settings,
 };
 use super::ui::UiConfig;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::storage::{self, SettingsDocKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -73,11 +73,22 @@ pub struct AppSettings {
 }
 
 pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
-    let mut settings: AppSettings = storage::load_settings_doc(SettingsDocKey::AppSettings)?;
-    let has_embedded_cloud_sync =
-        storage::load_settings_doc::<serde_json::Value>(SettingsDocKey::AppSettings)?
-            .get("cloud_sync")
-            .is_some();
+    let raw_settings =
+        storage::load_settings_doc::<serde_json::Value>(SettingsDocKey::AppSettings)?;
+    let mut settings: AppSettings = if raw_settings.is_null() {
+        AppSettings::default()
+    } else {
+        serde_json::from_value(raw_settings.clone())
+            .map_err(|error| AppError::Config(format!("Failed to parse app settings: {error}")))?
+    };
+    let has_embedded_cloud_sync = raw_settings.get("cloud_sync").is_some();
+    let has_legacy_mac_ime_compatibility = raw_settings
+        .get("interaction")
+        .and_then(|interaction| interaction.as_object())
+        .is_some_and(|interaction| {
+            interaction.contains_key("mac_ime_compatibility")
+                && !interaction.contains_key("ime_compatibility")
+        });
 
     let mut migrated = false;
     let mut secrets_ready_for_persist = true;
@@ -113,6 +124,9 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
         migrated = true;
     }
     if settings.appearance.normalize_window_transparency() {
+        migrated = true;
+    }
+    if has_legacy_mac_ime_compatibility {
         migrated = true;
     }
 
