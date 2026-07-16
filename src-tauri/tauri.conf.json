@@ -49,7 +49,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyQUYxQTA2NTYyQTNEOTkKUldTWlBTcFdCaHF2Z29pS0pEdE13U3ZUMVZVTlpGVmQ0YlU2cWlORkdNWU1BY005MU01YjFiU2IK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlCQzVEOTU4QTJEQjg0MjEKUldRaGhOdWlXTm5GbTdMRTMrYjA1V0gyQW5ueXV1bjlxajcwZEFWcklKeEU1cVgvUUpEVVVRWUsK",
       "endpoints": [
         "https://downloads.nyaterm.app/latest.json"
       ],
