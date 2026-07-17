@@ -2570,7 +2570,7 @@ function App() {
   const sendCommandSessionTargets = useMemo(() => {
     if (!terminalWindows) return [];
 
-    const targets: { id: string; type: SessionType }[] = [];
+    const targets: { id: string; name: string; tabName: string; type: SessionType }[] = [];
     const seen = new Set<string>();
 
     const visit = (node: TerminalWindowNode) => {
@@ -2587,7 +2587,12 @@ function App() {
         for (const pane of collectSessionPanes(tab.root)) {
           if (!hasLiveSession(pane) || seen.has(pane.sessionId)) continue;
           seen.add(pane.sessionId);
-          targets.push({ id: pane.sessionId, type: pane.type });
+          targets.push({
+            id: pane.sessionId,
+            name: pane.name,
+            tabName: getTabDisplayName(tab),
+            type: pane.type,
+          });
         }
       }
     };
