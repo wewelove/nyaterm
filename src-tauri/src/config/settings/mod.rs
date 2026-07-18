@@ -17,7 +17,7 @@ pub use ai::{
     decrypt_ai_settings, encrypt_ai_settings, mask_ai_settings, merge_masked_ai_settings,
     normalize_ai_settings,
 };
-pub use appearance::AppearanceSettings;
+pub use appearance::{AppearanceSettings, TerminalColorsConfig, ThemeColorsConfig, ThemeConfig};
 pub use diagnostics::{DiagnosticsLogLevel, DiagnosticsSettings};
 pub use general::GeneralSettings;
 pub use interaction::InteractionSettings;

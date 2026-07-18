@@ -215,6 +215,8 @@ pub fn run() {
             cmd::settings::get_app_settings,
             cmd::settings::save_app_settings,
             cmd::settings::import_keyword_highlight_rules,
+            cmd::settings::read_theme_file,
+            cmd::settings::write_theme_file,
             cmd::settings::save_app_ui_settings,
             cmd::settings::verify_master_password,
             cmd::watcher::start_file_watch,

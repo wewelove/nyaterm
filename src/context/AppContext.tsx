@@ -194,6 +194,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   appearance: {
     theme: "github-dark",
+    custom_themes: [],
     font_family: DEFAULT_TERMINAL_FONT_FAMILY,
     ui_font_family: getDefaultUiFontFamily(),
     font_size: DEFAULT_TERMINAL_FONT_SIZE,
@@ -1162,9 +1163,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 connectionId: cid,
                 createRequestId: pane.createRequestId,
               })
-                .then((sessionId) =>
-                  handleRestoredSessionCreated(tab.id, pane.id, sessionId, cid),
-                )
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId, cid))
                 .catch((e) =>
                   handleRestoredSessionFailed(tab.id, pane.id, "SSH", pane.connectionId, e),
                 );

@@ -759,8 +759,69 @@ export type BackgroundImageFit = "cover" | "contain" | "stretch" | "tile";
 /** Internal native transparency marker. Windows 11 only; other platforms no-op. */
 export type WindowTransparency = "none" | "transparent";
 
+export interface TerminalThemeColors {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+  lineHighlight: string;
+  findMatchBackground: string;
+  findMatchBorder: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+export interface ThemeSettingsColors {
+  bg: string;
+  bgPanel: string;
+  bgTerminal: string;
+  bgHover: string;
+  bgInput: string;
+  bgSectionHeader: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  textDimmed: string;
+  primary: string;
+  primaryHover: string;
+  onPrimary: string;
+  focusRing: string;
+  danger: string;
+  dangerHover: string;
+  success: string;
+  warning: string;
+  link: string;
+  shadow: string;
+  scrollThumb: string;
+  accent: string;
+  terminal: TerminalThemeColors;
+}
+
+export interface CustomThemeSettings {
+  id: string;
+  name: string;
+  label: string;
+  swatch: string;
+  colors: ThemeSettingsColors;
+}
+
 export interface AppearanceSettings {
   theme: string;
+  custom_themes: CustomThemeSettings[];
   font_family: string;
   ui_font_family: string;
   font_size: number;
