@@ -40,6 +40,7 @@ export function applyThemeToDOM(colors: ThemeColors) {
   const root = document.documentElement.style;
   root.setProperty("--df-bg", colors.bg);
   root.setProperty("--df-bg-panel", colors.bgPanel);
+  root.setProperty("--df-bg-panel-solid", colors.bgPanel);
   root.setProperty("--df-bg-terminal", colors.bgTerminal);
   root.setProperty("--df-bg-hover", colors.bgHover);
   root.setProperty("--df-bg-input", colors.bgInput);
