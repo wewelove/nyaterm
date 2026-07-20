@@ -153,7 +153,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rqrr = "0.9"
 serialport = "4"
 strip-ansi-escapes = "0.2"
-arboard = "3"
+arboard = { version = "3", features = ["wayland-data-control"] }
 opendal = { version = "0.58", default-features = false, features = [
     "executors-tokio",
     "reqwest-rustls-tls",

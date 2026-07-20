@@ -4,11 +4,36 @@ use std::{
     borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
 const CLIPBOARD_TIMEOUT: Duration = Duration::from_millis(1000);
+
+static CLIPBOARD_STATE: OnceLock<Mutex<Option<arboard::Clipboard>>> = OnceLock::new();
+
+fn with_clipboard<F, R>(f: F) -> Result<R, String>
+where
+    F: FnOnce(&mut arboard::Clipboard) -> Result<R, arboard::Error>,
+{
+    let mutex = CLIPBOARD_STATE.get_or_init(|| Mutex::new(arboard::Clipboard::new().ok()));
+    let mut guard = mutex
+        .lock()
+        .map_err(|err| format!("failed to acquire clipboard lock: {err}"))?;
+    if guard.is_none() {
+        match arboard::Clipboard::new() {
+            Ok(clip) => {
+                *guard = Some(clip);
+            }
+            Err(err) => return Err(format!("failed to initialize clipboard: {err}")),
+        }
+    }
+    if let Some(ref mut clip) = *guard {
+        f(clip).map_err(|err| format!("clipboard operation failed: {err}"))
+    } else {
+        unreachable!()
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -27,8 +52,7 @@ pub async fn read_clipboard_text() -> Option<String> {
     let result = tokio::time::timeout(
         CLIPBOARD_TIMEOUT,
         tokio::task::spawn_blocking(|| {
-            let mut clipboard = arboard::Clipboard::new().ok()?;
-            clipboard.get_text().ok()
+            with_clipboard(|clipboard| clipboard.get_text()).ok()
         }),
     )
     .await;
@@ -44,11 +68,7 @@ pub async fn write_clipboard_text(text: String) -> Result<(), String> {
     let result = tokio::time::timeout(
         CLIPBOARD_TIMEOUT,
         tokio::task::spawn_blocking(move || {
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|err| format!("failed to open clipboard: {err}"))?;
-            clipboard
-                .set_text(text)
-                .map_err(|err| format!("failed to write clipboard text: {err}"))
+            with_clipboard(|clipboard| clipboard.set_text(text))
         }),
     )
     .await;
@@ -171,11 +191,7 @@ fn read_clipboard_image_to_temp_png() -> Result<Option<PathBuf>, String> {
 }
 
 fn read_clipboard_image_data_to_file() -> Result<Option<String>, String> {
-    let mut clipboard = match arboard::Clipboard::new() {
-        Ok(clipboard) => clipboard,
-        Err(_) => return Ok(None),
-    };
-    let image = match clipboard.get_image() {
+    let image = match with_clipboard(|clipboard| clipboard.get_image()) {
         Ok(image) => image,
         Err(_) => return Ok(None),
     };
@@ -340,8 +356,7 @@ fn is_supported_image_path(path: &Path) -> bool {
 
 #[cfg(not(target_os = "windows"))]
 fn read_clipboard_text_image_paths() -> Option<Vec<String>> {
-    let mut clipboard = arboard::Clipboard::new().ok()?;
-    let text = clipboard.get_text().ok()?;
+    let text = with_clipboard(|clipboard| clipboard.get_text()).ok()?;
     Some(parse_clipboard_text_image_paths(&text))
 }
 
