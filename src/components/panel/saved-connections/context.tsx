@@ -33,7 +33,9 @@ export interface SavedConnectionsContextValue {
   dragTarget: DragTarget | null;
   expandedGroups: Set<string>;
   selectedConnectionIds: Set<string>;
+  keyboardActiveConnectionId: string | null;
   savedConnections: SavedConnection[];
+  savedGroups: Group[];
 
   // List actions
   toggleGroup: (id: string) => void;
@@ -41,8 +43,11 @@ export interface SavedConnectionsContextValue {
   handleConnectOnly: (conn: SavedConnection) => void;
   handleConnectSelected: () => void;
   handleCopyConnection: (conn: SavedConnection) => void;
+  requestMoveConnectionToGroup: (conn: SavedConnection, groupId: string | null) => void;
+  requestMoveSelectedConnectionsToGroup: (groupId: string | null) => void;
   handleConnectionSelectionStart: (conn: SavedConnection, event: ReactMouseEvent) => void;
   handleConnectionContextMenu: (conn: SavedConnection, event: ReactMouseEvent) => void;
+  registerConnectionElement: (id: string, element: HTMLDivElement | null) => void;
   onEditConnection: (
     conn: SavedConnection,
     autoConnect?: boolean,

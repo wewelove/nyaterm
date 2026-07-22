@@ -4,18 +4,20 @@ import { MdAdd, MdDelete, MdExpandLess, MdExpandMore, MdFileUpload } from "react
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectItem } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/context/ThemeContext";
 import { getBuiltinRules, hexLuminance } from "@/lib/keywordHighlightPresets";
-import type { KeywordHighlightRule } from "@/types/global";
+import type { KeywordHighlightRule, SshKeepAliveMode } from "@/types/global";
 import { KeywordHighlightImportDialog } from "../dialog/terminal/KeywordHighlightImportDialog";
 import {
   SettingInput,
   SettingNumberInput,
   SettingRow,
   SettingSection,
+  SettingSelect,
   SettingSwitch,
 } from "./SettingFormItems";
 
@@ -24,6 +26,24 @@ const DEFAULT_ACTION_LINK_MATCHERS = {
   archive: true,
   host_port: true,
 } as const;
+
+const KEEP_ALIVE_MODE_DESCRIPTION_KEYS: Record<SshKeepAliveMode, string> = {
+  compatible: "settings.keepAliveModeCompatibleDescription",
+  strict: "settings.keepAliveModeStrictDescription",
+  disabled: "settings.keepAliveModeDisabledDescription",
+};
+
+const DEFAULT_TIMESTAMP_FORMAT = "[HH:mm:ss]";
+const MAX_TIMESTAMP_FORMAT_LENGTH = 64;
+
+function normalizeKeepAliveMode(value: string): SshKeepAliveMode {
+  if (value === "strict" || value === "disabled") return value;
+  return "compatible";
+}
+
+function clampTimestampFormat(value: string): string {
+  return Array.from(value).slice(0, MAX_TIMESTAMP_FORMAT_LENGTH).join("");
+}
 
 export function TerminalTab() {
   const { t } = useTranslation();
@@ -44,6 +64,7 @@ export function TerminalTab() {
   const actionLinksEnabled = appSettings.terminal.action_links_enabled ?? false;
   const actionLinkMatchers =
     appSettings.terminal.action_links_matchers ?? DEFAULT_ACTION_LINK_MATCHERS;
+  const keepAliveMode = normalizeKeepAliveMode(appSettings.terminal.keep_alive_mode);
 
   function updateRules(next: KeywordHighlightRule[]) {
     updateAppSettings({ terminal: { ...appSettings.terminal, keyword_highlights: next } });
@@ -104,6 +125,25 @@ export function TerminalTab() {
           }
         />
 
+        <SettingSelect
+          label={t("settings.keepAliveMode")}
+          desc={t(KEEP_ALIVE_MODE_DESCRIPTION_KEYS[keepAliveMode])}
+          value={keepAliveMode}
+          controlClassName="max-w-sm"
+          onValueChange={(value) =>
+            updateAppSettings({
+              terminal: {
+                ...appSettings.terminal,
+                keep_alive_mode: normalizeKeepAliveMode(value),
+              },
+            })
+          }
+        >
+          <SelectItem value="compatible">{t("settings.keepAliveModeCompatible")}</SelectItem>
+          <SelectItem value="strict">{t("settings.keepAliveModeStrict")}</SelectItem>
+          <SelectItem value="disabled">{t("settings.keepAliveModeDisabled")}</SelectItem>
+        </SettingSelect>
+
         <SettingNumberInput
           label={t("settings.keepAliveInterval")}
           desc={t("settings.keepAliveIntervalDesc")}
@@ -111,6 +151,7 @@ export function TerminalTab() {
           max={600}
           step={5}
           value={appSettings.terminal.keep_alive_interval}
+          disabled={keepAliveMode === "disabled"}
           controlClassName="max-w-sm"
           onChange={(v) =>
             updateAppSettings({
@@ -178,19 +219,32 @@ export function TerminalTab() {
         </SettingRow>
 
         {appSettings.terminal.show_timestamps && (
-          <SettingRow
-            label={t("settings.showTimestampMilliseconds")}
-            desc={t("settings.showTimestampMillisecondsDesc")}
-          >
-            <SettingSwitch
-              checked={appSettings.terminal.show_timestamp_milliseconds ?? false}
-              onChange={(v) =>
-                updateAppSettings({
-                  terminal: { ...appSettings.terminal, show_timestamp_milliseconds: v },
-                })
-              }
-            />
-          </SettingRow>
+          <SettingInput
+            label={t("settings.timestampFormat")}
+            desc={t("settings.timestampFormatDesc")}
+            value={appSettings.terminal.timestamp_format ?? DEFAULT_TIMESTAMP_FORMAT}
+            placeholder={DEFAULT_TIMESTAMP_FORMAT}
+            controlClassName="max-w-sm"
+            className="font-mono"
+            maxLength={MAX_TIMESTAMP_FORMAT_LENGTH}
+            onChange={(event) =>
+              updateAppSettings({
+                terminal: {
+                  ...appSettings.terminal,
+                  timestamp_format: clampTimestampFormat(event.target.value),
+                },
+              })
+            }
+            onBlur={(event) => {
+              if (event.target.value.trim()) return;
+              updateAppSettings({
+                terminal: {
+                  ...appSettings.terminal,
+                  timestamp_format: DEFAULT_TIMESTAMP_FORMAT,
+                },
+              });
+            }}
+          />
         )}
 
         <SettingRow
@@ -258,6 +312,29 @@ export function TerminalTab() {
             value={appSettings.ui.gpu_monitor_interval ?? 3}
             controlClassName="max-w-sm"
             onChange={(v) => updateUi({ gpu_monitor_interval: v || 3 })}
+          />
+        )}
+
+        <SettingRow
+          label={t("settings.showAscendNpuMonitor")}
+          desc={t("settings.showAscendNpuMonitorDesc")}
+        >
+          <SettingSwitch
+            checked={appSettings.ui.show_ascend_npu_monitor ?? false}
+            onChange={(v) => updateUi({ show_ascend_npu_monitor: v })}
+          />
+        </SettingRow>
+
+        {(appSettings.ui.show_ascend_npu_monitor ?? false) && (
+          <SettingNumberInput
+            label={t("settings.ascendNpuMonitorInterval")}
+            desc={t("settings.ascendNpuMonitorIntervalDesc")}
+            min={3}
+            max={120}
+            step={1}
+            value={appSettings.ui.ascend_npu_monitor_interval ?? 3}
+            controlClassName="max-w-sm"
+            onChange={(v) => updateUi({ ascend_npu_monitor_interval: v || 3 })}
           />
         )}
 

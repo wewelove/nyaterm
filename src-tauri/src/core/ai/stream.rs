@@ -8,15 +8,16 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
-use crate::config::{self, AiMode, AiSettings};
+use crate::config::{self, AiAgentKind, AiMode, AiSettings};
 use crate::core::session::SessionManager;
 use crate::error::{AppError, AppResult};
 
 use super::agent::{AgentApprovalManager, run_agent_stream};
-use super::history::{append_message, load_history, save_user_message};
+use super::history::{append_message, load_history, save_user_message, validate_session_scope};
 use super::model::{build_chat_options, build_client, resolve_request_model};
 use super::parser::{
-    extract_text_from_assistant, parse_model_output, trim_string_to_option, truncate_preview,
+    bind_command_card_targets, extract_text_from_assistant, parse_model_output,
+    trim_string_to_option, truncate_preview,
 };
 use super::prompt::{build_prompt, system_prompt};
 use super::redaction::{redact_context, redact_sensitive_text};
@@ -74,6 +75,7 @@ pub fn start_chat_stream(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| format!("ai-session-{}", uuid()));
     request.session_id = Some(session_id.clone());
+    validate_session_scope(&app, &session_id, &request)?;
 
     tracing::info!(
         stream_id = %stream_id,
@@ -95,38 +97,80 @@ pub fn start_chat_stream(
     }
 
     let is_agent = request.mode == AiMode::Agent;
+    let agent_kind = request.agent_kind.clone();
     let task_app = app.clone();
     let task_stream_id = stream_id.clone();
     let task_session_id = session_id.clone();
 
-    if is_agent {
-        use tauri::Manager;
-        let approval_manager = app.state::<Arc<AgentApprovalManager>>().inner().clone();
-        tauri::async_runtime::spawn(async move {
-            run_agent_stream(
-                task_app,
-                session_manager,
-                approval_manager,
-                task_stream_id,
-                task_session_id,
-                request,
-                settings.ai,
-                cancel_rx,
-            )
-            .await;
-        });
-    } else {
-        tauri::async_runtime::spawn(async move {
-            run_chat_stream(
-                task_app,
-                task_stream_id,
-                task_session_id,
-                request,
-                settings.ai,
-                cancel_rx,
-            )
-            .await;
-        });
+    match agent_kind {
+        AiAgentKind::Codex => {
+            use tauri::Manager;
+            let approval_manager = app.state::<Arc<AgentApprovalManager>>().inner().clone();
+            let codex_manager = app
+                .state::<Arc<super::CodexAppServerManager>>()
+                .inner()
+                .clone();
+            tauri::async_runtime::spawn(async move {
+                super::run_codex_stream(
+                    task_app,
+                    session_manager,
+                    approval_manager,
+                    codex_manager,
+                    task_stream_id,
+                    task_session_id,
+                    request,
+                    settings.ai,
+                    cancel_rx,
+                )
+                .await;
+            });
+        }
+        AiAgentKind::ClaudeCode => {
+            use tauri::Manager;
+            let claude_runtime = app.state::<Arc<super::ClaudeCodeRuntime>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                super::run_claude_code_stream(
+                    task_app,
+                    claude_runtime,
+                    task_stream_id,
+                    task_session_id,
+                    request,
+                    settings.ai,
+                    cancel_rx,
+                )
+                .await;
+            });
+        }
+        AiAgentKind::Nyaterm if is_agent => {
+            use tauri::Manager;
+            let approval_manager = app.state::<Arc<AgentApprovalManager>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                run_agent_stream(
+                    task_app,
+                    session_manager,
+                    approval_manager,
+                    task_stream_id,
+                    task_session_id,
+                    request,
+                    settings.ai,
+                    cancel_rx,
+                )
+                .await;
+            });
+        }
+        AiAgentKind::Nyaterm => {
+            tauri::async_runtime::spawn(async move {
+                run_chat_stream(
+                    task_app,
+                    task_stream_id,
+                    task_session_id,
+                    request,
+                    settings.ai,
+                    cancel_rx,
+                )
+                .await;
+            });
+        }
     }
 
     Ok(AiStreamStart {
@@ -227,8 +271,9 @@ async fn run_chat_stream(
                 return;
             }
 
-            let (text, reasoning_content, command_cards) =
+            let (text, reasoning_content, mut command_cards) =
                 parse_model_output(&stream_result.text, stream_result.reasoning_content);
+            bind_command_card_targets(&mut command_cards, &request);
             tracing::info!(
                 stream_id = %stream_id,
                 session_id = %session_id,

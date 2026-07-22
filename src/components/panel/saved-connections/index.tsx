@@ -42,6 +42,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useApp } from "@/context/AppContext";
 import { useConfigTransfer } from "@/hooks/useConfigTransfer";
 import { resolveShortcutKeys } from "@/hooks/useShortcutMap";
+import { updateConnectionAutoIconAfterSessionStart } from "@/lib/connectionAutoIcon";
 import { getErrorMessage, shouldPromptConnectionEditOnFailure } from "@/lib/errors";
 import { invoke } from "@/lib/invoke";
 import { logger } from "@/lib/logger";
@@ -58,6 +59,7 @@ import {
   type SortMode,
 } from "./context";
 import GroupNodeItem from "./GroupNodeItem";
+import { MoveToGroupContextMenu, MoveToGroupDropdownMenu } from "./MoveToGroupMenu";
 
 interface SavedConnectionsProps {
   onTemporarySshLink: () => void;
@@ -131,12 +133,15 @@ export default function SavedConnections({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState("");
+  const [keyboardActiveConnectionId, setKeyboardActiveConnectionId] = useState<string | null>(null);
   const searchExpandedBaseRef = useRef<Set<string> | null>(null);
   const searchAutoExpandedGroupIdsRef = useRef<Set<string>>(new Set());
   const previousKeywordRef = useRef("");
   const restoredLastOpenedConnectionIdRef = useRef<string | null>(null);
   const lastSelectedConnectionIdRef = useRef<string | null>(null);
+  const connectionElementRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const sortMode = (appSettings.ui.saved_connections_sort_mode || "default") as SortMode;
+  const remoteStatsEnabled = appSettings.ui.show_remote_stats ?? true;
 
   // ── Dialog state ──────────────────────────────────────────────────────────
   const [deleteTargets, setDeleteTargets] = useState<SavedConnection[]>([]);
@@ -283,11 +288,7 @@ export default function SavedConnections({
       });
       return changed ? next : prev;
     });
-  }, [
-    appSettings.ui.saved_connections_last_opened_connection_id,
-    savedConnections,
-    savedGroups,
-  ]);
+  }, [appSettings.ui.saved_connections_last_opened_connection_id, savedConnections, savedGroups]);
 
   useEffect(() => {
     const previousKeyword = previousKeywordRef.current;
@@ -380,6 +381,33 @@ export default function SavedConnections({
     return [...orderedVisible, ...hiddenSelected];
   }, [connectionById, selectedConnectionIds, visibleConnectionIdSet, visibleConnectionIds]);
 
+  useEffect(() => {
+    if (!keyword || visibleConnectionIds.length === 0) {
+      setKeyboardActiveConnectionId(null);
+      return;
+    }
+
+    setKeyboardActiveConnectionId((currentId) =>
+      currentId && visibleConnectionIdSet.has(currentId) ? currentId : visibleConnectionIds[0],
+    );
+  }, [keyword, visibleConnectionIdSet, visibleConnectionIds]);
+
+  useEffect(() => {
+    if (!keyword || !keyboardActiveConnectionId) return;
+
+    connectionElementRefs.current
+      .get(keyboardActiveConnectionId)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [keyboardActiveConnectionId, keyword]);
+
+  const registerConnectionElement = useCallback((id: string, element: HTMLDivElement | null) => {
+    if (element) {
+      connectionElementRefs.current.set(id, element);
+    } else {
+      connectionElementRefs.current.delete(id);
+    }
+  }, []);
+
   const requestDeleteConnection = useCallback(
     (conn: SavedConnection) => {
       if (selectedConnectionIds.has(conn.id) && selectedConnections.length > 1) {
@@ -396,6 +424,81 @@ export default function SavedConnections({
     if (selectedConnections.length === 0) return;
     setDeleteTargets(selectedConnections);
   }, [selectedConnections]);
+
+  const moveConnectionsToGroup = useCallback(
+    async (connections: SavedConnection[], targetGroupId: string | null) => {
+      const uniqueConnections = Array.from(
+        new Map(connections.map((connection) => [connection.id, connection])).values(),
+      );
+      if (uniqueConnections.length === 0) return;
+
+      const movingIds = new Set(uniqueConnections.map((connection) => connection.id));
+      const targetSiblings = connectionsRef.current
+        .filter(
+          (connection) =>
+            (connection.group_id ?? null) === targetGroupId && !movingIds.has(connection.id),
+        )
+        .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0));
+      const orderedTargetConnections = [...targetSiblings, ...uniqueConnections];
+
+      try {
+        await Promise.all(
+          uniqueConnections
+            .filter((connection) => (connection.group_id ?? null) !== targetGroupId)
+            .map((connection) =>
+              invoke("save_connection", {
+                connection: { ...connection, group_id: targetGroupId },
+              }),
+            ),
+        );
+
+        await invoke("reorder_items", {
+          connections: orderedTargetConnections.map((connection, index) => ({
+            id: connection.id,
+            sort_order: index,
+          })),
+          groups: [],
+        });
+
+        if (targetGroupId) {
+          setExpandedGroups((prev) => {
+            if (prev.has(targetGroupId)) return prev;
+            return new Set([...prev, targetGroupId]);
+          });
+        }
+
+        refreshConnections();
+      } catch (error) {
+        logger.error({
+          domain: "ui.error",
+          event: "saved_connections.move_to_group_failed",
+          message: "Move connections to group failed",
+          error,
+        });
+        toast.error(t("savedConnections.moveToGroupFailed", { error: getErrorMessage(error) }));
+      }
+    },
+    [refreshConnections, t],
+  );
+
+  const requestMoveConnectionToGroup = useCallback(
+    (conn: SavedConnection, groupId: string | null) => {
+      const targets =
+        selectedConnectionIds.has(conn.id) && selectedConnections.length > 1
+          ? selectedConnections
+          : [conn];
+      void moveConnectionsToGroup(targets, groupId);
+    },
+    [moveConnectionsToGroup, selectedConnectionIds, selectedConnections],
+  );
+
+  const requestMoveSelectedConnectionsToGroup = useCallback(
+    (groupId: string | null) => {
+      if (selectedConnections.length === 0) return;
+      void moveConnectionsToGroup(selectedConnections, groupId);
+    },
+    [moveConnectionsToGroup, selectedConnections],
+  );
 
   useEffect(() => {
     const validIds = new Set(savedConnections.map((connection) => connection.id));
@@ -446,6 +549,10 @@ export default function SavedConnections({
 
   const handleConnectionSelectionStart = (conn: SavedConnection, event: React.MouseEvent) => {
     if (event.button !== 0) return;
+
+    if (keyword) {
+      setKeyboardActiveConnectionId(conn.id);
+    }
 
     const additive = event.ctrlKey || event.metaKey;
     setSelectedConnectionIds((prev) => {
@@ -540,6 +647,11 @@ export default function SavedConnections({
       updateTabSession(tabId, sessionId);
       recordRecentConnection(conn.id);
       updateUi({ saved_connections_last_opened_connection_id: conn.id });
+      void updateConnectionAutoIconAfterSessionStart({
+        connectionId: conn.id,
+        sessionId,
+        remoteStatsEnabled,
+      });
     } catch (e) {
       const errorMessage = getErrorMessage(e);
       if (errorMessage.toLowerCase().includes("session creation cancelled") || !hasTab(tabId)) {
@@ -584,6 +696,41 @@ export default function SavedConnections({
     }
 
     openConnections([conn]);
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!keyword || visibleConnectionIds.length === 0) return;
+    if (event.nativeEvent.isComposing || event.key === "Process") return;
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+
+      setKeyboardActiveConnectionId((currentId) => {
+        const currentIndex = currentId ? visibleConnectionIds.indexOf(currentId) : -1;
+        if (event.key === "ArrowDown") {
+          return visibleConnectionIds[(currentIndex + 1) % visibleConnectionIds.length];
+        }
+
+        return visibleConnectionIds[
+          (currentIndex - 1 + visibleConnectionIds.length) % visibleConnectionIds.length
+        ];
+      });
+      return;
+    }
+
+    if (event.key !== "Enter") return;
+
+    const activeId =
+      keyboardActiveConnectionId && visibleConnectionIdSet.has(keyboardActiveConnectionId)
+        ? keyboardActiveConnectionId
+        : visibleConnectionIds[0];
+    const activeConnection = connectionById.get(activeId);
+    if (!activeConnection) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    handleConnectOnly(activeConnection);
   };
 
   const handleCopyConnection = async (conn: SavedConnection) => {
@@ -1283,14 +1430,19 @@ export default function SavedConnections({
     dragTarget,
     expandedGroups,
     selectedConnectionIds,
+    keyboardActiveConnectionId,
     savedConnections,
+    savedGroups,
     toggleGroup,
     handleConnect,
     handleConnectOnly,
     handleConnectSelected,
     handleCopyConnection,
+    requestMoveConnectionToGroup,
+    requestMoveSelectedConnectionsToGroup,
     handleConnectionSelectionStart,
     handleConnectionContextMenu,
+    registerConnectionElement,
     onEditConnection,
     onNewConnection,
     requestDeleteConnection,
@@ -1341,6 +1493,7 @@ export default function SavedConnections({
               type="text"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
               placeholder={t("savedConnections.filter")}
               autoCapitalize="none"
               autoCorrect="off"
@@ -1436,6 +1589,11 @@ export default function SavedConnections({
                 {selectedConnections.length > 0 && (
                   <>
                     <DropdownMenuSeparator />
+                    <MoveToGroupDropdownMenu
+                      groups={savedGroups}
+                      onMove={requestMoveSelectedConnectionsToGroup}
+                      t={t}
+                    />
                     <DropdownMenuItem
                       onClick={requestDeleteSelectedConnections}
                       className="cursor-pointer gap-2 py-1.5 focus:bg-[var(--df-bg-hover)] text-red-500 focus:text-red-500"
@@ -1521,6 +1679,13 @@ export default function SavedConnections({
                   ? t("savedConnections.connectSelected")
                   : t("savedConnections.connect")}
               </ContextMenuItem>
+            )}
+            {selectedConnections.length > 0 && (
+              <MoveToGroupContextMenu
+                groups={savedGroups}
+                onMove={requestMoveSelectedConnectionsToGroup}
+                t={t}
+              />
             )}
             {selectedConnections.length > 0 && (
               <ContextMenuItem className="text-red-400" onClick={requestDeleteSelectedConnections}>

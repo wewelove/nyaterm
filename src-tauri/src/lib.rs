@@ -40,6 +40,8 @@ pub fn run() {
     let quick_commands_store = Arc::new(QuickCommandsStore::new());
     let cloud_sync_manager = Arc::new(CloudSyncManager::new());
     let agent_approval_manager = Arc::new(AgentApprovalManager::new());
+    let codex_app_server_manager = Arc::new(core::ai::CodexAppServerManager::new());
+    let claude_code_runtime = Arc::new(core::ai::ClaudeCodeRuntime::new());
     let transfer_duplicate_manager = Arc::new(TransferDuplicateManager::new());
     let docker_sudo_manager = Arc::new(DockerSudoManager::new());
     let app_lock_state = AppLockState::default();
@@ -72,6 +74,8 @@ pub fn run() {
         .manage(quick_commands_store.clone())
         .manage(cloud_sync_manager.clone())
         .manage(agent_approval_manager.clone())
+        .manage(codex_app_server_manager.clone())
+        .manage(claude_code_runtime.clone())
         .manage(transfer_duplicate_manager.clone())
         .manage(docker_sudo_manager.clone())
         .manage(app_lock_state)
@@ -100,11 +104,19 @@ pub fn run() {
             cmd::ai::start_ai_chat_stream,
             cmd::ai::list_ai_model_names,
             cmd::ai::cancel_ai_chat_stream,
+            cmd::ai::detect_codex_cli,
+            cmd::ai::get_codex_account_status,
+            cmd::ai::start_codex_login,
+            cmd::ai::cancel_codex_login,
+            cmd::ai::logout_codex,
+            cmd::ai::detect_claude_code_cli,
+            cmd::ai::get_claude_code_account_status,
             cmd::ai::respond_agent_step,
             cmd::ai::get_ai_sessions,
             cmd::ai::get_ai_messages,
             cmd::ai::clear_ai_history,
             cmd::ai::delete_ai_session,
+            cmd::ai::rebind_ai_session,
             cmd::ai::append_ai_audit,
             cmd::ai::get_ai_audit_logs,
             cmd::clipboard::read_clipboard_text,
@@ -137,6 +149,7 @@ pub fn run() {
             cmd::session::ack_session_output,
             cmd::session::resize_session,
             cmd::session::attach_session,
+            cmd::session::detach_session_renderer,
             cmd::session::close_session,
             cmd::session::list_sessions,
             cmd::session::add_command_history,
@@ -163,6 +176,7 @@ pub fn run() {
             cmd::session::zmodem_cancel,
             cmd::sftp::get_home_dir,
             cmd::sftp::list_remote_dir,
+            cmd::sftp::list_remote_child_directories,
             cmd::sftp::delete_remote_file,
             cmd::sftp::rename_remote_file,
             cmd::sftp::sanitize_download_file_name,
@@ -170,6 +184,7 @@ pub fn run() {
             cmd::sftp::upload_local_file,
             cmd::sftp::get_file_properties,
             cmd::sftp::read_remote_file_text,
+            cmd::sftp::read_remote_file_bytes,
             cmd::sftp::write_remote_file_text,
             cmd::sftp::create_remote_file,
             cmd::sftp::create_remote_dir,
@@ -178,10 +193,22 @@ pub fn run() {
             cmd::sftp::update_remote_file_attributes,
             cmd::sftp::download_remote_directory,
             cmd::sftp::upload_local_directory,
+            cmd::sftp::copy_file_entry,
             cmd::sftp::pause_transfer,
             cmd::sftp::resume_transfer,
             cmd::sftp::cancel_transfer,
             cmd::sftp::respond_transfer_duplicate,
+            cmd::local_fs::get_local_home_dir,
+            cmd::local_fs::list_local_dir,
+            cmd::local_fs::list_local_child_directories,
+            cmd::local_fs::create_local_file,
+            cmd::local_fs::create_local_dir,
+            cmd::local_fs::rename_local_file,
+            cmd::local_fs::delete_local_file,
+            cmd::local_fs::get_local_file_properties,
+            cmd::local_fs::read_local_file_text,
+            cmd::local_fs::read_local_file_bytes,
+            cmd::local_fs::write_local_file_text,
             cmd::connection::get_saved_connections,
             cmd::connection::get_supported_ssh_algorithms,
             cmd::connection::save_connection,
@@ -214,7 +241,10 @@ pub fn run() {
             cmd::credential::reorder_credentials,
             cmd::settings::get_app_settings,
             cmd::settings::save_app_settings,
+            cmd::settings::save_app_language,
             cmd::settings::import_keyword_highlight_rules,
+            cmd::settings::read_theme_file,
+            cmd::settings::write_theme_file,
             cmd::settings::save_app_ui_settings,
             cmd::settings::verify_master_password,
             cmd::watcher::start_file_watch,
@@ -226,10 +256,12 @@ pub fn run() {
             cmd::backup::import_config,
             cmd::stats::get_remote_stats,
             cmd::stats::get_terminal_cwd,
+            cmd::stats::try_get_terminal_cwd,
             cmd::process::get_remote_processes,
             cmd::process::signal_remote_process,
             cmd::process::renice_remote_process,
             cmd::gpu::get_remote_gpu_overview,
+            cmd::ascend_npu::get_remote_ascend_npu_overview,
             cmd::docker::get_remote_docker_overview,
             cmd::docker::get_remote_docker_images,
             cmd::docker::get_remote_docker_volumes,
@@ -252,6 +284,7 @@ pub fn run() {
             cmd::docker::prepare_docker_container_shell_command,
             cmd::docker::prepare_docker_compose_service_logs_command,
             cmd::tunnel::get_tunnels,
+            cmd::tunnel::get_tunnel_runtime_states,
             cmd::tunnel::get_tunnel_groups,
             cmd::tunnel::save_tunnel,
             cmd::tunnel::save_tunnel_group,
@@ -260,6 +293,8 @@ pub fn run() {
             cmd::tunnel::delete_tunnel_group,
             cmd::tunnel::open_tunnel,
             cmd::tunnel::close_tunnel,
+            cmd::tunnel::mark_tunnels_reconnecting_for_connection,
+            cmd::tunnel::mark_tunnels_disconnected_for_connection,
             cmd::proxy::get_proxies,
             cmd::proxy::get_proxy_groups,
             cmd::proxy::save_proxy,

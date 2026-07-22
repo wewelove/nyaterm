@@ -6,6 +6,7 @@
 use super::history::{CommandHistoryStore, sanitize_history_command};
 use crate::config::AiExecutionProfile;
 use crate::core::capture::CapturedOutput;
+use crate::core::zmodem::{ZmodemPreparedUpload, ZmodemUploadConflictMode};
 use crate::error::{AppError, AppResult};
 use crate::utils::fuzzy::{FuzzyResult, fuzzy_search_items};
 use serde::{Deserialize, Serialize};
@@ -98,6 +99,8 @@ fn default_remote_file_browser_enabled() -> bool {
 pub enum SessionCommand {
     /// Frontend listener is ready — flush buffered output and start emitting.
     Attach,
+    /// Frontend renderer has been hibernated; keep the session alive but stop emitting output.
+    DetachRenderer,
     /// Input to send to the terminal.
     Write { data: Vec<u8>, automated: bool },
     /// Temporarily stop reading output from the underlying terminal source.
@@ -121,7 +124,11 @@ pub enum SessionCommand {
     /// ZMODEM: user accepted a download — save to this directory.
     ZmodemAcceptDownload { save_dir: std::path::PathBuf },
     /// ZMODEM: user accepted an upload — send these files.
-    ZmodemAcceptUpload { files: Vec<std::path::PathBuf> },
+    ZmodemAcceptUpload {
+        files: Vec<std::path::PathBuf>,
+        conflict_mode: ZmodemUploadConflictMode,
+        preserve_timestamps: bool,
+    },
     /// ZMODEM: user cancelled the ZMODEM transfer.
     ZmodemCancel,
 }
@@ -168,7 +175,7 @@ pub struct SessionManager {
     pub sessions: Arc<Mutex<HashMap<String, SessionHandle>>>,
     pub history_store: Arc<Mutex<CommandHistoryStore>>,
     command_submissions: Arc<Mutex<HashMap<String, CommandSubmissionState>>>,
-    pending_zmodem_uploads: Arc<Mutex<HashMap<String, Vec<std::path::PathBuf>>>>,
+    pending_zmodem_uploads: Arc<Mutex<HashMap<String, ZmodemPreparedUpload>>>,
     history_save_notify: Arc<Notify>,
     history_save_worker_started: AtomicBool,
     history_event_notify: Arc<Notify>,
@@ -293,7 +300,7 @@ impl SessionManager {
     pub async fn take_pending_zmodem_upload(
         &self,
         session_id: &str,
-    ) -> Option<Vec<std::path::PathBuf>> {
+    ) -> Option<ZmodemPreparedUpload> {
         self.pending_zmodem_uploads.lock().await.remove(session_id)
     }
 

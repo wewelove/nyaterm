@@ -107,6 +107,11 @@ impl SftpSession {
         self.open_with_flags(filename, OpenFlags::READ).await
     }
 
+    /// Opens a file using raw bytes for the filename (preserves original encoding).
+    pub async fn open_bytes(&self, filename_bytes: Vec<u8>) -> SftpResult<File> {
+        self.open_with_flags_bytes(filename_bytes, OpenFlags::READ).await
+    }
+
     /// Opens a file in write-only mode.
     ///
     /// This function will create a file if it does not exist, and will truncate it if it does.
@@ -128,6 +133,16 @@ impl SftpSession {
             .await
     }
 
+    /// Attempts to open or create the file using raw bytes (preserves original encoding).
+    pub async fn open_with_flags_bytes(
+        &self,
+        filename_bytes: Vec<u8>,
+        flags: OpenFlags,
+    ) -> SftpResult<File> {
+        self.open_with_flags_and_attributes_bytes(filename_bytes, flags, FileAttributes::empty())
+            .await
+    }
+
     /// Attempts to open or create the file in the specified mode and with specified file attributes
     pub async fn open_with_flags_and_attributes<T: Into<String>>(
         &self,
@@ -136,6 +151,17 @@ impl SftpSession {
         attributes: FileAttributes,
     ) -> SftpResult<File> {
         let handle = self.session.open(filename, flags, attributes).await?.handle;
+        Ok(File::new(self.session.clone(), handle, self.features))
+    }
+
+    /// Attempts to open or create the file using raw bytes (preserves original encoding).
+    pub async fn open_with_flags_and_attributes_bytes(
+        &self,
+        filename_bytes: Vec<u8>,
+        flags: OpenFlags,
+        attributes: FileAttributes,
+    ) -> SftpResult<File> {
+        let handle = self.session.open_bytes(filename_bytes, flags, attributes).await?.handle;
         Ok(File::new(self.session.clone(), handle, self.features))
     }
 
@@ -152,6 +178,14 @@ impl SftpSession {
     pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
         self.session
             .mkdir(path, FileAttributes::empty())
+            .await
+            .map(|_| ())
+    }
+
+    /// Creates a new empty directory using raw bytes for the path.
+    pub async fn create_dir_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<()> {
+        self.session
+            .mkdir_bytes(path_bytes, FileAttributes::empty())
             .await
             .map(|_| ())
     }
@@ -196,7 +230,54 @@ impl SftpSession {
                     files = name
                         .files
                         .into_iter()
-                        .map(|f| (f.filename, f.attrs))
+                        .map(|f| {
+                            // Use filename_bytes if available, otherwise fall back to encoding filename as bytes
+                            let bytes = if f.filename_bytes.is_empty() {
+                                f.filename.as_bytes().to_vec()
+                            } else {
+                                f.filename_bytes
+                            };
+                            (bytes, f.filename, f.attrs)
+                        })
+                        .chain(files)
+                        .collect();
+                }
+                Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
+                Err(err) => return Err(err),
+            }
+        }
+
+        self.session.close(handle).await?;
+
+        Ok(ReadDir {
+            parent,
+            entries: files.into(),
+        })
+    }
+
+    /// Returns an iterator over the entries within a directory using raw bytes for the path.
+    pub async fn read_dir_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<ReadDir> {
+        let path_str = String::from_utf8_lossy(&path_bytes).into_owned();
+        let parent = Arc::from(path_str.as_str());
+
+        let handle = self.session.opendir_bytes(path_bytes).await?.handle;
+        let mut files = vec![];
+
+        loop {
+            match self.session.readdir(handle.as_str()).await {
+                Ok(name) => {
+                    files = name
+                        .files
+                        .into_iter()
+                        .map(|f| {
+                            // Use filename_bytes if available, otherwise fall back to encoding filename as bytes
+                            let bytes = if f.filename_bytes.is_empty() {
+                                f.filename.as_bytes().to_vec()
+                            } else {
+                                f.filename_bytes
+                            };
+                            (bytes, f.filename, f.attrs)
+                        })
                         .chain(files)
                         .collect();
                 }
@@ -227,9 +308,19 @@ impl SftpSession {
         self.session.rmdir(path).await.map(|_| ())
     }
 
+    /// Removes the specified folder using raw bytes for the path.
+    pub async fn remove_dir_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<()> {
+        self.session.rmdir_bytes(path_bytes).await.map(|_| ())
+    }
+
     /// Removes the specified file.
     pub async fn remove_file<T: Into<String>>(&self, filename: T) -> SftpResult<()> {
         self.session.remove(filename).await.map(|_| ())
+    }
+
+    /// Removes a file using raw bytes for the filename (preserves original encoding).
+    pub async fn remove_file_bytes(&self, filename_bytes: Vec<u8>) -> SftpResult<()> {
+        self.session.remove_bytes(filename_bytes).await.map(|_| ())
     }
 
     /// Rename a file or directory to a new name.
@@ -239,6 +330,18 @@ impl SftpSession {
         N: Into<String>,
     {
         self.session.rename(oldpath, newpath).await.map(|_| ())
+    }
+
+    /// Rename a file or directory using raw bytes for both paths.
+    pub async fn rename_bytes(
+        &self,
+        oldpath_bytes: Vec<u8>,
+        newpath_bytes: Vec<u8>,
+    ) -> SftpResult<()> {
+        self.session
+            .rename_bytes(oldpath_bytes, newpath_bytes)
+            .await
+            .map(|_| ())
     }
 
     /// Creates a symlink of the specified target.
@@ -270,6 +373,11 @@ impl SftpSession {
         Ok(self.session.stat(path).await?.attrs)
     }
 
+    /// Queries metadata about the remote file using raw bytes (preserves original encoding).
+    pub async fn metadata_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<Metadata> {
+        Ok(self.session.stat_bytes(path_bytes).await?.attrs)
+    }
+
     /// Sets metadata for a remote file.
     pub async fn set_metadata<P: Into<String>>(
         &self,
@@ -279,8 +387,24 @@ impl SftpSession {
         self.session.setstat(path, metadata).await.map(|_| ())
     }
 
+    /// Sets metadata for a remote file using raw bytes for the path.
+    pub async fn set_metadata_bytes(
+        &self,
+        path_bytes: Vec<u8>,
+        metadata: Metadata,
+    ) -> Result<(), Error> {
+        self.session
+            .setstat_bytes(path_bytes, metadata)
+            .await
+            .map(|_| ())
+    }
+
     pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.lstat(path).await?.attrs)
+    }
+
+    pub async fn symlink_metadata_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<Metadata> {
+        Ok(self.session.lstat_bytes(path_bytes).await?.attrs)
     }
 
     pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<bool>

@@ -11,13 +11,14 @@ mod transfer;
 mod translation;
 
 pub use ai::{
-    AI_REQUEST_USER_AGENT_DEFAULT, AgentCommandExecutionMode, AiCustomActionConfig, AiMode,
-    AiModelConfigItem, AiModelSource, AiProviderCredential, AiProviderKind, AiProviderProfile,
-    AiReasoningEffort, AiSettings, RiskLevel, ai_model_id_for_credential, ai_model_id_for_provider,
-    decrypt_ai_settings, encrypt_ai_settings, mask_ai_settings, merge_masked_ai_settings,
-    normalize_ai_settings,
+    AI_REQUEST_USER_AGENT_DEFAULT, AgentCommandExecutionMode, AiAgentKind, AiBackendKind,
+    AiCustomActionConfig, AiMode, AiModelConfigItem, AiModelSource, AiPermissionMode,
+    AiProviderCredential, AiProviderKind, AiProviderProfile, AiReasoningEffort, AiSettings,
+    ClaudeCodeIntegrationSettings, CodexIntegrationSettings, CodexThreadMode, RiskLevel,
+    ai_model_id_for_credential, ai_model_id_for_provider, decrypt_ai_settings, encrypt_ai_settings,
+    mask_ai_settings, merge_masked_ai_settings, normalize_ai_settings,
 };
-pub use appearance::AppearanceSettings;
+pub use appearance::{AppearanceSettings, TerminalColorsConfig, ThemeColorsConfig, ThemeConfig};
 pub use diagnostics::{DiagnosticsLogLevel, DiagnosticsSettings};
 pub use general::GeneralSettings;
 pub use interaction::InteractionSettings;
@@ -33,7 +34,7 @@ use super::cloud_sync::{
     load_cloud_sync_settings,
 };
 use super::ui::UiConfig;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::storage::{self, SettingsDocKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -73,11 +74,22 @@ pub struct AppSettings {
 }
 
 pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
-    let mut settings: AppSettings = storage::load_settings_doc(SettingsDocKey::AppSettings)?;
-    let has_embedded_cloud_sync =
-        storage::load_settings_doc::<serde_json::Value>(SettingsDocKey::AppSettings)?
-            .get("cloud_sync")
-            .is_some();
+    let raw_settings =
+        storage::load_settings_doc::<serde_json::Value>(SettingsDocKey::AppSettings)?;
+    let mut settings: AppSettings = if raw_settings.is_null() {
+        AppSettings::default()
+    } else {
+        serde_json::from_value(raw_settings.clone())
+            .map_err(|error| AppError::Config(format!("Failed to parse app settings: {error}")))?
+    };
+    let has_embedded_cloud_sync = raw_settings.get("cloud_sync").is_some();
+    let has_legacy_mac_ime_compatibility = raw_settings
+        .get("interaction")
+        .and_then(|interaction| interaction.as_object())
+        .is_some_and(|interaction| {
+            interaction.contains_key("mac_ime_compatibility")
+                && !interaction.contains_key("ime_compatibility")
+        });
 
     let mut migrated = false;
     let mut secrets_ready_for_persist = true;
@@ -109,10 +121,19 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
     if normalize_ai_settings(&mut settings.ai) {
         migrated = true;
     }
+    if migrate_terminal_timestamp_format(&raw_settings, &mut settings.terminal) {
+        migrated = true;
+    }
+    if settings.terminal.normalize_timestamp_format() {
+        migrated = true;
+    }
     if settings.appearance.normalize_terminal_font_family() {
         migrated = true;
     }
     if settings.appearance.normalize_window_transparency() {
+        migrated = true;
+    }
+    if has_legacy_mac_ime_compatibility {
         migrated = true;
     }
 
@@ -174,6 +195,32 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
                 .activity_bar_layout
                 .left_top
                 .push("network".to_string());
+            migrated = true;
+        }
+    }
+
+    {
+        let all_ids: Vec<&str> = settings
+            .ui
+            .activity_bar_layout
+            .left_top
+            .iter()
+            .chain(&settings.ui.activity_bar_layout.left_bottom)
+            .chain(&settings.ui.activity_bar_layout.right_top)
+            .chain(&settings.ui.activity_bar_layout.right_bottom)
+            .map(|s| s.as_str())
+            .collect();
+        if !all_ids.contains(&"ascendNpuMonitor") {
+            let right_top = &mut settings.ui.activity_bar_layout.right_top;
+            if let Some(gpu_index) = right_top.iter().position(|id| id == "gpuMonitor") {
+                right_top.insert(gpu_index + 1, "ascendNpuMonitor".to_string());
+            } else if let Some(resource_index) =
+                right_top.iter().position(|id| id == "resourceMonitor")
+            {
+                right_top.insert(resource_index + 1, "ascendNpuMonitor".to_string());
+            } else {
+                right_top.push("ascendNpuMonitor".to_string());
+            }
             migrated = true;
         }
     }
@@ -287,7 +334,9 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
             .collect();
         if !all_ids.contains(&"processManager") {
             let right_top = &mut settings.ui.activity_bar_layout.right_top;
-            if let Some(gpu_index) = right_top.iter().position(|id| id == "gpuMonitor") {
+            if let Some(ascend_index) = right_top.iter().position(|id| id == "ascendNpuMonitor") {
+                right_top.insert(ascend_index + 1, "processManager".to_string());
+            } else if let Some(gpu_index) = right_top.iter().position(|id| id == "gpuMonitor") {
                 right_top.insert(gpu_index + 1, "processManager".to_string());
             } else if let Some(resource_index) =
                 right_top.iter().position(|id| id == "resourceMonitor")
@@ -339,6 +388,33 @@ pub fn load_app_settings(app: &AppHandle) -> AppResult<AppSettings> {
     Ok(settings)
 }
 
+fn migrate_terminal_timestamp_format(
+    raw_settings: &serde_json::Value,
+    terminal: &mut TerminalSettings,
+) -> bool {
+    let Some(raw_terminal) = raw_settings
+        .get("terminal")
+        .and_then(|terminal| terminal.as_object())
+    else {
+        return false;
+    };
+
+    if raw_terminal.contains_key("timestamp_format") {
+        return false;
+    }
+
+    terminal.timestamp_format = if raw_terminal
+        .get("show_timestamp_milliseconds")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        terminal::TIMESTAMP_FORMAT_WITH_MILLISECONDS.to_string()
+    } else {
+        terminal::DEFAULT_TIMESTAMP_FORMAT.to_string()
+    };
+    true
+}
+
 fn persist_migrated_app_settings(app: &AppHandle, settings: &AppSettings) {
     let mut persisted = settings.clone();
     let Ok(cloud_sync) = encrypt_cloud_sync_settings(persisted.cloud_sync.clone()) else {
@@ -356,4 +432,63 @@ fn persist_migrated_app_settings(app: &AppHandle, settings: &AppSettings) {
 pub fn save_app_settings(app: &AppHandle, config: &AppSettings) -> AppResult<()> {
     let _ = app;
     storage::save_settings_doc(SettingsDocKey::AppSettings, config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TerminalSettings, migrate_terminal_timestamp_format};
+
+    #[test]
+    fn migrates_legacy_timestamp_milliseconds_to_format() {
+        let raw_settings = serde_json::json!({
+            "terminal": {
+                "show_timestamps": true,
+                "show_timestamp_milliseconds": true
+            }
+        });
+        let mut terminal = TerminalSettings::default();
+
+        assert!(migrate_terminal_timestamp_format(
+            &raw_settings,
+            &mut terminal
+        ));
+        assert_eq!(terminal.timestamp_format, "[HH:mm:ss.SSS]");
+    }
+
+    #[test]
+    fn migrates_legacy_timestamp_seconds_to_format() {
+        let raw_settings = serde_json::json!({
+            "terminal": {
+                "show_timestamps": true,
+                "show_timestamp_milliseconds": false
+            }
+        });
+        let mut terminal = TerminalSettings::default();
+
+        assert!(migrate_terminal_timestamp_format(
+            &raw_settings,
+            &mut terminal
+        ));
+        assert_eq!(terminal.timestamp_format, "[HH:mm:ss]");
+    }
+
+    #[test]
+    fn keeps_existing_timestamp_format() {
+        let raw_settings = serde_json::json!({
+            "terminal": {
+                "timestamp_format": "HH:mm:ss",
+                "show_timestamp_milliseconds": true
+            }
+        });
+        let mut terminal = TerminalSettings {
+            timestamp_format: "HH:mm:ss".to_string(),
+            ..TerminalSettings::default()
+        };
+
+        assert!(!migrate_terminal_timestamp_format(
+            &raw_settings,
+            &mut terminal
+        ));
+        assert_eq!(terminal.timestamp_format, "HH:mm:ss");
+    }
 }

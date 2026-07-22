@@ -4,8 +4,8 @@
 
 use rstest::rstest;
 use zmodem2::{
-    Encoding, Frame, Header, Receiver, ReceiverEvent, Sender, SubpacketType, XON, ZDLE, ZPAD,
-    Zrinit,
+    Encoding, Frame, Header, Receiver, ReceiverEvent, Sender, SenderEvent, SubpacketType,
+    ZfileManagementOption, Zrinit, XON, ZDLE, ZPAD,
 };
 
 #[rstest]
@@ -70,6 +70,73 @@ fn write_zrpos(offset: u32) -> Vec<u8> {
     wire
 }
 
+fn write_zskip() -> Vec<u8> {
+    let mut wire = Vec::new();
+    Header::new(Encoding::ZHEX, Frame::ZSKIP, &[0; 4])
+        .write(&mut wire)
+        .expect("write zskip")
+        .expect("complete zskip");
+    wire
+}
+
+fn write_zabort() -> Vec<u8> {
+    let mut wire = Vec::new();
+    Header::new(Encoding::ZHEX, Frame::ZABORT, &[0; 4])
+        .write(&mut wire)
+        .expect("write zabort")
+        .expect("complete zabort");
+    wire
+}
+
+fn zbin32_header_from_wire(wire: &[u8]) -> Header {
+    assert!(
+        wire.starts_with(&[ZPAD, ZDLE, Encoding::ZBIN32 as u8]),
+        "expected ZBIN32 header, got {wire:?}"
+    );
+    let mut port = &wire[2..];
+    Header::read(&mut port)
+        .expect("read header")
+        .expect("header")
+}
+
+fn zfile_payload_from_wire(wire: &[u8]) -> Vec<u8> {
+    assert!(
+        wire.starts_with(&[ZPAD, ZDLE, Encoding::ZBIN32 as u8]),
+        "expected ZBIN32 header, got {wire:?}"
+    );
+
+    let mut port = &wire[2..];
+    let header = Header::read(&mut port)
+        .expect("read zfile header")
+        .expect("zfile header");
+    assert_eq!(header.frame(), Frame::ZFILE);
+
+    let mut payload = Vec::new();
+    let mut index = 0;
+    while index < port.len() {
+        let byte = port[index];
+        index += 1;
+        if byte == ZDLE {
+            let next = port[index];
+            index += 1;
+            if next == SubpacketType::ZCRCW as u8 {
+                return payload;
+            }
+            payload.push(next ^ 0x40);
+        } else {
+            payload.push(byte);
+        }
+    }
+
+    panic!("missing ZFILE metadata subpacket terminator");
+}
+
+fn sender_zfile_payload(sender: &mut Sender) -> Vec<u8> {
+    sender.advance_outgoing(sender.drain_outgoing().len());
+    sender.feed_incoming(&write_zrinit(&[0; 4])).unwrap();
+    zfile_payload_from_wire(sender.drain_outgoing())
+}
+
 fn has_subpacket_kind(wire: &[u8], kind: SubpacketType) -> bool {
     wire.windows(2).any(|window| window == [ZDLE, kind as u8])
 }
@@ -95,7 +162,12 @@ fn test_sender_requests_8k_file_chunks_after_large_zrinit() {
     sender.start_file(b"large.bin", 20_000).unwrap();
     sender.advance_outgoing(sender.drain_outgoing().len());
 
-    let flags = [0xff, 0xff, 0, (Zrinit::CANFDX | Zrinit::CANOVIO | Zrinit::CANFC32).bits()];
+    let flags = [
+        0xff,
+        0xff,
+        0,
+        (Zrinit::CANFDX | Zrinit::CANOVIO | Zrinit::CANFC32).bits(),
+    ];
     sender.feed_incoming(&write_zrinit(&flags)).unwrap();
     sender.advance_outgoing(sender.drain_outgoing().len());
 
@@ -107,12 +179,105 @@ fn test_sender_requests_8k_file_chunks_after_large_zrinit() {
 }
 
 #[test]
+fn test_sender_writes_zfile_management_options() {
+    let mut sender = Sender::new().unwrap();
+    sender.set_file_options(ZfileManagementOption::ZMCLOB);
+    sender.start_file(b"overwrite.bin", 1).unwrap();
+    sender.advance_outgoing(sender.drain_outgoing().len());
+
+    sender.feed_incoming(&write_zrinit(&[0; 4])).unwrap();
+
+    let header = zbin32_header_from_wire(sender.drain_outgoing());
+    assert_eq!(header.frame(), Frame::ZFILE);
+    assert_eq!(
+        header.count().to_le_bytes(),
+        [1, ZfileManagementOption::ZMCLOB.bits(), 0, 0]
+    );
+}
+
+#[test]
+fn test_sender_writes_complete_zfile_metadata() {
+    let mut sender = Sender::new().unwrap();
+    sender
+        .start_file_with_metadata(b"metadata.bin", 7012, 1_710_000_000, 0o100644)
+        .unwrap();
+
+    let payload = sender_zfile_payload(&mut sender);
+    let metadata = format!("7012 {:o} 100644 0 0 0\0", 1_710_000_000);
+    let expected = [b"metadata.bin\0".as_slice(), metadata.as_bytes()].concat();
+
+    assert_eq!(payload, expected);
+}
+
+#[test]
+fn test_sender_writes_zero_mtime_explicitly() {
+    let mut sender = Sender::new().unwrap();
+    sender
+        .start_file_with_metadata(b"zero-time.bin", 42, 0, 0o100644)
+        .unwrap();
+
+    let payload = sender_zfile_payload(&mut sender);
+
+    assert_eq!(
+        payload,
+        [b"zero-time.bin\0".as_slice(), b"42 0 100644 0 0 0\0"].concat()
+    );
+}
+
+#[test]
+fn test_sender_start_file_uses_complete_safe_metadata() {
+    let mut sender = Sender::new().unwrap();
+    sender.start_file(b"default.bin", 99).unwrap();
+
+    let payload = sender_zfile_payload(&mut sender);
+
+    assert_eq!(
+        payload,
+        [b"default.bin\0".as_slice(), b"99 0 100644 0 0 0\0"].concat()
+    );
+}
+
+#[test]
+fn test_sender_treats_zskip_as_file_complete() {
+    let mut sender = Sender::new().unwrap();
+    sender.set_file_options(ZfileManagementOption::ZMSKNOLOC);
+    sender.start_file(b"existing.bin", 1).unwrap();
+    sender.advance_outgoing(sender.drain_outgoing().len());
+    sender.feed_incoming(&write_zrinit(&[0; 4])).unwrap();
+    sender.advance_outgoing(sender.drain_outgoing().len());
+
+    sender.feed_incoming(&write_zskip()).unwrap();
+
+    assert_eq!(sender.poll_event(), Some(SenderEvent::FileComplete));
+    assert!(sender.poll_file().is_none());
+}
+
+#[test]
+fn test_sender_reports_remote_abort() {
+    let mut sender = Sender::new().unwrap();
+    sender.start_file(b"blocked.bin", 1).unwrap();
+    sender.advance_outgoing(sender.drain_outgoing().len());
+    sender.feed_incoming(&write_zrinit(&[0; 4])).unwrap();
+    sender.advance_outgoing(sender.drain_outgoing().len());
+
+    assert_eq!(
+        sender.feed_incoming(&write_zabort()),
+        Err(zmodem2::Error::RemoteAborted)
+    );
+}
+
+#[test]
 fn test_sender_uses_streaming_subpackets_until_ack_boundary() {
     let mut sender = Sender::new().unwrap();
     sender.start_file(b"window.bin", 70_000).unwrap();
     sender.advance_outgoing(sender.drain_outgoing().len());
 
-    let flags = [0, 0, 0, (Zrinit::CANFDX | Zrinit::CANOVIO | Zrinit::CANFC32).bits()];
+    let flags = [
+        0,
+        0,
+        0,
+        (Zrinit::CANFDX | Zrinit::CANOVIO | Zrinit::CANFC32).bits(),
+    ];
     sender.feed_incoming(&write_zrinit(&flags)).unwrap();
     sender.advance_outgoing(sender.drain_outgoing().len());
 

@@ -1,6 +1,6 @@
 [package]
 name = "nyaterm"
-version = "1.1.15"
+version = "1.1.16"
 description = "A modern remote terminal workspace built with Tauri, React, and Rust."
 authors = ["Kang"]
 edition = "2024"
@@ -96,7 +96,7 @@ tokio = { version = "1", features = [
     "fs",
     "process",
 ] }
-russh = { path = "vendor/russh/russh", features = ["des", "dsa"] }
+russh = { path = "vendor/russh/russh", default-features = false, features = ["des", "dsa", "flate2", "ring", "rsa"] }
 russh-sftp = { path = "vendor/russh-sftp" }
 ssh-key = { version = "0.6", features = ["std"] }
 portable-pty = "0.8"
@@ -153,9 +153,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rqrr = "0.9"
 serialport = "4"
 strip-ansi-escapes = "0.2"
-arboard = "3"
-opendal = { version = "0.57", default-features = false, features = [
+arboard = { version = "3", features = ["wayland-data-control"] }
+opendal = { version = "0.58", default-features = false, features = [
     "executors-tokio",
+    "reqwest-rustls-tls",
     "services-aliyun-drive",
     "services-gdrive",
     "services-onedrive",

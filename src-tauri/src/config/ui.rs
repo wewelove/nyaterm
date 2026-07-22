@@ -197,6 +197,7 @@ fn default_right_top() -> Vec<String> {
         "commandHistory".to_string(),
         "resourceMonitor".to_string(),
         "gpuMonitor".to_string(),
+        "ascendNpuMonitor".to_string(),
         "processManager".to_string(),
         "dockerManager".to_string(),
     ]
@@ -252,6 +253,8 @@ pub struct UiConfig {
     pub zoom_level: f64,
     #[serde(default = "default_language")]
     pub language: Option<String>,
+    #[serde(default = "default_header_status_mode")]
+    pub header_status_mode: String,
     #[serde(default = "default_true_fn")]
     pub show_remote_stats: bool,
     #[serde(default = "default_remote_stats_interval")]
@@ -260,6 +263,10 @@ pub struct UiConfig {
     pub show_gpu_monitor: bool,
     #[serde(default = "default_gpu_monitor_interval")]
     pub gpu_monitor_interval: u32,
+    #[serde(default = "default_false")]
+    pub show_ascend_npu_monitor: bool,
+    #[serde(default = "default_ascend_npu_monitor_interval")]
+    pub ascend_npu_monitor_interval: u32,
     #[serde(default = "default_false")]
     pub show_process_manager: bool,
     #[serde(default = "default_process_manager_interval")]
@@ -338,6 +345,10 @@ fn default_gpu_monitor_interval() -> u32 {
     3
 }
 
+fn default_ascend_npu_monitor_interval() -> u32 {
+    3
+}
+
 fn default_process_manager_interval() -> u32 {
     5
 }
@@ -362,6 +373,10 @@ fn default_language() -> Option<String> {
     Some("en".to_string())
 }
 
+fn default_header_status_mode() -> String {
+    "session".to_string()
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -384,10 +399,13 @@ impl Default for UiConfig {
             serial_send_height: default_serial_send_height(),
             zoom_level: default_zoom(),
             language: default_language(),
+            header_status_mode: default_header_status_mode(),
             show_remote_stats: true,
             remote_stats_interval: default_remote_stats_interval(),
             show_gpu_monitor: false,
             gpu_monitor_interval: default_gpu_monitor_interval(),
+            show_ascend_npu_monitor: false,
+            ascend_npu_monitor_interval: default_ascend_npu_monitor_interval(),
             show_process_manager: false,
             process_manager_interval: default_process_manager_interval(),
             show_docker_manager: false,

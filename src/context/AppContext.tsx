@@ -12,6 +12,7 @@ import {
 import { useAppLockState } from "@/hooks/useAppLockState";
 import { DEFAULT_AI_SETTINGS } from "@/lib/aiSettings";
 import { DEFAULT_CLOUD_SYNC_SETTINGS } from "@/lib/cloudSync";
+import { updateConnectionAutoIconAfterSessionStart } from "@/lib/connectionAutoIcon";
 import { DEFAULT_TERMINAL_FONT_FAMILY, getDefaultUiFontFamily } from "@/lib/defaultFonts";
 import { getErrorMessage } from "@/lib/errors";
 import {
@@ -193,6 +194,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   appearance: {
     theme: "github-dark",
+    custom_themes: [],
     font_family: DEFAULT_TERMINAL_FONT_FAMILY,
     ui_font_family: getDefaultUiFontFamily(),
     font_size: DEFAULT_TERMINAL_FONT_SIZE,
@@ -243,6 +245,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   terminal: {
     scrollback_lines: 10000,
+    keep_alive_mode: "compatible",
     keep_alive_interval: 60,
     font_size_delta: 0,
     x11_display: "",
@@ -260,7 +263,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     show_workspace_padding: false,
     show_line_numbers: false,
     show_timestamps: false,
-    show_timestamp_milliseconds: false,
+    timestamp_format: "[HH:mm:ss]",
     show_multi_line_paste_dialog: true,
     paste_image_as_path: true,
   },
@@ -275,7 +278,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     duplicate_session_command_delay_ms: 1000,
     word_separators: " ()[]{}\"':=,;|&<>",
     alt_as_meta: false,
-    mac_ime_compatibility: false,
+    ime_compatibility: false,
     default_encoding: "UTF-8",
     tab_double_click_action: DEFAULT_TAB_DOUBLE_CLICK_ACTION,
     tab_middle_click_action: DEFAULT_TAB_MIDDLE_CLICK_ACTION,
@@ -328,10 +331,13 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     serial_send_height: 180,
     zoom_level: 1.0,
     language: "en",
+    header_status_mode: "session",
     show_remote_stats: true,
     remote_stats_interval: 3,
     show_gpu_monitor: false,
     gpu_monitor_interval: 3,
+    show_ascend_npu_monitor: false,
+    ascend_npu_monitor_interval: 3,
     show_process_manager: false,
     process_manager_interval: 5,
     show_docker_manager: false,
@@ -353,6 +359,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
         "commandHistory",
         "resourceMonitor",
         "gpuMonitor",
+        "ascendNpuMonitor",
         "processManager",
         "dockerManager",
       ],
@@ -1071,12 +1078,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleRestoredSessionCreated = useCallback(
-    async (tabId: string, paneId: string, sessionId: string) => {
+    async (tabId: string, paneId: string, sessionId: string, connectionId?: string) => {
       if (!hasPane(tabId, paneId)) {
         await closeStaleCreatedSession(sessionId);
         return;
       }
       updatePaneSession(tabId, paneId, sessionId);
+      if (connectionId) {
+        void updateConnectionAutoIconAfterSessionStart({
+          connectionId,
+          sessionId,
+          remoteStatsEnabled: appSettingsRef.current.ui.show_remote_stats ?? true,
+        });
+      }
     },
     [closeStaleCreatedSession, hasPane, updatePaneSession],
   );
@@ -1114,31 +1128,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // 5. Startup Restore Logic
   const hasRestored = useRef(false);
+  const pendingLockedStartupRestoreTabsRef = useRef<Tab[] | null>(null);
 
-  useEffect(() => {
-    if (hasRestored.current || !appSettingsLoaded.current) return;
-
-    hasRestored.current = true;
-    if (
-      isPrimaryMainWindow() &&
-      appSettings.general.startup_restore &&
-      appSettings.ui.open_tabs &&
-      appSettings.ui.open_tabs.length > 0
-    ) {
-      const restoredTabs = appSettings.ui.open_tabs
-        .map((tab, index) => restoreTabFromPersistence(tab, index))
-        .filter((tab): tab is Tab => tab !== null);
-
-      tabsRef.current = restoredTabs;
-      setTabs(restoredTabs);
-      if (restoredTabs.length > 0) {
-        setActiveTabId(restoredTabs[restoredTabs.length - 1].id);
-      }
-
-      restoredTabs.forEach((tab) => {
+  const restoreSessionsForTabs = useCallback(
+    (tabsToRestore: Tab[]) => {
+      tabsToRestore.forEach((tab) => {
         const panes = collectSessionPanes(tab.root);
 
         panes.forEach((pane) => {
+          if (!hasPane(tab.id, pane.id)) return;
+
           const cid = pane.connectionId;
           switch (pane.type) {
             case "SSH":
@@ -1150,7 +1149,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 connectionId: cid,
                 createRequestId: pane.createRequestId,
               })
-                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId, cid))
                 .catch((e) =>
                   handleRestoredSessionFailed(tab.id, pane.id, "SSH", pane.connectionId, e),
                 );
@@ -1196,16 +1195,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         });
       });
+    },
+    [handleRestoredSessionCreated, handleRestoredSessionFailed, hasPane, markPaneConnectionFailed],
+  );
+
+  useEffect(() => {
+    if (hasRestored.current || !appSettingsLoaded.current || !lockStateLoaded) return;
+
+    hasRestored.current = true;
+    if (
+      isPrimaryMainWindow() &&
+      appSettings.general.startup_restore &&
+      appSettings.ui.open_tabs &&
+      appSettings.ui.open_tabs.length > 0
+    ) {
+      const restoredTabs = appSettings.ui.open_tabs
+        .map((tab, index) => restoreTabFromPersistence(tab, index))
+        .filter((tab): tab is Tab => tab !== null);
+
+      tabsRef.current = restoredTabs;
+      setTabs(restoredTabs);
+      if (restoredTabs.length > 0) {
+        setActiveTabId(restoredTabs[restoredTabs.length - 1].id);
+      }
+
+      if (appSettings.security.enable_screen_lock && isLocked) {
+        pendingLockedStartupRestoreTabsRef.current = restoredTabs;
+      } else {
+        restoreSessionsForTabs(restoredTabs);
+      }
     }
 
     setStartupRestoreComplete(true);
-  }, [
-    appSettings,
-    handleRestoredSessionCreated,
-    handleRestoredSessionFailed,
-    markPaneConnectionFailed,
-    setActiveTabId,
-  ]);
+  }, [appSettings, isLocked, lockStateLoaded, restoreSessionsForTabs, setActiveTabId]);
+
+  useEffect(() => {
+    if (isLocked) return;
+
+    const pendingTabs = pendingLockedStartupRestoreTabsRef.current;
+    if (!pendingTabs) return;
+
+    pendingLockedStartupRestoreTabsRef.current = null;
+    restoreSessionsForTabs(pendingTabs);
+  }, [isLocked, restoreSessionsForTabs]);
 
   const contextValue = useMemo(
     () => ({

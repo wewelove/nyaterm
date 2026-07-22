@@ -265,6 +265,45 @@ impl RawSftpSession {
                 Open {
                     id,
                     filename: filename.into(),
+                    filename_bytes: None,
+                    pflags: flags,
+                    attrs,
+                }
+                .into(),
+            )
+            .await?;
+
+        if let Packet::Handle(_) = result {
+            self.handles.fetch_add(1, Ordering::SeqCst);
+        }
+
+        into_with_status!(result, Handle)
+    }
+
+    /// Opens a file using raw bytes for the filename (preserves original encoding).
+    pub async fn open_bytes(
+        &self,
+        filename_bytes: Vec<u8>,
+        flags: OpenFlags,
+        attrs: FileAttributes,
+    ) -> SftpResult<Handle> {
+        if self
+            .limits
+            .open_handles
+            .is_some_and(|h| self.handles.load(Ordering::SeqCst) >= h)
+        {
+            return Err(Error::Limited("handle limit reached".to_owned()));
+        }
+
+        let id = self.use_next_id();
+        let filename = String::from_utf8_lossy(&filename_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                Open {
+                    id,
+                    filename,
+                    filename_bytes: Some(filename_bytes),
                     pflags: flags,
                     attrs,
                 }
@@ -407,6 +446,25 @@ impl RawSftpSession {
                 Lstat {
                     id,
                     path: path.into(),
+                    path_bytes: None,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_with_status!(result, Attrs)
+    }
+
+    pub async fn lstat_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<Attrs> {
+        let id = self.use_next_id();
+        let path = String::from_utf8_lossy(&path_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                Lstat {
+                    id,
+                    path,
+                    path_bytes: Some(path_bytes),
                 }
                 .into(),
             )
@@ -443,6 +501,30 @@ impl RawSftpSession {
                 SetStat {
                     id,
                     path: path.into(),
+                    path_bytes: None,
+                    attrs,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_status!(result)
+    }
+
+    pub async fn setstat_bytes(
+        &self,
+        path_bytes: Vec<u8>,
+        attrs: FileAttributes,
+    ) -> SftpResult<Status> {
+        let id = self.use_next_id();
+        let path = String::from_utf8_lossy(&path_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                SetStat {
+                    id,
+                    path,
+                    path_bytes: Some(path_bytes),
                     attrs,
                 }
                 .into(),
@@ -489,6 +571,38 @@ impl RawSftpSession {
                 OpenDir {
                     id,
                     path: path.into(),
+                    path_bytes: None,
+                }
+                .into(),
+            )
+            .await?;
+
+        if let Packet::Handle(_) = result {
+            self.handles.fetch_add(1, Ordering::SeqCst);
+        }
+
+        into_with_status!(result, Handle)
+    }
+
+    /// Opens a directory using raw bytes for the path (preserves original encoding).
+    pub async fn opendir_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<Handle> {
+        if self
+            .limits
+            .open_handles
+            .is_some_and(|h| self.handles.load(Ordering::SeqCst) >= h)
+        {
+            return Err(Error::Limited("Handle limit reached".to_owned()));
+        }
+
+        let id = self.use_next_id();
+        let path = String::from_utf8_lossy(&path_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                OpenDir {
+                    id,
+                    path,
+                    path_bytes: Some(path_bytes),
                 }
                 .into(),
             )
@@ -525,6 +639,26 @@ impl RawSftpSession {
                 Remove {
                     id,
                     filename: filename.into(),
+                    filename_bytes: None,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_status!(result)
+    }
+
+    /// Removes a file using raw bytes for the filename (preserves original encoding).
+    pub async fn remove_bytes(&self, filename_bytes: Vec<u8>) -> SftpResult<Status> {
+        let id = self.use_next_id();
+        let filename = String::from_utf8_lossy(&filename_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                Remove {
+                    id,
+                    filename,
+                    filename_bytes: Some(filename_bytes),
                 }
                 .into(),
             )
@@ -545,6 +679,30 @@ impl RawSftpSession {
                 MkDir {
                     id,
                     path: path.into(),
+                    path_bytes: None,
+                    attrs,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_status!(result)
+    }
+
+    pub async fn mkdir_bytes(
+        &self,
+        path_bytes: Vec<u8>,
+        attrs: FileAttributes,
+    ) -> SftpResult<Status> {
+        let id = self.use_next_id();
+        let path = String::from_utf8_lossy(&path_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                MkDir {
+                    id,
+                    path,
+                    path_bytes: Some(path_bytes),
                     attrs,
                 }
                 .into(),
@@ -562,6 +720,25 @@ impl RawSftpSession {
                 RmDir {
                     id,
                     path: path.into(),
+                    path_bytes: None,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_status!(result)
+    }
+
+    pub async fn rmdir_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<Status> {
+        let id = self.use_next_id();
+        let path = String::from_utf8_lossy(&path_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                RmDir {
+                    id,
+                    path,
+                    path_bytes: Some(path_bytes),
                 }
                 .into(),
             )
@@ -594,6 +771,26 @@ impl RawSftpSession {
                 Stat {
                     id,
                     path: path.into(),
+                    path_bytes: None,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_with_status!(result, Attrs)
+    }
+
+    /// Queries metadata about the remote file using raw bytes (preserves original encoding).
+    pub async fn stat_bytes(&self, path_bytes: Vec<u8>) -> SftpResult<Attrs> {
+        let id = self.use_next_id();
+        let path = String::from_utf8_lossy(&path_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                Stat {
+                    id,
+                    path,
+                    path_bytes: Some(path_bytes),
                 }
                 .into(),
             )
@@ -615,6 +812,33 @@ impl RawSftpSession {
                     id,
                     oldpath: oldpath.into(),
                     newpath: newpath.into(),
+                    oldpath_bytes: None,
+                    newpath_bytes: None,
+                }
+                .into(),
+            )
+            .await?;
+
+        into_status!(result)
+    }
+
+    pub async fn rename_bytes(
+        &self,
+        oldpath_bytes: Vec<u8>,
+        newpath_bytes: Vec<u8>,
+    ) -> SftpResult<Status> {
+        let id = self.use_next_id();
+        let oldpath = String::from_utf8_lossy(&oldpath_bytes).into_owned();
+        let newpath = String::from_utf8_lossy(&newpath_bytes).into_owned();
+        let result = self
+            .request(
+                Some(id),
+                Rename {
+                    id,
+                    oldpath,
+                    newpath,
+                    oldpath_bytes: Some(oldpath_bytes),
+                    newpath_bytes: Some(newpath_bytes),
                 }
                 .into(),
             )

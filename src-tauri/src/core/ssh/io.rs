@@ -3,6 +3,7 @@ use crate::config::SftpCwdFollowMode;
 use crate::core::capture::OutputCaptureProcessor;
 use crate::core::input::remap_del_to_bs;
 use crate::core::ssh::osc::{self, OscStripper, ShellKind};
+use crate::core::terminal_session::{TerminalOutputDecoder, encode_terminal_input};
 use crate::core::zmodem::{
     ZmodemAction, ZmodemDetectResult, ZmodemDetector, ZmodemDirection, ZmodemDownloadOoDrain,
     ZmodemEvent, ZmodemTransfer, ZmodemUploadDrain, start_zmodem_transfer,
@@ -438,17 +439,10 @@ fn append_suppressed_visible(buffer: &mut String, visible: &str) {
     }
 }
 
-fn take_suppressed_fallback(buffer: &mut String, flushed_osc_buffer: String) -> String {
-    if buffer.is_empty() {
-        return flushed_osc_buffer;
-    }
-    if flushed_osc_buffer.is_empty() {
-        return std::mem::take(buffer);
-    }
-
-    let mut fallback = std::mem::take(buffer);
-    fallback.push_str(&flushed_osc_buffer);
-    fallback
+fn discard_suppressed_output(buffer: &mut String, flushed_osc_buffer: String) -> usize {
+    let discarded_len = buffer.len() + flushed_osc_buffer.len();
+    buffer.clear();
+    discarded_len
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -553,6 +547,7 @@ pub(super) async fn ssh_io_loop(
     startup_command: Option<SshStartupCommand>,
     backspace_mode: String,
     initial_notice: Option<String>,
+    encoding: String,
 ) {
     let backspace_as_bs = backspace_mode == "ctrl_h";
     let output_event = format!("terminal-output-{}", session_id);
@@ -564,6 +559,7 @@ pub(super) async fn ssh_io_loop(
         .map(|state| state.inner().clone());
     let output =
         SessionOutputCoalescer::for_app(app.clone(), output_event.clone(), output_control_tx);
+    let mut output_decoder = TerminalOutputDecoder::new(&encoding);
     if let Some(notice) = initial_notice {
         output.push_owned(notice);
     }
@@ -621,6 +617,9 @@ pub(super) async fn ssh_io_loop(
                     Some(SessionCommand::Attach) => {
                         output.attach();
                     }
+                    Some(SessionCommand::DetachRenderer) => {
+                        output.detach();
+                    }
                     Some(SessionCommand::Write { mut data, .. }) => {
                         if zmodem_transfer.is_some()
                             || zmodem_upload_drain.should_suppress(std::time::Instant::now())
@@ -633,7 +632,8 @@ pub(super) async fn ssh_io_loop(
                         if let Some(ref recorder) = recording_mgr {
                             recorder.write_input(&session_id, &data);
                         }
-                        let _ = channel.data(&data[..]).await;
+                        let send_data = encode_terminal_input(&data, &encoding);
+                        let _ = channel.data(&send_data[..]).await;
                     }
                     Some(SessionCommand::Resize { cols, rows }) => {
                         let _ = channel.window_change(cols, rows, 0, 0).await;
@@ -649,7 +649,8 @@ pub(super) async fn ssh_io_loop(
                     }
                     Some(SessionCommand::CaptureExec { marker_id, wrapped_command, result_tx }) => {
                         capture_processor.register(marker_id, result_tx);
-                        let _ = channel.data(&wrapped_command[..]).await;
+                        let send_command = encode_terminal_input(&wrapped_command, &encoding);
+                        let _ = channel.data(&send_command[..]).await;
                     }
                     Some(SessionCommand::CancelCapture { marker_id }) => {
                         capture_processor.cancel(&marker_id);
@@ -667,9 +668,14 @@ pub(super) async fn ssh_io_loop(
                             }
                         }
                     }
-                    Some(SessionCommand::ZmodemAcceptUpload { files }) => {
+                    Some(SessionCommand::ZmodemAcceptUpload {
+                        files,
+                        conflict_mode,
+                        preserve_timestamps,
+                    }) => {
                         if let Some(ref mut transfer) = zmodem_transfer {
-                            let actions = transfer.accept_upload(files);
+                            let actions =
+                                transfer.accept_upload(files, conflict_mode, preserve_timestamps);
                             handle_zmodem_actions(&app, &zmodem_event_name, &mut channel, actions).await;
                             if transfer.is_done() {
                                 zmodem_transfer = None;
@@ -732,7 +738,7 @@ pub(super) async fn ssh_io_loop(
                                 ZmodemDetectResult::Detected { direction, passthrough, initial_bytes } => {
                                     // Forward any pre-header bytes to the terminal.
                                     if !passthrough.is_empty() {
-                                        let pre = String::from_utf8_lossy(&passthrough).to_string();
+                                        let pre = output_decoder.decode(&passthrough);
                                         if !pre.is_empty() {
                                             output.push_owned(pre);
                                         }
@@ -764,7 +770,7 @@ pub(super) async fn ssh_io_loop(
                                     continue;
                                 }
                                 ZmodemDetectResult::NoMatch { passthrough } => {
-                                    let text = String::from_utf8_lossy(&passthrough).to_string();
+                                    let text = output_decoder.decode(&passthrough);
                                     let mut result = stripper.push(&text);
 
                                     if capture_processor.has_active() {
@@ -797,7 +803,7 @@ pub(super) async fn ssh_io_loop(
                             }
                     }
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
-                        let text = String::from_utf8_lossy(data).to_string();
+                        let text = output_decoder.decode(data);
                         if let Some(ref recorder) = recording_mgr {
                             recorder.write_output(&session_id, &text);
                         }
@@ -869,19 +875,17 @@ pub(super) async fn ssh_io_loop(
             _ = &mut inject_deadline, if phase != IoPhase::Normal => {
                 let timeout_event = handle_injection_timeout(&mut phase);
                 let flushed = stripper.flush();
-                let fallback_visible = take_suppressed_fallback(
+                let discarded_visible_bytes = discard_suppressed_output(
                     &mut suppressed_visible_fallback,
                     flushed,
                 );
                 tracing::debug!(
                     session_id = %session_id,
                     shell = ?shell_kind,
-                    fallback_visible_bytes = fallback_visible.len(),
-                    "Injection timeout — falling back to passthrough mode"
+                    discarded_visible_bytes,
+                    "Injection timeout — discarding suppressed shell integration output"
                 );
-                if timeout_event == InjectionTimeoutEvent::FallbackToNormal && !fallback_visible.is_empty() {
-                    emit_visible_text(&output, &recording_mgr, &session_id, &fallback_visible);
-                }
+                let _ = timeout_event;
                 arm_post_login_timer(&phase, &pending_post_login, &mut post_login_deadline);
             }
             _ = async {
@@ -1037,8 +1041,8 @@ mod tests {
     use super::{
         INITIAL_INJECT_DELAY_MS, INJECT_TIMEOUT_SECS, InjectionEvent, InjectionTimeoutEvent,
         IoPhase, PendingStartupCommand, SUPPRESSED_VISIBLE_FALLBACK_MAX_BYTES,
-        append_suppressed_visible, build_startup_command_input, handle_injection_result,
-        handle_injection_timeout, should_send_initial_injection, take_suppressed_fallback,
+        append_suppressed_visible, build_startup_command_input, discard_suppressed_output,
+        handle_injection_result, handle_injection_timeout, should_send_initial_injection,
     };
     use crate::core::ssh::osc::OscResult;
     use std::pin::Pin;
@@ -1139,12 +1143,12 @@ mod tests {
     }
 
     #[test]
-    fn timeout_fallback_combines_suppressed_visible_and_buffered_osc_text() {
+    fn timeout_discard_clears_suppressed_visible_and_buffered_osc_text() {
         let mut buffer = "prompt".to_string();
 
-        let fallback = take_suppressed_fallback(&mut buffer, "tail".to_string());
+        let discarded_len = discard_suppressed_output(&mut buffer, "tail".to_string());
 
-        assert_eq!(fallback, "prompttail");
+        assert_eq!(discarded_len, "prompttail".len());
         assert!(buffer.is_empty());
     }
 

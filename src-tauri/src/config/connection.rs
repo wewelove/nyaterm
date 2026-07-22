@@ -60,6 +60,8 @@ pub struct SftpSettings {
     pub enabled: bool,
     #[serde(default)]
     pub cwd_follow_mode: SftpCwdFollowMode,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub filename_encoding: String,
 }
 
 impl Default for SftpSettings {
@@ -67,6 +69,7 @@ impl Default for SftpSettings {
         Self {
             enabled: true,
             cwd_follow_mode: SftpCwdFollowMode::ShellIntegration,
+            filename_encoding: String::new(),
         }
     }
 }
@@ -89,6 +92,8 @@ pub enum ConnectionType {
         backspace_mode: String,
         #[serde(default, skip_serializing_if = "is_false")]
         x11_forwarding: bool,
+        #[serde(default)]
+        encoding: String,
     },
     LocalTerminal {
         #[serde(default)]
@@ -99,6 +104,8 @@ pub enum ConnectionType {
         working_dir: Option<String>,
         #[serde(default, skip_serializing_if = "is_ai_execution_profile_auto")]
         ai_execution_profile: AiExecutionProfile,
+        #[serde(default)]
+        encoding: String,
     },
     Telnet {
         host: String,
@@ -129,6 +136,8 @@ pub enum ConnectionType {
         send_sga: bool,
         #[serde(default, skip_serializing_if = "is_default_telnet_auto_login")]
         auto_login: TelnetAutoLoginConfig,
+        #[serde(default)]
+        encoding: String,
     },
     Serial {
         port_name: String,
@@ -144,6 +153,8 @@ pub enum ConnectionType {
         ai_execution_profile: AiExecutionProfile,
         #[serde(default = "default_backspace_mode_serial")]
         backspace_mode: String,
+        #[serde(default)]
+        encoding: String,
     },
 }
 
@@ -464,6 +475,23 @@ fn migrate_connection_proxies_to_standalone(
     // Legacy `network.proxy` inline objects are no longer present in the new format.
     // The old migration already ran before this format change, so nothing to do.
     Ok(())
+}
+
+/// Returns the effective encoding for a connection: per-connection override if set,
+/// otherwise the global default from `interaction.default_encoding`.
+pub fn resolve_connection_encoding(app: &AppHandle, conn: &SavedConnection) -> String {
+    let per_conn = match &conn.config {
+        ConnectionType::Ssh { encoding, .. }
+        | ConnectionType::LocalTerminal { encoding, .. }
+        | ConnectionType::Telnet { encoding, .. }
+        | ConnectionType::Serial { encoding, .. } => encoding.as_str(),
+    };
+    if !per_conn.is_empty() {
+        return per_conn.to_string();
+    }
+    crate::config::load_app_settings(app)
+        .map(|s| s.interaction.default_encoding)
+        .unwrap_or_else(|_| "UTF-8".to_string())
 }
 
 /// Loads a single connection by ID.

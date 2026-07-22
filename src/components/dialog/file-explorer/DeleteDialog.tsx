@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MdRefresh } from "react-icons/md";
 import { toast } from "sonner";
+import type { FileExplorerBackendKind } from "@/components/panel/file-explorer/model";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,12 +17,14 @@ import { invoke } from "@/lib/invoke";
 
 export interface DeleteDialogData {
   sessionId: string;
+  backend: FileExplorerBackendKind;
   items: DeleteDialogItem[];
 }
 
 export interface DeleteDialogItem {
   path: string;
   name: string;
+  rawPathToken?: string;
 }
 
 interface DeleteDialogProps {
@@ -42,10 +45,16 @@ export default function DeleteDialog({ data, onClose, onSuccess }: DeleteDialogP
 
       const results = await Promise.allSettled(
         data.items.map((item) =>
-          invoke("delete_remote_file", {
-            sessionId: data.sessionId,
-            path: item.path,
-          }),
+          data.backend === "local"
+            ? invoke("delete_local_file", {
+                sessionId: data.sessionId,
+                path: item.path,
+              })
+            : invoke("delete_remote_file", {
+                sessionId: data.sessionId,
+                path: item.path,
+                rawPathToken: item.rawPathToken,
+              }),
         ),
       );
 

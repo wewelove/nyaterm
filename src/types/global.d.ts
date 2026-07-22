@@ -108,6 +108,7 @@ export interface SshConfig {
   post_login?: { command: string; delay_ms: number } | null;
   ssh_algorithms?: SshAlgorithmPreferences | null;
   sftp?: SftpSettings;
+  encoding?: string;
 }
 
 /** SSH authentication: none, password, or private key (PEM content). */
@@ -221,6 +222,7 @@ export type SftpCwdFollowMode = "off" | "shell_integration" | "rc_file";
 export interface SftpSettings {
   enabled: boolean;
   cwd_follow_mode: SftpCwdFollowMode;
+  filename_encoding?: string;
 }
 
 export type AlgorithmRisk = "modern" | "legacy" | "insecure";
@@ -299,6 +301,8 @@ export interface SavedConnection {
   auto_login?: TelnetAutoLoginConfig;
   /** SSH-only: enables X11 forwarding for remote graphical applications. */
   x11_forwarding?: boolean;
+  /** Per-connection encoding override. Empty string means follow global setting. */
+  encoding?: string;
 }
 
 /** Stored OTP entry for two-factor authentication. */
@@ -370,6 +374,7 @@ export type RightPanelId =
   | "commandHistory"
   | "resourceMonitor"
   | "gpuMonitor"
+  | "ascendNpuMonitor"
   | "processManager"
   | "dockerManager"
   | "recording"
@@ -389,6 +394,7 @@ export interface ActivityBarLayout {
 /** Layout preferences: panel widths, active panels, theme. */
 export type QuickCommandViewMode = "list" | "compact" | "tile";
 export type QuickCommandSortMode = "created" | "name" | "useCount";
+export type HeaderStatusMode = "session" | "resources" | "host";
 
 export type RestorableTerminalWindowNode =
   | {
@@ -429,10 +435,13 @@ export interface UiConfig {
   serial_send_height: number;
   zoom_level: number;
   language?: string;
+  header_status_mode?: HeaderStatusMode;
   show_remote_stats: boolean;
   remote_stats_interval: number;
   show_gpu_monitor: boolean;
   gpu_monitor_interval: number;
+  show_ascend_npu_monitor: boolean;
+  ascend_npu_monitor_interval: number;
   show_process_manager: boolean;
   process_manager_interval: number;
   show_docker_manager: boolean;
@@ -481,6 +490,11 @@ export interface RemoteStatsNetwork {
   tx_bytes_per_sec: number;
 }
 
+export interface RemoteStatsNetworkSummary {
+  rx_bytes_per_sec: number;
+  tx_bytes_per_sec: number;
+}
+
 export interface RemoteStatsDisk {
   device: string;
   mount: string;
@@ -495,6 +509,7 @@ export interface RemoteStats {
   cpu: RemoteStatsCpu;
   memory: RemoteStatsMemory;
   networks: RemoteStatsNetwork[];
+  network_summary: RemoteStatsNetworkSummary;
   disks: RemoteStatsDisk[];
 }
 
@@ -645,6 +660,43 @@ export interface RemoteGpuOverview {
   processes: RemoteGpuProcess[];
 }
 
+export interface RemoteNpu {
+  index: number;
+  chip_id: number;
+  physical_id?: number | null;
+  device_key: string;
+  name: string;
+  health: string;
+  bus_id: string;
+  temperature_c?: number | null;
+  utilization_aicore_percent?: number | null;
+  utilization_memory_percent?: number | null;
+  memory_total_mb: number;
+  memory_used_mb: number;
+  memory_free_mb: number;
+  memory_kind: string;
+  hbm_total_mb?: number | null;
+  hbm_used_mb?: number | null;
+  power_draw_w?: number | null;
+}
+
+export interface RemoteNpuProcess {
+  npu_index: number;
+  chip_id: number;
+  device_key: string;
+  pid: number;
+  process_name: string;
+  used_memory_mb: number;
+}
+
+export interface RemoteNpuOverview {
+  available: boolean;
+  driver_version: string;
+  cann_version: string;
+  npus: RemoteNpu[];
+  processes: RemoteNpuProcess[];
+}
+
 /** Labeled command shortcut for quick execution. */
 export interface QuickCommandCategory {
   id: string;
@@ -707,8 +759,69 @@ export type BackgroundImageFit = "cover" | "contain" | "stretch" | "tile";
 /** Internal native transparency marker. Windows 11 only; other platforms no-op. */
 export type WindowTransparency = "none" | "transparent";
 
+export interface TerminalThemeColors {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+  lineHighlight: string;
+  findMatchBackground: string;
+  findMatchBorder: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+export interface ThemeSettingsColors {
+  bg: string;
+  bgPanel: string;
+  bgTerminal: string;
+  bgHover: string;
+  bgInput: string;
+  bgSectionHeader: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  textDimmed: string;
+  primary: string;
+  primaryHover: string;
+  onPrimary: string;
+  focusRing: string;
+  danger: string;
+  dangerHover: string;
+  success: string;
+  warning: string;
+  link: string;
+  shadow: string;
+  scrollThumb: string;
+  accent: string;
+  terminal: TerminalThemeColors;
+}
+
+export interface CustomThemeSettings {
+  id: string;
+  name: string;
+  label: string;
+  swatch: string;
+  colors: ThemeSettingsColors;
+}
+
 export interface AppearanceSettings {
   theme: string;
+  custom_themes: CustomThemeSettings[];
   font_family: string;
   ui_font_family: string;
   font_size: number;
@@ -822,9 +935,11 @@ export interface ActionLinksMatcherSettings {
 }
 
 export type KeywordHighlightBuiltinRuleSettings = Record<string, boolean>;
+export type SshKeepAliveMode = "compatible" | "strict" | "disabled";
 
 export interface TerminalSettings {
   scrollback_lines: number;
+  keep_alive_mode: SshKeepAliveMode;
   keep_alive_interval: number;
   font_size_delta: number;
   x11_display?: string;
@@ -838,7 +953,7 @@ export interface TerminalSettings {
   show_workspace_padding: boolean;
   show_line_numbers: boolean;
   show_timestamps: boolean;
-  show_timestamp_milliseconds: boolean;
+  timestamp_format: string;
   show_multi_line_paste_dialog: boolean;
   paste_image_as_path: boolean;
 }
@@ -873,8 +988,12 @@ export interface DiagnosticsSettings {
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type AIMode = "ask" | "agent";
 export type AIAgentCommandExecutionMode = "confirm_each" | "smart" | "auto";
+export type AIAgentKind = "nyaterm" | "codex" | "claude_code";
+export type AIPermissionMode = "observer" | "confirm" | "auto";
 export type AIReasoningEffort = "auto" | "none" | "low" | "medium" | "high" | "xhigh";
 export type AIModelSource = "rust-genai" | "manual";
+export type AIBackendKind = "genai" | "codex";
+export type CodexThreadMode = "persistent" | "ephemeral";
 
 export type AIProviderKind =
   | "openai"
@@ -892,11 +1011,34 @@ export type AIProviderKind =
 export interface AIModelConfigItem {
   id: string;
   name: string;
+  backend?: AIBackendKind;
   provider_kind?: AIProviderKind | null;
   credential_id?: string | null;
   enabled: boolean;
   source: AIModelSource;
   last_seen_at?: string | null;
+}
+
+export interface CodexIntegrationSettings {
+  enabled: boolean;
+  executable_path?: string | null;
+  runtime?: string | null;
+  default_model?: string | null;
+  config_directory?: string | null;
+  permission_mode?: AIPermissionMode;
+  tool_integration_mode?: string | null;
+  thread_mode: CodexThreadMode;
+  remote_terminal_agent_enabled: boolean;
+}
+
+export interface ClaudeCodeIntegrationSettings {
+  enabled: boolean;
+  executable_path?: string | null;
+  runtime?: string | null;
+  default_model?: string | null;
+  config_directory?: string | null;
+  permission_mode?: AIPermissionMode;
+  tool_integration_mode?: string | null;
 }
 
 export interface AIProviderProfile {
@@ -937,6 +1079,8 @@ export interface AISettings {
   active_profile_id: string;
   provider_profiles: AIProviderProfile[];
   default_mode: AIMode;
+  default_agent_kind?: AIAgentKind;
+  external_agent_permission_mode?: AIPermissionMode;
   default_reasoning_effort?: AIReasoningEffort;
   default_model_id?: string | null;
   models: AIModelConfigItem[];
@@ -950,6 +1094,8 @@ export interface AISettings {
   agent_background_execution_enabled: boolean;
   agent_command_execution_mode: AIAgentCommandExecutionMode;
   agent_smart_auto_execute_max_risk: RiskLevel;
+  codex: CodexIntegrationSettings;
+  claude_code: ClaudeCodeIntegrationSettings;
 }
 
 export interface AIContext {
@@ -977,6 +1123,7 @@ export type AIAction =
 export interface AIModelDiscovery {
   id: string;
   name: string;
+  backend?: AIBackendKind;
   providerKind?: AIProviderKind | null;
   credentialId?: string | null;
   source: AIModelSource;
@@ -993,6 +1140,31 @@ export interface AICommandCard {
   rollback?: string | null;
   category?: string | null;
   references?: string[];
+  targetTerminalSessionId?: string | null;
+  target?: AITerminalTarget | null;
+}
+
+export type AIScopeType = "terminal" | "workspace" | "global" | "unbound";
+
+export interface AISessionScope {
+  type: AIScopeType;
+  targetId?: string | null;
+  connectionIds?: string[];
+  label?: string | null;
+}
+
+export interface AITerminalTarget {
+  terminalSessionId: string;
+  connectionId?: string | null;
+  label: string;
+  host?: string | null;
+  username?: string | null;
+  sessionType: string;
+}
+
+export interface AITargetContext {
+  target?: AITerminalTarget | null;
+  context: AIContext;
 }
 
 export interface AIMessage {
@@ -1007,10 +1179,17 @@ export interface AIMessage {
 
 export interface AISession {
   id: string;
+  agentKind?: AIAgentKind;
+  scope?: AISessionScope;
   connectionId?: string | null;
   title: string;
   createdAt: string;
   updatedAt: string;
+  externalSessionId?: string | null;
+  backendMetadata?: {
+    backend: AIBackendKind;
+    externalThreadId?: string | null;
+  } | null;
 }
 
 export interface AIStreamStart {
@@ -1036,6 +1215,7 @@ export type AgentStepStatus = "running" | "completed" | "needs_approval" | "reje
 export interface AgentStepAction {
   kind: AgentActionKind;
   command?: string | null;
+  target?: AITerminalTarget | null;
   riskLevel?: RiskLevel | null;
   modelRiskLevel?: RiskLevel | null;
   localRiskLevel?: RiskLevel | null;
@@ -1085,6 +1265,21 @@ export interface TunnelConfig {
   group_id?: string;
 }
 
+export type TunnelRuntimeStatus =
+  | "stopped"
+  | "starting"
+  | "running"
+  | "reconnecting"
+  | "disconnected"
+  | "error";
+
+export interface TunnelRuntimeState {
+  tunnelId: string;
+  status: TunnelRuntimeStatus;
+  error?: string | null;
+  updatedAt?: number | null;
+}
+
 export interface InteractionSettings {
   copy_on_select: boolean;
   allow_osc52_clipboard_write: boolean;
@@ -1096,7 +1291,7 @@ export interface InteractionSettings {
   duplicate_session_command_delay_ms: number;
   word_separators: string;
   alt_as_meta: boolean;
-  mac_ime_compatibility: boolean;
+  ime_compatibility: boolean;
   default_encoding: string;
   tab_double_click_action: import("@/lib/interactionSettings").TabMouseAction;
   tab_middle_click_action: import("@/lib/interactionSettings").TabMouseAction;
@@ -1129,6 +1324,7 @@ export interface FileEntry {
   owner: string;
   group: string;
   mtime: number;
+  raw_path_token?: string;
 }
 
 export interface FileProperties {

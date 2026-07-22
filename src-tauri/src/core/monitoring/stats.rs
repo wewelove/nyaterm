@@ -38,6 +38,12 @@ pub struct NetworkInfo {
     pub tx_bytes_per_sec: f64,
 }
 
+#[derive(serde::Serialize, Default)]
+pub struct NetworkSummaryInfo {
+    pub rx_bytes_per_sec: f64,
+    pub tx_bytes_per_sec: f64,
+}
+
 #[derive(serde::Serialize)]
 pub struct DiskInfo {
     pub device: String,
@@ -54,6 +60,7 @@ pub struct RemoteStats {
     pub cpu: CpuInfo,
     pub memory: MemoryInfo,
     pub networks: Vec<NetworkInfo>,
+    pub network_summary: NetworkSummaryInfo,
     pub disks: Vec<DiskInfo>,
 }
 
@@ -397,6 +404,11 @@ pub fn parse_stats_output(output: &str) -> RemoteStats {
             _ => {}
         }
     }
+
+    stats.network_summary = NetworkSummaryInfo {
+        rx_bytes_per_sec: stats.networks.iter().map(|net| net.rx_bytes_per_sec).sum(),
+        tx_bytes_per_sec: stats.networks.iter().map(|net| net.tx_bytes_per_sec).sum(),
+    };
 
     stats
 }

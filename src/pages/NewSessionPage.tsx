@@ -56,6 +56,7 @@ const DEFAULT_SSH_ALGORITHMS: SshAlgorithmPreferences = {
 const DEFAULT_SFTP_SETTINGS: SftpSettings = {
   enabled: true,
   cwd_follow_mode: "shell_integration",
+  filename_encoding: "",
 };
 
 function normalizeSshAlgorithms(
@@ -78,6 +79,7 @@ function normalizeSftpSettings(value: SavedConnection["sftp"] | undefined): Sftp
   return {
     enabled: value?.enabled ?? true,
     cwd_follow_mode: value?.cwd_follow_mode || "shell_integration",
+    filename_encoding: value?.filename_encoding || "",
   };
 }
 
@@ -167,6 +169,9 @@ export default function NewSessionPage() {
   const [telnetSendNaws, setTelnetSendNaws] = useState(true);
   const [telnetSendSga, setTelnetSendSga] = useState(true);
 
+  // Per-connection encoding ("global" = follow global setting)
+  const [encoding, setEncoding] = useState("global");
+
   useEffect(() => {
     invoke<Group[]>("get_groups")
       .then(setGroups)
@@ -204,6 +209,7 @@ export default function NewSessionPage() {
           serial: "serial",
         };
         setCurrentTab(tabMap[found.type] || "ssh");
+        setEncoding(found.encoding || "global");
 
         if (found.type === "ssh") {
           setHost(found.host || "");
@@ -324,6 +330,7 @@ export default function NewSessionPage() {
     setTelnetForceCharacterAtATime(false);
     setTelnetSendNaws(true);
     setTelnetSendSga(true);
+    setEncoding("global");
     setShowIconPicker(false);
     setError("");
     setConnecting(false);
@@ -551,7 +558,7 @@ export default function NewSessionPage() {
             ? normalizedSerialPortName
             : currentTab === "telnet"
               ? `${normalizedHost}:${telnetPort}`
-              : `${normalizedHost}:${sshPort}`;
+              : normalizedHost;
 
       const typeTag =
         currentTab === "ssh"
@@ -650,6 +657,7 @@ export default function NewSessionPage() {
         sort_order: sortOrder,
         icon: iconKey || undefined,
         icon_auto_detect: currentTab === "ssh" ? iconAutoDetect : false,
+        encoding: encoding === "global" ? undefined : encoding,
         ...(currentTab === "ssh"
           ? {
               host: normalizedHost,
@@ -1050,6 +1058,8 @@ export default function NewSessionPage() {
               sftpSettings={sftpSettings}
               setSftpSettings={setSftpSettings}
               connectionId={initialData?.id || editId}
+              encoding={encoding}
+              setEncoding={setEncoding}
             />
           </TabsContent>
 
@@ -1061,6 +1071,8 @@ export default function NewSessionPage() {
               setShellArgs={setShellArgs}
               workingDir={workingDir}
               setWorkingDir={setWorkingDir}
+              encoding={encoding}
+              setEncoding={setEncoding}
             />
           </TabsContent>
 
@@ -1097,6 +1109,8 @@ export default function NewSessionPage() {
               sendSga={telnetSendSga}
               setSendSga={setTelnetSendSga}
               connectionId={initialData?.id || editId}
+              encoding={encoding}
+              setEncoding={setEncoding}
             />
           </TabsContent>
 
@@ -1120,6 +1134,8 @@ export default function NewSessionPage() {
               setStopBits={setStopBits}
               backspaceMode={serialBackspaceMode}
               setBackspaceMode={setSerialBackspaceMode}
+              encoding={encoding}
+              setEncoding={setEncoding}
             />
           </TabsContent>
 

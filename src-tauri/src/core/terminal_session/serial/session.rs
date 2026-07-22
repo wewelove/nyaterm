@@ -8,6 +8,7 @@ fn serial_session_thread(
     rt_handle: tokio::runtime::Handle,
     config: SerialConfig,
     connection_id: Option<String>,
+    encoding: String,
     port: Box<dyn SerialPort>,
     mut reader_port: Box<dyn SerialPort>,
 ) {
@@ -39,6 +40,7 @@ fn serial_session_thread(
     let port_writer_reader = port_writer.clone();
     let output_reader = output.clone();
     let recording_mgr_reader = recording_mgr.clone();
+    let encoding_reader = encoding.clone();
 
     let reader_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let reader_flag = reader_running.clone();
@@ -46,6 +48,7 @@ fn serial_session_thread(
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut zmodem_detector = ZmodemDetector::new();
+        let mut output_decoder = TerminalOutputDecoder::new(&encoding_reader);
         while reader_flag.load(std::sync::atomic::Ordering::Relaxed) {
             {
                 let (lock, cvar) = &*output_pause_reader;
@@ -96,7 +99,7 @@ fn serial_session_thread(
                             initial_bytes,
                         } => {
                             if !passthrough.is_empty() {
-                                let pre = String::from_utf8_lossy(&passthrough).to_string();
+                                let pre = output_decoder.decode(&passthrough);
                                 if !pre.is_empty() {
                                     if let Some(ref recorder) = recording_mgr_reader {
                                         recorder.write_output(&sid_reader, &pre);
@@ -138,7 +141,7 @@ fn serial_session_thread(
                         }
                     };
 
-                    let mut text = String::from_utf8_lossy(&process_raw).to_string();
+                    let mut text = output_decoder.decode(&process_raw);
                     if let Ok(mut proc) = capture_for_reader.lock() {
                         if proc.has_active() {
                             text = proc.process(&text);
@@ -185,6 +188,9 @@ fn serial_session_thread(
             SessionCommand::Attach => {
                 output.attach();
             }
+            SessionCommand::DetachRenderer => {
+                output.detach();
+            }
             SessionCommand::Write { mut data, .. } => {
                 if zmodem_state.lock().unwrap().is_some() {
                     continue;
@@ -192,11 +198,12 @@ fn serial_session_thread(
                 if backspace_as_bs {
                     remap_del_to_bs(&mut data);
                 }
+                let send_data = encode_terminal_input(&data, &encoding);
                 if let Some(ref recorder) = recording_mgr {
                     recorder.write_input(&session_id, &data);
                 }
                 let mut p = port_writer.lock().unwrap();
-                let _ = p.write_all(&data);
+                let _ = p.write_all(&send_data);
                 let _ = p.flush();
             }
             SessionCommand::CaptureExec {
@@ -207,8 +214,9 @@ fn serial_session_thread(
                 if let Ok(mut proc) = capture_processor.lock() {
                     proc.register(marker_id, result_tx);
                 }
+                let send_command = encode_terminal_input(&wrapped_command, &encoding);
                 let mut p = port_writer.lock().unwrap();
-                let _ = p.write_all(&wrapped_command);
+                let _ = p.write_all(&send_command);
                 let _ = p.flush();
             }
             SessionCommand::CancelCapture { marker_id } => {
@@ -254,10 +262,15 @@ fn serial_session_thread(
                     }
                 }
             }
-            SessionCommand::ZmodemAcceptUpload { files } => {
+            SessionCommand::ZmodemAcceptUpload {
+                files,
+                conflict_mode,
+                preserve_timestamps,
+            } => {
                 let mut zm = zmodem_state.lock().unwrap();
                 if let Some(ref mut transfer) = *zm {
-                    let actions = transfer.accept_upload(files);
+                    let actions =
+                        transfer.accept_upload(files, conflict_mode, preserve_timestamps);
                     for action in actions {
                         match action {
                             ZmodemAction::SendToRemote(data) => {

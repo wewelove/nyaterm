@@ -82,6 +82,25 @@ pub async fn save_app_settings(
 }
 
 #[tauri::command]
+pub fn save_app_language(app: tauri::AppHandle, language: String) -> AppResult<()> {
+    use crate::storage::{self, SettingsDocKey};
+
+    storage::update_settings_doc(
+        SettingsDocKey::AppSettings,
+        |settings: &mut config::AppSettings| {
+            settings.ui.language = Some(language);
+            Ok(())
+        },
+    )?;
+
+    schedule_cloud_sync_notify(app.clone());
+    let _ = app.emit("settings-changed", ());
+    crate::tray::schedule_refresh(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn import_keyword_highlight_rules(
     app: tauri::AppHandle,
     manager: tauri::State<'_, Arc<CloudSyncManager>>,
@@ -101,6 +120,22 @@ pub async fn import_keyword_highlight_rules(
     Ok(result)
 }
 
+#[tauri::command]
+pub fn read_theme_file(file_path: String) -> AppResult<config::ThemeConfig> {
+    let raw = std::fs::read_to_string(file_path)
+        .map_err(|error| AppError::Config(format!("Failed to read theme file: {error}")))?;
+    serde_json::from_str::<config::ThemeConfig>(&raw)
+        .map_err(|error| AppError::Config(format!("Failed to parse theme file: {error}")))
+}
+
+#[tauri::command]
+pub fn write_theme_file(output_path: String, theme: config::ThemeConfig) -> AppResult<()> {
+    let raw = serde_json::to_string_pretty(&theme)
+        .map_err(|error| AppError::Config(format!("Failed to serialize theme: {error}")))?;
+    std::fs::write(output_path, raw)
+        .map_err(|error| AppError::Config(format!("Failed to write theme file: {error}")))
+}
+
 pub async fn persist_app_settings(
     app: &tauri::AppHandle,
     manager: &Arc<CloudSyncManager>,
@@ -109,6 +144,8 @@ pub async fn persist_app_settings(
 ) -> AppResult<()> {
     settings.appearance.normalize_terminal_font_family();
     settings.appearance.normalize_window_transparency();
+    settings.terminal.normalize_scrollback_lines();
+    settings.terminal.normalize_timestamp_format();
 
     let existing = match config::load_app_settings(app) {
         Ok(existing) => existing,

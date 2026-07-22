@@ -27,10 +27,11 @@ import {
   MdTerminal,
   MdTranslate,
 } from "react-icons/md";
+import { RiGeminiLine } from "react-icons/ri";
 import { TbCubeSpark } from "react-icons/tb";
 import { toast } from "sonner";
 import ChildWindowHeader from "@/components/layout/ChildWindowHeader";
-import { AiGeneralTab, AiModelsTab, AiRulesTab } from "@/components/settings/AiTab";
+import { AiAgentsTab, AiGeneralTab, AiModelsTab, AiRulesTab } from "@/components/settings/AiTab";
 import { AppearanceTab } from "@/components/settings/AppearanceTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { InteractionTab } from "@/components/settings/InteractionTab";
@@ -141,7 +142,7 @@ export default function SettingsPage() {
         id: "ai_group",
         label: t("ai.title"),
         icon: "ai",
-        items: ["ai-general", "ai-models", "ai-rules"],
+        items: ["ai-general", "ai-models", "ai-agents", "ai-rules"],
       },
       {
         id: "transfer_group",
@@ -264,6 +265,12 @@ export default function SettingsPage() {
       Component: AiModelsTab,
     },
     {
+      id: "ai-agents",
+      label: t("ai.localAgents"),
+      icon: "agent",
+      Component: AiAgentsTab,
+    },
+    {
       id: "ai-rules",
       label: t("ai.rules"),
       icon: "rules",
@@ -288,6 +295,7 @@ export default function SettingsPage() {
     mouse: MdMouse,
     keyboard: MdKeyboard,
     ai: MdAutoAwesome,
+    agent: RiGeminiLine,
     model: TbCubeSpark,
     rules: FiBook,
   };

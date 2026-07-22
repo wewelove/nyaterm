@@ -293,21 +293,24 @@ export function SshAuthDialog({ request, onDone }: SshAuthDialogProps) {
         }}
       >
         <DialogContent
-          className="w-[min(26rem,calc(100vw-2rem))] max-w-none overflow-x-hidden"
+          className="w-[min(28rem,calc(100vw-2rem))] max-w-none overflow-x-hidden"
           onKeyDown={(event) => {
             if (event.key === "Enter" && canSubmit) void handleSubmit();
           }}
         >
           <DialogHeader>
-            <DialogTitle className="text-sm">{t("sshAuth.title")}</DialogTitle>
-            <DialogDescription className="text-xs">
+            <DialogTitle className="pr-6 text-sm">{t("sshAuth.title")}</DialogTitle>
+            <DialogDescription className="break-all pr-6 text-xs leading-relaxed">
               {t("sshAuth.description", { name: request?.connectionName })}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
-            <div className="rounded-md border bg-muted/30 px-3 py-2">
-              <div className="truncate text-xs font-medium">
+          <div className="min-w-0 space-y-3 py-2">
+            <div className="min-w-0 rounded-md border bg-muted/30 px-3 py-2">
+              <div
+                className="break-all font-mono text-xs font-medium leading-relaxed"
+                title={request ? `${request.username}@${request.host}:${request.port}` : undefined}
+              >
                 {request ? `${request.username}@${request.host}:${request.port}` : ""}
               </div>
               <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{reasonText}</div>
@@ -324,18 +327,19 @@ export function SshAuthDialog({ request, onDone }: SshAuthDialogProps) {
               />
             ) : showMethodTabs ? (
               <Tabs
+                className="min-w-0"
                 value={authMethod}
                 onValueChange={(value) => setAuthMethod(value as AuthMethod)}
               >
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="password" className="text-xs">
-                    {t("sshAuth.passwordMethod")}
+                  <TabsTrigger value="password" className="min-w-0 text-xs">
+                    <span className="truncate">{t("sshAuth.passwordMethod")}</span>
                   </TabsTrigger>
-                  <TabsTrigger value="key" className="text-xs">
-                    {t("sshAuth.keyMethod")}
+                  <TabsTrigger value="key" className="min-w-0 text-xs">
+                    <span className="truncate">{t("sshAuth.keyMethod")}</span>
                   </TabsTrigger>
                 </TabsList>
-                <TabsContent value="password" className="mt-3">
+                <TabsContent value="password" className="mt-3 min-w-0">
                   <PasswordAuthInput
                     inputRef={inputRef}
                     source={passwordSource}
@@ -358,7 +362,7 @@ export function SshAuthDialog({ request, onDone }: SshAuthDialogProps) {
                     onRefreshPasswords={loadSavedPasswords}
                   />
                 </TabsContent>
-                <TabsContent value="key" className="mt-3">
+                <TabsContent value="key" className="mt-3 min-w-0">
                   <KeySelector
                     keys={keyOptions}
                     value={selectedKeyId}
@@ -403,8 +407,8 @@ export function SshAuthDialog({ request, onDone }: SshAuthDialogProps) {
             )}
 
             {request?.canSave && activeMethod !== "key" && (
-              <div className="space-y-2 rounded-md border border-dashed px-3 py-2">
-                <div className="flex items-center gap-2">
+              <div className="min-w-0 space-y-2 rounded-md border border-dashed px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <Checkbox
                     checked={saveMode !== "none"}
                     onCheckedChange={(checked) => {
@@ -421,15 +425,15 @@ export function SshAuthDialog({ request, onDone }: SshAuthDialogProps) {
                       );
                     }}
                   />
-                  <span className="text-xs">{t("sshAuth.rememberCredential")}</span>
+                  <span className="min-w-0 text-xs">{t("sshAuth.rememberCredential")}</span>
                 </div>
                 {saveMode !== "none" && !isPassphrase && !usingSavedPassword && (
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <Select
                       value={saveMode}
                       onValueChange={(value) => setSaveMode(value as SaveMode)}
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className="h-8 w-full text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -455,7 +459,7 @@ export function SshAuthDialog({ request, onDone }: SshAuthDialogProps) {
             )}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="w-full gap-2 sm:gap-0">
             <Button
               variant="ghost"
               size="sm"
@@ -538,16 +542,20 @@ function PasswordAuthInput({
 }: PasswordAuthInputProps) {
   const { t } = useTranslation();
   return (
-    <Tabs value={source} onValueChange={(value) => onSourceChange(value as PasswordSource)}>
+    <Tabs
+      value={source}
+      className="min-w-0"
+      onValueChange={(value) => onSourceChange(value as PasswordSource)}
+    >
       <TabsList className="grid h-8 w-full grid-cols-2">
-        <TabsTrigger value="manual" className="text-xs">
-          {t("dialog.directPassword")}
+        <TabsTrigger value="manual" className="min-w-0 text-xs">
+          <span className="truncate">{t("dialog.directPassword")}</span>
         </TabsTrigger>
-        <TabsTrigger value="saved" className="text-xs">
-          {t("dialog.savedPassword")}
+        <TabsTrigger value="saved" className="min-w-0 text-xs">
+          <span className="truncate">{t("dialog.savedPassword")}</span>
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="manual" className="mt-3">
+      <TabsContent value="manual" className="mt-3 min-w-0">
         <SecretInput
           inputRef={inputRef}
           label={t("dialog.password")}
@@ -557,7 +565,7 @@ function PasswordAuthInput({
           onToggleShow={onToggleShow}
         />
       </TabsContent>
-      <TabsContent value="saved" className="mt-3">
+      <TabsContent value="saved" className="mt-3 min-w-0">
         <PasswordSelector
           passwords={passwords}
           value={selectedPasswordId}
@@ -580,7 +588,7 @@ function SecretInput({
 }: SecretInputProps) {
   const { t } = useTranslation();
   return (
-    <div>
+    <div className="min-w-0">
       <Label className="text-xs">{label}</Label>
       <div className="relative mt-1">
         <Input
@@ -623,8 +631,8 @@ function PasswordSelector({
 }: PasswordSelectorProps) {
   const { t } = useTranslation();
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
+    <div className="min-w-0 space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
         <Label className="text-xs">{t("dialog.savedPassword")}</Label>
         <Button
           type="button"
@@ -639,7 +647,7 @@ function PasswordSelector({
       </div>
       {passwords.length > 0 ? (
         <Select value={value} onValueChange={onChange}>
-          <SelectTrigger className="h-9 text-xs">
+          <SelectTrigger className="h-9 w-full text-xs">
             <SelectValue placeholder={t("dialog.selectPassword")} />
           </SelectTrigger>
           <SelectContent>
@@ -654,7 +662,7 @@ function PasswordSelector({
           </SelectContent>
         </Select>
       ) : (
-        <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+        <div className="min-w-0 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
           {loading ? t("sshAuth.loadingPasswords") : t("dialog.noPasswords")}
         </div>
       )}
@@ -674,8 +682,8 @@ interface KeySelectorProps {
 function KeySelector({ keys, value, loading, onChange, onRefresh, onAddKey }: KeySelectorProps) {
   const { t } = useTranslation();
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
+    <div className="min-w-0 space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
         <Label className="text-xs">{t("sshAuth.savedKey")}</Label>
         <div className="flex items-center gap-1">
           <Button
@@ -701,7 +709,7 @@ function KeySelector({ keys, value, loading, onChange, onRefresh, onAddKey }: Ke
       </div>
       {keys.length > 0 ? (
         <Select value={value} onValueChange={onChange}>
-          <SelectTrigger className="h-9 text-xs">
+          <SelectTrigger className="h-9 w-full text-xs">
             <SelectValue placeholder={t("sshAuth.selectKey")} />
           </SelectTrigger>
           <SelectContent>
@@ -716,7 +724,7 @@ function KeySelector({ keys, value, loading, onChange, onRefresh, onAddKey }: Ke
           </SelectContent>
         </Select>
       ) : (
-        <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+        <div className="min-w-0 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
           {loading ? t("sshAuth.loadingKeys") : t("sshAuth.noKeys")}
         </div>
       )}

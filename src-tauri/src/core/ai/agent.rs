@@ -14,7 +14,10 @@ use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
-use crate::config::{AgentCommandExecutionMode, AiExecutionProfile, AiSettings, RiskLevel};
+use crate::config::{
+    AgentCommandExecutionMode, AiAgentKind, AiExecutionProfile, AiPermissionMode, AiSettings,
+    RiskLevel,
+};
 use crate::core::capture;
 use crate::core::session::{SessionCommand, SessionManager, SessionType};
 use crate::core::ssh::SshConnectionHandles;
@@ -33,7 +36,7 @@ use super::stream::{active_streams, emit_stream_event, is_cancelled};
 use super::types::{
     AgentActionKind, AgentLlmResponse, AgentStepAction, AgentStepPayload, AgentStepStatus,
     AiCaptureEvent, AiChatRequest, AiMessage, AiMessageRole, AiStreamEventPayload,
-    AppendAiAuditRequest, CommandObservation, now_rfc3339, uuid,
+    AiTerminalTarget, AppendAiAuditRequest, CommandObservation, now_rfc3339, uuid,
 };
 
 // ---------------------------------------------------------------------------
@@ -637,6 +640,8 @@ struct RiskAssessment {
 struct ExecuteCommandToolArgs {
     thought: String,
     command: String,
+    #[serde(default)]
+    target_terminal_session_id: Option<String>,
     #[serde(deserialize_with = "deserialize_required_risk_level")]
     risk_level: RiskLevel,
     risk_reason: String,
@@ -692,6 +697,10 @@ fn agent_tools() -> Vec<Tool> {
                     "command": {
                         "type": "string",
                         "description": "A single shell command to execute."
+                    },
+                    "targetTerminalSessionId": {
+                        "type": "string",
+                        "description": "Terminal session id to execute the command in. Required when multiple terminal targets are available."
                     },
                     "riskLevel": {
                         "type": "string",
@@ -775,6 +784,7 @@ fn parsed_from_execute_tool(args: &ExecuteCommandToolArgs) -> AgentLlmResponse {
         thought: args.thought.clone(),
         action: TOOL_EXECUTE_COMMAND.to_string(),
         command: Some(args.command.clone()),
+        target_terminal_session_id: args.target_terminal_session_id.clone(),
         risk_level: Some(args.risk_level.clone()),
         risk_reason: Some(args.risk_reason.clone()),
         answer: None,
@@ -1034,14 +1044,28 @@ fn decide_agent_command_execution(
     }
 }
 
+fn decide_external_agent_command_execution(
+    mode: &AiPermissionMode,
+) -> (ApprovalDecision, Option<String>) {
+    match mode {
+        AiPermissionMode::Observer | AiPermissionMode::Confirm => (
+            ApprovalDecision::NeedsApproval,
+            Some("external agent permission mode requires confirmation".to_string()),
+        ),
+        AiPermissionMode::Auto => (ApprovalDecision::Auto, None),
+    }
+}
+
 fn build_execute_action(
     command: &str,
+    target: Option<AiTerminalTarget>,
     assessment: &RiskAssessment,
     approval_reason: Option<String>,
 ) -> AgentStepAction {
     AgentStepAction {
         kind: AgentActionKind::ExecuteCommand,
         command: Some(command.to_string()),
+        target,
         risk_level: Some(assessment.effective_risk.clone()),
         model_risk_level: Some(assessment.model_risk.clone()),
         local_risk_level: Some(assessment.local_risk.clone()),
@@ -1055,12 +1079,53 @@ fn build_final_action(answer: String) -> AgentStepAction {
     AgentStepAction {
         kind: AgentActionKind::FinalAnswer,
         command: None,
+        target: None,
         risk_level: None,
         model_risk_level: None,
         local_risk_level: None,
         risk_reason: None,
         approval_reason: None,
         answer: Some(answer),
+    }
+}
+
+fn resolve_agent_command_target(
+    request: &AiChatRequest,
+    target_terminal_session_id: Option<&str>,
+) -> AppResult<AiTerminalTarget> {
+    match request.targets.as_slice() {
+        [] => request
+            .terminal_session_id
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|terminal_session_id| AiTerminalTarget {
+                terminal_session_id: terminal_session_id.clone(),
+                connection_id: request.connection_id.clone(),
+                label: terminal_session_id.clone(),
+                host: request.context.host.clone(),
+                username: request.context.username.clone(),
+                session_type: "Unknown".to_string(),
+            })
+            .ok_or_else(|| AppError::Config("Agent mode requires a terminal session".to_string())),
+        [target] => Ok(target.clone()),
+        targets => {
+            let Some(target_id) =
+                target_terminal_session_id.filter(|value| !value.trim().is_empty())
+            else {
+                return Err(AppError::Config(
+                    "Agent command is missing targetTerminalSessionId".to_string(),
+                ));
+            };
+            targets
+                .iter()
+                .find(|target| target.terminal_session_id == target_id)
+                .cloned()
+                .ok_or_else(|| {
+                    AppError::Config(format!(
+                        "Agent command target '{target_id}' is not an available terminal"
+                    ))
+                })
+        }
     }
 }
 
@@ -1086,6 +1151,214 @@ fn append_agent_command_audit(
             blocked,
         },
     );
+}
+
+pub(super) async fn run_external_agent_command_step(
+    app: &AppHandle,
+    session_manager: Arc<SessionManager>,
+    approval_manager: Arc<AgentApprovalManager>,
+    stream_id: &str,
+    session_id: &str,
+    request: &AiChatRequest,
+    settings: &AiSettings,
+    step_index: u16,
+    command: String,
+    reason: Option<String>,
+    target_terminal_session_id: Option<String>,
+) -> AppResult<CommandObservation> {
+    let parsed = AgentLlmResponse {
+        thought: reason
+            .clone()
+            .unwrap_or_else(|| "Codex requested terminal command execution".to_string()),
+        action: "execute_command".to_string(),
+        command: Some(command.clone()),
+        target_terminal_session_id,
+        risk_level: None,
+        risk_reason: reason,
+        answer: None,
+    };
+    let assessment = assess_agent_command_risk(&parsed, &command);
+    let command_target =
+        resolve_agent_command_target(request, parsed.target_terminal_session_id.as_deref())?;
+    let (decision, approval_reason) = if request.agent_kind == AiAgentKind::Nyaterm {
+        decide_agent_command_execution(settings, &assessment)
+    } else {
+        decide_external_agent_command_execution(&request.permission_mode)
+    };
+
+    if request.agent_kind != AiAgentKind::Nyaterm
+        && request.permission_mode == AiPermissionMode::Observer
+    {
+        append_agent_command_audit(
+            app,
+            request,
+            "ai.external_agent_observer_block",
+            &command,
+            assessment.effective_risk.clone(),
+            false,
+            true,
+        );
+        return Err(AppError::Config(
+            "Observer permission mode does not allow terminal writes".to_string(),
+        ));
+    }
+
+    if decision == ApprovalDecision::NeedsApproval {
+        let approval_step = AgentStepPayload {
+            stream_id: stream_id.to_string(),
+            session_id: Some(session_id.to_string()),
+            step_index,
+            thought: parsed.thought.clone(),
+            action: build_execute_action(
+                &command,
+                Some(command_target.clone()),
+                &assessment,
+                approval_reason.clone(),
+            ),
+            observation: None,
+            status: AgentStepStatus::NeedsApproval,
+            error: None,
+        };
+        emit_agent_step(app, stream_id, approval_step);
+
+        let approval_key = format!("{stream_id}-{step_index}");
+        let approved = approval_manager
+            .register(approval_key)
+            .await
+            .await
+            .unwrap_or(false);
+
+        if !approved {
+            let step = AgentStepPayload {
+                stream_id: stream_id.to_string(),
+                session_id: Some(session_id.to_string()),
+                step_index,
+                thought: parsed.thought,
+                action: build_execute_action(
+                    &command,
+                    Some(command_target.clone()),
+                    &assessment,
+                    approval_reason,
+                ),
+                observation: None,
+                status: AgentStepStatus::Rejected,
+                error: None,
+            };
+            emit_agent_step(app, stream_id, step);
+            append_agent_command_audit(
+                app,
+                request,
+                "ai.agent_reject_execute",
+                &command,
+                assessment.effective_risk,
+                false,
+                true,
+            );
+            return Err(AppError::Cancelled(build_agent_rejected_message(
+                &command,
+                &request.options.language,
+            )));
+        }
+    }
+
+    emit_agent_step(
+        app,
+        stream_id,
+        AgentStepPayload {
+            stream_id: stream_id.to_string(),
+            session_id: Some(session_id.to_string()),
+            step_index,
+            thought: parsed.thought.clone(),
+            action: build_execute_action(&command, Some(command_target.clone()), &assessment, None),
+            observation: None,
+            status: AgentStepStatus::Running,
+            error: None,
+        },
+    );
+
+    let step_timeout = settings
+        .agent_step_timeout_ms
+        .unwrap_or(DEFAULT_AGENT_STEP_TIMEOUT_MS);
+    let result = if settings.agent_background_execution_enabled {
+        execute_command_in_background(
+            &session_manager,
+            &command_target.terminal_session_id,
+            &command,
+            step_timeout,
+        )
+        .await
+    } else {
+        execute_command_on_session(
+            app,
+            session_manager,
+            &command_target.terminal_session_id,
+            &command,
+            &request.options.language,
+            step_timeout,
+            step_index,
+            settings.terminal_output_lines,
+        )
+        .await
+    };
+
+    match result {
+        Ok(observation) => {
+            emit_agent_step(
+                app,
+                stream_id,
+                AgentStepPayload {
+                    stream_id: stream_id.to_string(),
+                    session_id: Some(session_id.to_string()),
+                    step_index,
+                    thought: parsed.thought,
+                    action: build_execute_action(&command, Some(command_target), &assessment, None),
+                    observation: Some(observation.clone()),
+                    status: AgentStepStatus::Completed,
+                    error: None,
+                },
+            );
+            append_agent_command_audit(
+                app,
+                request,
+                if decision == ApprovalDecision::Auto {
+                    "ai.agent_auto_execute"
+                } else {
+                    "ai.agent_authorized_execute"
+                },
+                &command,
+                assessment.effective_risk,
+                true,
+                false,
+            );
+            Ok(observation)
+        }
+        Err(error) => {
+            emit_agent_step(
+                app,
+                stream_id,
+                AgentStepPayload {
+                    stream_id: stream_id.to_string(),
+                    session_id: Some(session_id.to_string()),
+                    step_index,
+                    thought: parsed.thought,
+                    action: build_execute_action(&command, Some(command_target), &assessment, None),
+                    observation: None,
+                    status: AgentStepStatus::Failed,
+                    error: Some(error.to_string()),
+                },
+            );
+            append_agent_command_audit(
+                app,
+                request,
+                "ai.agent_execute_failed",
+                &command,
+                assessment.effective_risk,
+                false,
+                true,
+            );
+            Err(error)
+        }
+    }
 }
 
 async fn run_agent_tool_step(
@@ -1270,6 +1543,7 @@ async fn run_agent_legacy_json_step(
                 thought: String::new(),
                 action: "final_answer".to_string(),
                 command: None,
+                target_terminal_session_id: None,
                 risk_level: None,
                 risk_reason: None,
                 answer: Some(text),
@@ -1289,6 +1563,7 @@ mod tests {
             thought: "next".to_string(),
             action: "execute_command".to_string(),
             command: Some("ls".to_string()),
+            target_terminal_session_id: None,
             risk_level: risk,
             risk_reason: Some("model reason".to_string()),
             answer: None,
@@ -1444,6 +1719,22 @@ mod tests {
     }
 
     #[test]
+    fn external_agent_permission_modes_are_explicit() {
+        assert_eq!(
+            decide_external_agent_command_execution(&AiPermissionMode::Observer).0,
+            ApprovalDecision::NeedsApproval
+        );
+        assert_eq!(
+            decide_external_agent_command_execution(&AiPermissionMode::Confirm).0,
+            ApprovalDecision::NeedsApproval
+        );
+        assert_eq!(
+            decide_external_agent_command_execution(&AiPermissionMode::Auto).0,
+            ApprovalDecision::Auto
+        );
+    }
+
+    #[test]
     fn merge_command_output_preserves_stdout_and_stderr() {
         assert_eq!(merge_command_output("", ""), "");
         assert_eq!(merge_command_output("out", ""), "out");
@@ -1538,7 +1829,7 @@ pub(super) async fn run_agent_stream(
         }
     }
 
-    let terminal_session_id = match &request.terminal_session_id {
+    let _terminal_session_id = match &request.terminal_session_id {
         Some(id) if !id.trim().is_empty() => id.clone(),
         _ => {
             emit_agent_error(
@@ -1636,6 +1927,7 @@ pub(super) async fn run_agent_stream(
                 thought: args.thought,
                 action: TOOL_FINAL_ANSWER.to_string(),
                 command: None,
+                target_terminal_session_id: None,
                 risk_level: None,
                 risk_reason: None,
                 answer: Some(args.answer),
@@ -1721,6 +2013,41 @@ pub(super) async fn run_agent_stream(
                 };
 
                 let assessment = assess_agent_command_risk(&parsed, &command);
+                let command_target = match resolve_agent_command_target(
+                    &request,
+                    parsed.target_terminal_session_id.as_deref(),
+                ) {
+                    Ok(target) => target,
+                    Err(error) => {
+                        let step = AgentStepPayload {
+                            stream_id: stream_id.clone(),
+                            session_id: Some(session_id.clone()),
+                            step_index,
+                            thought: parsed.thought,
+                            action: build_execute_action(&command, None, &assessment, None),
+                            observation: None,
+                            status: AgentStepStatus::Failed,
+                            error: Some(error.to_string()),
+                        };
+                        emit_agent_step(&app, &stream_id, step.clone());
+                        all_steps.push(step);
+                        let message = error.to_string();
+                        if let Some(tool_call) = execute_tool_call.as_ref() {
+                            conversation.push(ChatMessage::from(vec![tool_call.clone()]));
+                            conversation.push(ChatMessage::from(ToolResponse::from_tool_call(
+                                tool_call,
+                                json!({
+                                    "status": "failed",
+                                    "error": message,
+                                })
+                                .to_string(),
+                            )));
+                        } else {
+                            conversation.push(ChatMessage::user(message));
+                        }
+                        continue;
+                    }
+                };
                 let (decision, approval_reason) =
                     decide_agent_command_execution(&settings, &assessment);
 
@@ -1745,6 +2072,7 @@ pub(super) async fn run_agent_stream(
                         thought: parsed.thought.clone(),
                         action: build_execute_action(
                             &command,
+                            Some(command_target.clone()),
                             &assessment,
                             approval_reason.clone(),
                         ),
@@ -1772,7 +2100,12 @@ pub(super) async fn run_agent_stream(
                             session_id: Some(session_id.clone()),
                             step_index,
                             thought: parsed.thought,
-                            action: build_execute_action(&command, &assessment, approval_reason),
+                            action: build_execute_action(
+                                &command,
+                                Some(command_target.clone()),
+                                &assessment,
+                                approval_reason,
+                            ),
                             observation: None,
                             status: AgentStepStatus::Rejected,
                             error: None,
@@ -1816,7 +2149,12 @@ pub(super) async fn run_agent_stream(
                     session_id: Some(session_id.clone()),
                     step_index,
                     thought: parsed.thought.clone(),
-                    action: build_execute_action(&command, &assessment, None),
+                    action: build_execute_action(
+                        &command,
+                        Some(command_target.clone()),
+                        &assessment,
+                        None,
+                    ),
                     observation: None,
                     status: AgentStepStatus::Running,
                     error: None,
@@ -1828,7 +2166,12 @@ pub(super) async fn run_agent_stream(
                         session_id: Some(session_id.clone()),
                         step_index,
                         thought: parsed.thought.clone(),
-                        action: build_execute_action(&command, &assessment, None),
+                        action: build_execute_action(
+                            &command,
+                            Some(command_target.clone()),
+                            &assessment,
+                            None,
+                        ),
                         observation: None,
                         status: AgentStepStatus::Running,
                         error: None,
@@ -1838,7 +2181,7 @@ pub(super) async fn run_agent_stream(
                 let obs = match if settings.agent_background_execution_enabled {
                     execute_command_in_background(
                         &session_manager,
-                        &terminal_session_id,
+                        &command_target.terminal_session_id,
                         &command,
                         step_timeout,
                     )
@@ -1847,7 +2190,7 @@ pub(super) async fn run_agent_stream(
                     execute_command_on_session(
                         &app,
                         session_manager.clone(),
-                        &terminal_session_id,
+                        &command_target.terminal_session_id,
                         &command,
                         &request.options.language,
                         step_timeout,
@@ -1863,7 +2206,12 @@ pub(super) async fn run_agent_stream(
                             session_id: Some(session_id.clone()),
                             step_index,
                             thought: parsed.thought,
-                            action: build_execute_action(&command, &assessment, None),
+                            action: build_execute_action(
+                                &command,
+                                Some(command_target.clone()),
+                                &assessment,
+                                None,
+                            ),
                             observation: None,
                             status: AgentStepStatus::Failed,
                             error: Some(e.to_string()),
@@ -1928,7 +2276,7 @@ pub(super) async fn run_agent_stream(
                     session_id: Some(session_id.clone()),
                     step_index,
                     thought: parsed.thought,
-                    action: build_execute_action(&command, &assessment, None),
+                    action: build_execute_action(&command, Some(command_target), &assessment, None),
                     observation: Some(obs.clone()),
                     status: AgentStepStatus::Completed,
                     error: None,

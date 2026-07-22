@@ -193,12 +193,12 @@ export function InteractionTab() {
         </SettingRow>
 
         <SettingRow
-          label={t("settings.macImeCompatibility")}
-          desc={t("settings.macImeCompatibilityDesc")}
+          label={t("settings.imeCompatibility")}
+          desc={t("settings.imeCompatibilityDesc")}
         >
           <SettingSwitch
-            checked={interaction.mac_ime_compatibility}
-            onChange={(v) => updateInteraction({ mac_ime_compatibility: v })}
+            checked={interaction.ime_compatibility}
+            onChange={(v) => updateInteraction({ ime_compatibility: v })}
           />
         </SettingRow>
       </SettingSection>

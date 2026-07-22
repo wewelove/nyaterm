@@ -13,7 +13,6 @@ import type { DockerSudoPasswordRequest } from "./components/dialog/docker/Docke
 import SessionQuickSwitcher, {
   type QuickSwitcherSession,
 } from "./components/dialog/terminal/SessionQuickSwitcherDialog";
-import { inferConnectionIconKeyFromRemoteSystem } from "./components/icons";
 import { useApp } from "./context/AppContext";
 import { TransferProvider } from "./context/TransferContext";
 import { useActivityBarController } from "./hooks/useActivityBarController";
@@ -24,7 +23,7 @@ import { useModalChildWindows } from "./hooks/useModalChildWindows";
 import { useRemoteStats } from "./hooks/useRemoteStats";
 import { resolveDisplayKeys } from "./hooks/useShortcutMap";
 import { useTerminalZoom } from "./hooks/useTerminalZoom";
-import { useUnreadTabs } from "./hooks/useUnreadTabs";
+import { useTabStatusIndicators } from "./hooks/useUnreadTabs";
 import { AI_OPEN_EVENT, type AIOpenIntent } from "./lib/aiEvents";
 import {
   buildPanelOpenUpdate,
@@ -40,6 +39,7 @@ import {
   NON_PANEL_IDS,
   type TrayAction,
 } from "./lib/appWorkspace";
+import { updateConnectionAutoIconAfterSessionStart } from "./lib/connectionAutoIcon";
 import { getErrorMessage, shouldPromptConnectionEditOnFailure } from "./lib/errors";
 import { invoke } from "./lib/invoke";
 import { logger } from "./lib/logger";
@@ -73,7 +73,7 @@ import {
   type TerminalWindowNode,
   updateTerminalWindowSplitRatio,
 } from "./lib/tabWindows";
-import type { TemporarySshLinkConfig } from "./lib/temporarySshLink";
+import type { TemporaryLinkConfig } from "./lib/temporaryLink";
 import {
   captureTerminalReconnectContent,
   preserveTerminalReconnectContent,
@@ -118,10 +118,6 @@ function getConnectionSessionType(
   connection: Pick<SavedConnection, "type"> | null | undefined,
 ): SessionType {
   return connection ? CONNECTION_SESSION_TYPES[connection.type] : "SSH";
-}
-
-function isConnectionIconAutoDetectEnabled(connection: SavedConnection): boolean {
-  return connection.icon_auto_detect ?? !connection.icon;
 }
 
 function isSessionCreationCancelled(error: unknown) {
@@ -179,11 +175,44 @@ async function createSessionForConnection(
   }
 }
 
-async function createTemporarySshSession(config: TemporarySshLinkConfig, createRequestId?: string) {
-  return invoke<string>("create_temporary_ssh_session", {
-    config,
-    createRequestId,
-  });
+async function createTemporarySession(config: TemporaryLinkConfig, createRequestId?: string) {
+  switch (config.protocol) {
+    case "telnet":
+      return invoke<string>("create_telnet_session", {
+        connectionId: null,
+        host: config.host,
+        port: config.port,
+        name: config.name,
+        createRequestId,
+        startupCommand: null,
+      });
+    case "serial":
+      return invoke<string>("create_serial_session", {
+        connectionId: null,
+        portName: config.portName,
+        baudRate: config.baudRate,
+        name: config.name,
+        createRequestId,
+      });
+    default: {
+      const { protocol: _protocol, ...sshConfig } = config;
+      return invoke<string>("create_temporary_ssh_session", {
+        config: sshConfig,
+        createRequestId,
+      });
+    }
+  }
+}
+
+function getTemporaryLinkSessionType(config: TemporaryLinkConfig): SessionType {
+  switch (config.protocol) {
+    case "telnet":
+      return "Telnet";
+    case "serial":
+      return "Serial";
+    default:
+      return "SSH";
+  }
 }
 
 function buildStartupCommandPayload(startupCommand?: StartupCommandRequest) {
@@ -271,6 +300,17 @@ function App() {
     runtimeInfoLoaded,
   } = useApp();
   const uiConfig = appSettings.ui;
+  const remoteStatsEnabled = uiConfig.show_remote_stats ?? true;
+  const updateAutoIconForSessionStart = useCallback(
+    (connectionId: string | null | undefined, sessionId: string) => {
+      void updateConnectionAutoIconAfterSessionStart({
+        connectionId,
+        sessionId,
+        remoteStatsEnabled,
+      });
+    },
+    [remoteStatsEnabled],
+  );
   const multiPanelOpen = appSettings.appearance.panel_multi_open;
   const { t, i18n } = useTranslation();
 
@@ -634,6 +674,7 @@ function App() {
             }
             focusTerminalSession(sessionId);
             recordRecentConnection(connectionId);
+            updateAutoIconForSessionStart(connectionId, sessionId);
           } catch (error) {
             if (
               isSessionCreationCancelled(error) ||
@@ -676,6 +717,7 @@ function App() {
     recordRecentConnection,
     setActivePane,
     setActiveTabId,
+    updateAutoIconForSessionStart,
     updatePaneSession,
     updateTabSession,
     replaceAppSettings,
@@ -875,7 +917,7 @@ function App() {
     return () => window.removeEventListener(AI_OPEN_EVENT, handler);
   }, [multiPanelOpen, updateUi]);
 
-  const unreadTabIds = useUnreadTabs(tabs, activeTabId);
+  const { unreadTabIds, disconnectedTabIds } = useTabStatusIndicators(tabs, activeTabId);
 
   const handleSelectLeafTab = useCallback(
     (leafId: string, tabId: string) => {
@@ -946,6 +988,7 @@ function App() {
         }
         updateTabSession(tabId, sessionId);
         recordRecentConnection(connection.id);
+        updateAutoIconForSessionStart(connection.id, sessionId);
       } catch (error) {
         if (isSessionCreationCancelled(error) || !hasTab(tabId)) {
           return;
@@ -972,6 +1015,7 @@ function App() {
       recordRecentConnection,
       t,
       terminalWindows,
+      updateAutoIconForSessionStart,
       updateTabSession,
     ],
   );
@@ -1291,9 +1335,10 @@ function App() {
       const pane = tab ? findPaneBySessionId(tab, oldSessionId) : null;
       if (tab && pane) {
         updatePaneSession(tab.id, pane.id, newSessionId);
+        updateAutoIconForSessionStart(pane.connectionId, newSessionId);
       }
     },
-    [tabs, updatePaneSession],
+    [tabs, updateAutoIconForSessionStart, updatePaneSession],
   );
 
   const handleConnectionError = useCallback(
@@ -1333,29 +1378,39 @@ function App() {
     void handleCloseWorkspaceTab(activeTab);
   }, [activeTab, handleCloseWorkspaceTab, notifyLockedTabCloseBlocked]);
 
+  const getActiveLeafTabIds = useCallback(() => {
+    const leaf =
+      terminalWindows && activeTabId
+        ? findTerminalWindowLeafByTabId(terminalWindows, activeTabId)
+        : null;
+    return leaf?.tabIds ?? tabs.map((tab) => tab.id);
+  }, [activeTabId, tabs, terminalWindows]);
+
   const handleNextTab = useCallback(() => {
-    if (tabs.length < 2 || !activeTabId) return;
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    setActiveTabId(tabs[(idx + 1) % tabs.length].id);
-  }, [tabs, activeTabId, setActiveTabId]);
+    if (!activeTabId) return;
+    const tabIds = getActiveLeafTabIds();
+    if (tabIds.length < 2) return;
+    const idx = tabIds.indexOf(activeTabId);
+    if (idx === -1) return;
+    setActiveTabId(tabIds[(idx + 1) % tabIds.length]);
+  }, [activeTabId, getActiveLeafTabIds, setActiveTabId]);
 
   const handlePrevTab = useCallback(() => {
-    if (tabs.length < 2 || !activeTabId) return;
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    setActiveTabId(tabs[(idx - 1 + tabs.length) % tabs.length].id);
-  }, [tabs, activeTabId, setActiveTabId]);
+    if (!activeTabId) return;
+    const tabIds = getActiveLeafTabIds();
+    if (tabIds.length < 2) return;
+    const idx = tabIds.indexOf(activeTabId);
+    if (idx === -1) return;
+    setActiveTabId(tabIds[(idx - 1 + tabIds.length) % tabIds.length]);
+  }, [activeTabId, getActiveLeafTabIds, setActiveTabId]);
 
   const handleSwitchTab = useCallback(
     (index: number) => {
-      const leaf =
-        terminalWindows && activeTabId
-          ? findTerminalWindowLeafByTabId(terminalWindows, activeTabId)
-          : null;
-      const tabIds = leaf?.tabIds ?? tabs.map((tab) => tab.id);
+      const tabIds = getActiveLeafTabIds();
       const targetTabId = index === -1 ? tabIds[tabIds.length - 1] : tabIds[index];
       if (targetTabId) setActiveTabId(targetTabId);
     },
-    [activeTabId, setActiveTabId, tabs, terminalWindows],
+    [getActiveLeafTabIds, setActiveTabId],
   );
 
   const handleToggleLeftSidebar = useCallback(() => {
@@ -1626,6 +1681,7 @@ function App() {
           }
           if (pane.connectionId) {
             recordRecentConnection(pane.connectionId);
+            updateAutoIconForSessionStart(pane.connectionId, sessionId);
           }
         } catch (error) {
           if (isSessionCreationCancelled(error) || !hasTab(tabId)) {
@@ -1661,6 +1717,7 @@ function App() {
       maybePromptConnectionEdit,
       recordRecentConnection,
       t,
+      updateAutoIconForSessionStart,
       updateTabSession,
     ],
   );
@@ -1696,6 +1753,7 @@ function App() {
         updateTabSession(tabId, sessionId);
         if (pane.connectionId) {
           recordRecentConnection(pane.connectionId);
+          updateAutoIconForSessionStart(pane.connectionId, sessionId);
         }
       } catch (error) {
         if ((tabId && !hasTab(tabId)) || isSessionCreationCancelled(error)) {
@@ -1717,7 +1775,15 @@ function App() {
         toast.error(t("tabCtx.multiplexSshFailed"));
       }
     },
-    [addPendingTab, hasTab, markTabConnectionFailed, recordRecentConnection, t, updateTabSession],
+    [
+      addPendingTab,
+      hasTab,
+      markTabConnectionFailed,
+      recordRecentConnection,
+      t,
+      updateAutoIconForSessionStart,
+      updateTabSession,
+    ],
   );
 
   const handleDuplicateSessionWithCommand = useCallback(
@@ -1775,6 +1841,11 @@ function App() {
       toast.info(t("tabCtx.reconnecting"));
 
       try {
+        if (pane.connectionId) {
+          await invoke("mark_tunnels_reconnecting_for_connection", {
+            connectionId: pane.connectionId,
+          }).catch(() => {});
+        }
         const reconnectContent = capturePaneReconnectContent(pane);
         const closed = await closePaneBackendSession(pane);
         if (!closed) {
@@ -1790,6 +1861,7 @@ function App() {
         updatePaneSession(tab.id, pane.id, newSessionId);
         if (pane.connectionId) {
           recordRecentConnection(pane.connectionId);
+          updateAutoIconForSessionStart(pane.connectionId, newSessionId);
         }
         toast.success(t("tabCtx.reconnectSuccess"));
       } catch (error) {
@@ -1797,6 +1869,11 @@ function App() {
           return;
         }
         const errorMessage = getErrorMessage(error);
+        if (pane.connectionId) {
+          await invoke("mark_tunnels_disconnected_for_connection", {
+            connectionId: pane.connectionId,
+          }).catch(() => {});
+        }
         logger.error({
           domain: "session.lifecycle",
           event: "session.reconnect_failed",
@@ -1818,6 +1895,7 @@ function App() {
       maybePromptConnectionEdit,
       recordRecentConnection,
       t,
+      updateAutoIconForSessionStart,
       updatePaneSession,
     ],
   );
@@ -1847,6 +1925,11 @@ function App() {
       toast.info(t("tabCtx.reconnecting"));
 
       try {
+        if (pane.connectionId) {
+          await invoke("mark_tunnels_reconnecting_for_connection", {
+            connectionId: pane.connectionId,
+          }).catch(() => {});
+        }
         const reconnectContent = capturePaneReconnectContent(pane);
         const closed = await closePaneBackendSession(pane);
         if (!closed) {
@@ -1862,6 +1945,7 @@ function App() {
         updatePaneSession(tab.id, pane.id, newSessionId);
         if (pane.connectionId) {
           recordRecentConnection(pane.connectionId);
+          updateAutoIconForSessionStart(pane.connectionId, newSessionId);
         }
         toast.success(t("tabCtx.reconnectSuccess"));
       } catch (error) {
@@ -1869,6 +1953,11 @@ function App() {
           return;
         }
         const errorMessage = getErrorMessage(error);
+        if (pane.connectionId) {
+          await invoke("mark_tunnels_disconnected_for_connection", {
+            connectionId: pane.connectionId,
+          }).catch(() => {});
+        }
         logger.error({
           domain: "session.lifecycle",
           event: "session.reconnect_failed",
@@ -1891,6 +1980,7 @@ function App() {
       recordRecentConnection,
       t,
       tabs,
+      updateAutoIconForSessionStart,
       updatePaneSession,
     ],
   );
@@ -1938,6 +2028,7 @@ function App() {
         }
         if (pane.connectionId) {
           recordRecentConnection(pane.connectionId);
+          updateAutoIconForSessionStart(pane.connectionId, sessionId);
         }
         window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals"));
       } catch (error) {
@@ -1973,6 +2064,7 @@ function App() {
       setActiveTabId,
       t,
       terminalWindows,
+      updateAutoIconForSessionStart,
       updateTabSession,
     ],
   );
@@ -2000,6 +2092,11 @@ function App() {
       if (!pane || pane.connecting || !canCreateSessionFromPane(pane)) return;
 
       try {
+        if (pane.connectionId) {
+          await invoke("mark_tunnels_reconnecting_for_connection", {
+            connectionId: pane.connectionId,
+          }).catch(() => {});
+        }
         const reconnectContent = capturePaneReconnectContent(pane);
         const closed = await closePaneBackendSession(pane);
         if (!closed) {
@@ -2015,12 +2112,18 @@ function App() {
         updatePaneSession(tabId, paneId, newSessionId);
         if (pane.connectionId) {
           recordRecentConnection(pane.connectionId);
+          updateAutoIconForSessionStart(pane.connectionId, newSessionId);
         }
       } catch (error) {
         if (isSessionCreationCancelled(error) || !hasPane(tabId, paneId)) {
           return;
         }
         const errorMessage = getErrorMessage(error);
+        if (pane.connectionId) {
+          await invoke("mark_tunnels_disconnected_for_connection", {
+            connectionId: pane.connectionId,
+          }).catch(() => {});
+        }
         logger.error({
           domain: "session.lifecycle",
           event: "session.reconnect_failed",
@@ -2045,6 +2148,7 @@ function App() {
       maybePromptConnectionEdit,
       recordRecentConnection,
       tabs,
+      updateAutoIconForSessionStart,
       updatePaneSession,
     ],
   );
@@ -2248,12 +2352,12 @@ function App() {
   }, [isLocked]);
 
   const handleTemporarySshConnect = useCallback(
-    async (config: TemporarySshLinkConfig) => {
-      const pending = addPendingTab(config.name, "SSH");
+    async (config: TemporaryLinkConfig) => {
+      const pending = addPendingTab(config.name, getTemporaryLinkSessionType(config));
       const { tabId, createRequestId } = pending;
 
       try {
-        const sessionId = await createTemporarySshSession(config, createRequestId);
+        const sessionId = await createTemporarySession(config, createRequestId);
         if (!hasTab(tabId)) {
           await closeStaleCreatedSession(sessionId);
           return;
@@ -2267,8 +2371,8 @@ function App() {
         const errorMessage = getErrorMessage(error);
         logger.error({
           domain: "session.lifecycle",
-          event: "temporary_ssh.open_failed",
-          message: "Temporary SSH connection failed",
+          event: "temporary_link.open_failed",
+          message: "Temporary connection failed",
           error,
         });
         markTabConnectionFailed(tabId, errorMessage);
@@ -2476,13 +2580,11 @@ function App() {
     activeSshSessionId && (liveSessionIds === null || liveSessionIds.has(activeSshSessionId))
       ? activeSshSessionId
       : null;
-  const remoteStatsEnabled = uiConfig.show_remote_stats ?? true;
   const remoteStats = useRemoteStats(
     activeLiveSshSessionId,
     remoteStatsEnabled,
     uiConfig.remote_stats_interval ?? 3,
   );
-  const pendingAutoIconUpdatesRef = useRef<Map<string, string>>(new Map());
   const activeSerialSessionId =
     activePane && !activePane.connecting && !activePane.connectError && activePane.type === "Serial"
       ? activePane.sessionId
@@ -2501,7 +2603,7 @@ function App() {
   const sendCommandSessionTargets = useMemo(() => {
     if (!terminalWindows) return [];
 
-    const targets: { id: string; type: SessionType }[] = [];
+    const targets: { id: string; name: string; tabName: string; type: SessionType }[] = [];
     const seen = new Set<string>();
 
     const visit = (node: TerminalWindowNode) => {
@@ -2518,7 +2620,12 @@ function App() {
         for (const pane of collectSessionPanes(tab.root)) {
           if (!hasLiveSession(pane) || seen.has(pane.sessionId)) continue;
           seen.add(pane.sessionId);
-          targets.push({ id: pane.sessionId, type: pane.type });
+          targets.push({
+            id: pane.sessionId,
+            name: pane.name,
+            tabName: getTabDisplayName(tab),
+            type: pane.type,
+          });
         }
       }
     };
@@ -2526,41 +2633,6 @@ function App() {
     visit(terminalWindows);
     return targets;
   }, [tabsById, terminalWindows]);
-
-  useEffect(() => {
-    const stats = remoteStats.stats;
-    if (!remoteStatsEnabled || !stats || !activeConnection) return;
-    if (activeConnection.type !== "ssh") return;
-    if (!isConnectionIconAutoDetectEnabled(activeConnection)) return;
-
-    const iconKey = inferConnectionIconKeyFromRemoteSystem(stats.system);
-    if (!iconKey || iconKey === activeConnection.icon) return;
-
-    const pendingKey = `${iconKey}:auto`;
-    const pendingUpdates = pendingAutoIconUpdatesRef.current;
-    if (pendingUpdates.get(activeConnection.id) === pendingKey) return;
-
-    pendingUpdates.set(activeConnection.id, pendingKey);
-    invoke("update_connection_icon", {
-      connectionId: activeConnection.id,
-      icon: iconKey,
-      iconAutoDetect: true,
-    })
-      .catch((error) => {
-        logger.error({
-          domain: "ui.error",
-          event: "connection.auto_icon_update_failed",
-          message: "Failed to update auto-detected connection icon",
-          ids: { connection_id: activeConnection.id },
-          error,
-        });
-      })
-      .finally(() => {
-        if (pendingUpdates.get(activeConnection.id) === pendingKey) {
-          pendingUpdates.delete(activeConnection.id);
-        }
-      });
-  }, [activeConnection, remoteStats.stats, remoteStatsEnabled]);
 
   const activeBottomPanel = uiConfig.show_serial_send_panel
     ? "serialSend"
@@ -2628,6 +2700,7 @@ function App() {
         updateTabSession(tabId, sessionId);
         focusTerminalSession(sessionId);
         recordRecentConnection(connection.id);
+        updateAutoIconForSessionStart(connection.id, sessionId);
       } catch (error) {
         if (isSessionCreationCancelled(error) || !hasTab(tabId)) {
           return;
@@ -2652,6 +2725,7 @@ function App() {
       maybePromptConnectionEdit,
       recordRecentConnection,
       t,
+      updateAutoIconForSessionStart,
       updateTabSession,
     ],
   );
@@ -2813,6 +2887,8 @@ function App() {
           onHelpMenuOpen: () => setHelpDotVisible(false),
           activeTab,
           savedConnections,
+          remoteStatsEnabled,
+          remoteStats,
           onSmartSplit: handleSmartSplit,
           onUnsplit: handleUnsplit,
           canUnsplit: terminalWindows?.kind === "split",
@@ -2868,6 +2944,7 @@ function App() {
           tabsById,
           focusedTabId: activeTabId,
           unreadTabIds,
+          disconnectedTabIds,
           onSelectTab: handleSelectLeafTab,
           onAddTab: handleAddTabFromLeaf,
           onConnectConnection: handleConnectConnectionFromLeaf,
