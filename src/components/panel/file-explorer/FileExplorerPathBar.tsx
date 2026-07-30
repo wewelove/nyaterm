@@ -34,7 +34,6 @@ import {
   type ChildrenMenuState,
   type DirectoryChild,
   type FileExplorerBackendKind,
-  formatExplorerPathFromHome,
   joinExplorerPath,
   type LoadDirectoryOptions,
   normalizeExplorerPath,
@@ -199,6 +198,7 @@ export function FileExplorerPathBar({
   }, [isEditingPath, onEditingPathChange]);
 
   useLayoutEffect(() => {
+    if (isEditingPath) return;
     const viewport = breadcrumbViewportRef.current;
     if (!viewport) return;
 
@@ -206,12 +206,16 @@ export function FileExplorerPathBar({
       setAvailableWidth(viewport.clientWidth);
     };
     updateWidth();
+    const animationFrame = window.requestAnimationFrame(updateWidth);
 
     const resizeObserver =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateWidth);
     resizeObserver?.observe(viewport);
-    return () => resizeObserver?.disconnect();
-  }, []);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+    };
+  }, [isEditingPath]);
 
   const segments = useMemo(
     () => buildBreadcrumbSegments(currentPath, homeDir, backend),
@@ -272,14 +276,6 @@ export function FileExplorerPathBar({
   const hasFavoriteDirectories = favoriteDirectories.length > 0;
   const isCurrentFavorite = favoriteDirectories.includes(normalizedCurrentPath);
   const FavoriteIcon = isCurrentFavorite ? MdBookmarkAdded : MdBookmarkBorder;
-
-  const formatHistoryPath = useCallback(
-    (path: string) => {
-      if (!homeDir) return path;
-      return formatExplorerPathFromHome(path, homeDir, backend);
-    },
-    [backend, homeDir],
-  );
 
   const beginPathEditing = useCallback(() => {
     onPathInputTextChange(currentPath || homeDir);
@@ -404,6 +400,17 @@ export function FileExplorerPathBar({
         </div>
       )}
 
+      {!isEditingPath && (
+        <button
+          type="button"
+          className="ml-1 h-5 shrink-0 rounded transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          style={{ flex: "0 0 clamp(28px, 12%, 56px)" }}
+          title={t("fileExplorer.editPath")}
+          aria-label={t("fileExplorer.editPath")}
+          onClick={beginPathEditing}
+        />
+      )}
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -435,7 +442,7 @@ export function FileExplorerPathBar({
                     className="min-w-0 flex-1 truncate font-mono text-[0.625rem]"
                     style={{ color: isCurrent ? "var(--df-primary)" : undefined }}
                   >
-                    {formatHistoryPath(path)}
+                    {path}
                   </span>
                   <button
                     type="button"
@@ -496,7 +503,7 @@ export function FileExplorerPathBar({
                   onSelectHistoryPath(path);
                 }}
               >
-                <span className="truncate">{formatHistoryPath(path)}</span>
+                <span className="truncate">{path}</span>
               </button>
             );
           })}

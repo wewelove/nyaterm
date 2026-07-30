@@ -17,6 +17,7 @@ use tokio::time::timeout;
 use crate::config::{AiAgentKind, AiBackendKind, AiModelSource, AiSettings, CodexThreadMode};
 use crate::core::SessionManager;
 use crate::error::{AppError, AppResult};
+use crate::utils::process::hide_window;
 
 use super::agent::{AgentApprovalManager, run_external_agent_command_step};
 use super::history::{
@@ -25,7 +26,7 @@ use super::history::{
 };
 use super::model::resolve_request_model_config;
 use super::prompt::build_agent_prompt;
-use super::redaction::{redact_context, redact_sensitive_text};
+use super::redaction::{redact_context, redact_marker_values, redact_sensitive_text};
 use super::stream::{active_streams, emit_stream_event};
 use super::types::{
     AiChatRequest, AiMessage, AiMessageRole, AiModelDiscovery, AiSessionBackendMetadata,
@@ -180,7 +181,9 @@ impl CodexAppServerManager {
 
         *self.state.write().await = CodexRuntimeState::Starting;
         let executable = codex_executable(path.as_deref());
-        let mut child = Command::new(&executable)
+        let mut command = Command::new(&executable);
+        hide_window(&mut command);
+        let mut child = command
             .args(["app-server", "--listen", "stdio://"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -1061,11 +1064,17 @@ fn add_common_codex_candidates(
 }
 
 async fn discover_codex_with_path_command() -> Vec<String> {
-    let output = if cfg!(windows) {
-        Command::new("where.exe").arg("codex").output().await
+    let mut command = if cfg!(windows) {
+        let mut command = Command::new("where.exe");
+        command.arg("codex");
+        command
     } else {
-        Command::new("which").args(["-a", "codex"]).output().await
+        let mut command = Command::new("which");
+        command.args(["-a", "codex"]);
+        command
     };
+    hide_window(&mut command);
+    let output = command.output().await;
 
     let Ok(output) = output else {
         return Vec::new();
@@ -1083,13 +1092,13 @@ async fn discover_codex_with_path_command() -> Vec<String> {
 }
 
 async fn probe_codex_cli(executable: &str) -> Result<String, String> {
-    let output = timeout(
-        CODEX_DETECT_TIMEOUT,
-        Command::new(executable).arg("--version").output(),
-    )
-    .await
-    .map_err(|_| "timed out while running --version".to_string())?
-    .map_err(|error| error.to_string())?;
+    let mut command = Command::new(executable);
+    command.arg("--version");
+    hide_window(&mut command);
+    let output = timeout(CODEX_DETECT_TIMEOUT, command.output())
+        .await
+        .map_err(|_| "timed out while running --version".to_string())?
+        .map_err(|error| error.to_string())?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -1285,18 +1294,10 @@ async fn read_stderr(stderr: tokio::process::ChildStderr) {
 }
 
 fn sanitize_codex_log_line(line: &str) -> String {
-    let mut sanitized = line.to_string();
-    for marker in ["access_token=", "refresh_token=", "id_token=", "code="] {
-        while let Some(index) = sanitized.find(marker) {
-            let start = index + marker.len();
-            let end = sanitized[start..]
-                .find(['&', ' ', '"'])
-                .map(|offset| start + offset)
-                .unwrap_or(sanitized.len());
-            sanitized.replace_range(start..end, "[redacted]");
-        }
-    }
-    sanitized
+    redact_marker_values(
+        line,
+        &["access_token=", "refresh_token=", "id_token=", "code="],
+    )
 }
 
 pub async fn manager_from_app(app: &AppHandle) -> AppResult<Arc<CodexAppServerManager>> {
@@ -1321,7 +1322,7 @@ mod tests {
         assert!(sanitized.contains("access_token=[redacted]"));
         assert!(sanitized.contains("refresh_token=[redacted]"));
         assert!(sanitized.contains("id_token=[redacted]"));
-        assert!(sanitized.contains("code=[redacted]"));
+        assert!(sanitized.contains("code=[redacted]&state=ok"));
     }
 
     #[test]

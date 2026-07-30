@@ -15,10 +15,11 @@ use tokio::time::timeout;
 
 use crate::config::{AiAgentKind, AiPermissionMode, AiSettings};
 use crate::error::{AppError, AppResult};
+use crate::utils::process::hide_window;
 
 use super::super::history::{append_message, save_user_message, set_session_external_session_id};
 use super::super::prompt::build_prompt;
-use super::super::redaction::{redact_context, redact_sensitive_text};
+use super::super::redaction::{redact_context, redact_marker_values, redact_sensitive_text};
 use super::super::stream::{active_streams, emit_stream_event};
 use super::super::types::{AiChatRequest, AiMessage, AiMessageRole, AiStreamEventPayload};
 use super::super::types::{now_rfc3339, uuid};
@@ -214,6 +215,7 @@ async fn run_claude_code_stream_inner(
 
     let prompt = build_prompt(request, &settings);
     let mut child = Command::new(&executable);
+    hide_window(&mut child);
     child
         .arg("-p")
         .arg("--output-format")
@@ -593,11 +595,17 @@ fn add_common_claude_candidates(
 }
 
 async fn discover_claude_with_path_command() -> Vec<String> {
-    let output = if cfg!(windows) {
-        Command::new("where.exe").arg("claude").output().await
+    let mut command = if cfg!(windows) {
+        let mut command = Command::new("where.exe");
+        command.arg("claude");
+        command
     } else {
-        Command::new("which").args(["-a", "claude"]).output().await
+        let mut command = Command::new("which");
+        command.args(["-a", "claude"]);
+        command
     };
+    hide_window(&mut command);
+    let output = command.output().await;
 
     let Ok(output) = output else {
         return Vec::new();
@@ -615,13 +623,13 @@ async fn discover_claude_with_path_command() -> Vec<String> {
 }
 
 async fn probe_claude_cli(executable: &str) -> Result<String, String> {
-    let output = timeout(
-        CLAUDE_DETECT_TIMEOUT,
-        Command::new(executable).arg("--version").output(),
-    )
-    .await
-    .map_err(|_| "timed out while running --version".to_string())?
-    .map_err(|error| error.to_string())?;
+    let mut command = Command::new(executable);
+    command.arg("--version");
+    hide_window(&mut command);
+    let output = timeout(CLAUDE_DETECT_TIMEOUT, command.output())
+        .await
+        .map_err(|_| "timed out while running --version".to_string())?
+        .map_err(|error| error.to_string())?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -668,24 +676,16 @@ async fn read_claude_stderr(stderr: tokio::process::ChildStderr) {
 }
 
 fn sanitize_claude_log_line(line: &str) -> String {
-    let mut sanitized = line.to_string();
-    for marker in [
-        "access_token=",
-        "refresh_token=",
-        "id_token=",
-        "api_key=",
-        "code=",
-    ] {
-        while let Some(index) = sanitized.find(marker) {
-            let start = index + marker.len();
-            let end = sanitized[start..]
-                .find(['&', ' ', '"'])
-                .map(|offset| start + offset)
-                .unwrap_or(sanitized.len());
-            sanitized.replace_range(start..end, "[redacted]");
-        }
-    }
-    sanitized
+    redact_marker_values(
+        line,
+        &[
+            "access_token=",
+            "refresh_token=",
+            "id_token=",
+            "api_key=",
+            "code=",
+        ],
+    )
 }
 
 #[cfg(test)]
@@ -721,5 +721,9 @@ mod tests {
         assert!(!sanitized.contains("def"));
         assert!(!sanitized.contains("ghi"));
         assert!(!sanitized.contains("code=xyz"));
+        assert!(sanitized.contains("access_token=[redacted]"));
+        assert!(sanitized.contains("refresh_token=[redacted]"));
+        assert!(sanitized.contains("api_key=[redacted]"));
+        assert!(sanitized.contains("code=[redacted]&state=ok"));
     }
 }

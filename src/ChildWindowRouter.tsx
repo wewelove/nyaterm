@@ -1,16 +1,19 @@
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, type ReactNode, Suspense, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   isModalChildLabel,
   prepareForModalChildClose,
   setOwnerMainWindowLabel,
+  signalChildWindowReady,
 } from "./lib/windowManager";
 
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const NewSessionPage = lazy(() => import("./pages/NewSessionPage"));
 const QuickCommandPage = lazy(() => import("./pages/QuickCommandPage"));
+const ProxyPage = lazy(() => import("./pages/ProxyPage"));
+const TunnelPage = lazy(() => import("./pages/TunnelPage"));
 const AutoUploadPage = lazy(() => import("./pages/FileUploadPage"));
 const RemoteFileEditorPage = lazy(() => import("./pages/RemoteFileEditorPage"));
 const FilePreviewPage = lazy(() => import("./pages/FilePreviewPage"));
@@ -19,10 +22,24 @@ const PAGES: Record<string, React.ComponentType> = {
   settings: SettingsPage,
   "new-session": NewSessionPage,
   "quick-command": QuickCommandPage,
+  proxy: ProxyPage,
+  tunnel: TunnelPage,
   "auto-upload": AutoUploadPage,
   "file-editor": RemoteFileEditorPage,
   "file-preview": FilePreviewPage,
 };
+
+function ReadyContent({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void signalChildWindowReady();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  return children;
+}
 
 export default function ChildWindowRouter({ windowType }: { windowType: string }) {
   const { t } = useTranslation();
@@ -38,24 +55,25 @@ export default function ChildWindowRouter({ windowType }: { windowType: string }
     let unlistenFocusChanged: (() => void) | undefined;
     let programmaticClose = false;
     let lastFocusEmitAt = 0;
+    const pageHandlesCloseRequested = windowType === "settings";
 
-    currentWindow.show().catch(() => {});
+    if (!pageHandlesCloseRequested) {
+      currentWindow
+        .onCloseRequested(async (event) => {
+          if (programmaticClose || !isModalChildLabel(currentWindow.label)) return;
 
-    currentWindow
-      .onCloseRequested(async (event) => {
-        if (programmaticClose || !isModalChildLabel(currentWindow.label)) return;
-
-        programmaticClose = true;
-        event.preventDefault();
-        await prepareForModalChildClose(currentWindow.label).catch(() => {});
-        await currentWindow.close().catch(() => {
-          programmaticClose = false;
-        });
-      })
-      .then((unlisten) => {
-        unlistenCloseRequested = unlisten;
-      })
-      .catch(() => {});
+          programmaticClose = true;
+          event.preventDefault();
+          await prepareForModalChildClose(currentWindow.label).catch(() => {});
+          await currentWindow.close().catch(() => {
+            programmaticClose = false;
+          });
+        })
+        .then((unlisten) => {
+          unlistenCloseRequested = unlisten;
+        })
+        .catch(() => {});
+    }
 
     if (isModalChildLabel(currentWindow.label)) {
       currentWindow
@@ -79,25 +97,23 @@ export default function ChildWindowRouter({ windowType }: { windowType: string }
       unlistenCloseRequested?.();
       unlistenFocusChanged?.();
     };
-  }, []);
+  }, [windowType]);
 
   if (!Page) {
     return (
-      <div className="h-screen flex items-center justify-center text-muted-foreground">
-        {t("common.unknownWindowType")}: {windowType}
-      </div>
+      <ReadyContent>
+        <div className="h-screen flex items-center justify-center text-muted-foreground">
+          {t("common.unknownWindowType")}: {windowType}
+        </div>
+      </ReadyContent>
     );
   }
 
   return (
-    <Suspense
-      fallback={
-        <div className="h-screen flex items-center justify-center text-muted-foreground">
-          {t("common.loading")}
-        </div>
-      }
-    >
-      <Page />
+    <Suspense fallback={null}>
+      <ReadyContent>
+        <Page />
+      </ReadyContent>
     </Suspense>
   );
 }

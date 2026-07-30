@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "NyaTerm",
-  "version": "1.1.16",
+  "version": "1.1.18",
   "identifier": "com.kang.nyaterm",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -48,6 +48,15 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "nyaterm",
+          "ssh",
+          "telnet"
+        ]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlCQzVEOTU4QTJEQjg0MjEKUldRaGhOdWlXTm5GbTdMRTMrYjA1V0gyQW5ueXV1bjlxajcwZEFWcklKeEU1cVgvUUpEVVVRWUsK",
       "endpoints": [

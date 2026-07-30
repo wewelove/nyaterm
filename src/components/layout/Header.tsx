@@ -19,10 +19,12 @@ import {
   MdFitScreen,
   MdInfo,
   MdKeyboardArrowDown,
+  MdListAlt,
   MdMemory,
   MdMenu,
   MdMenuBook,
   MdMerge,
+  MdOutlineMonitorHeart,
   MdPalette,
   MdRestartAlt,
   MdSearch,
@@ -38,9 +40,12 @@ import {
   MdUpdate,
   MdUpload,
   MdViewSidebar,
+  MdVisibility,
+  MdVisibilityOff,
   MdZoomIn,
   MdZoomOut,
 } from "react-icons/md";
+import { SiDocker, SiNvidia } from "react-icons/si";
 import {
   VscChromeClose,
   VscChromeMaximize,
@@ -48,13 +53,16 @@ import {
   VscChromeRestore,
 } from "react-icons/vsc";
 import packageJson from "@/../package.json";
+import HeaderStatusHideConfirmDialog from "@/components/dialog/app/HeaderStatusHideConfirmDialog";
 import QuitConfirmDialog from "@/components/dialog/app/QuitConfirmDialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/context/AppContext";
@@ -63,6 +71,7 @@ import { useConfigTransfer } from "@/hooks/useConfigTransfer";
 import type { RemoteStatsState } from "@/hooks/useRemoteStats";
 import { resolveDisplayKeys } from "@/hooks/useShortcutMap";
 import { AVAILABLE_LANGUAGES } from "@/i18n";
+import { HEADER_STATUS_MODES, normalizeHeaderStatusMode } from "@/lib/headerStatus";
 import { invoke } from "@/lib/invoke";
 import { logger } from "@/lib/logger";
 import { isMacOS } from "@/lib/platform";
@@ -72,7 +81,7 @@ import {
   resetTerminalFontSizeDelta,
 } from "@/lib/terminalFontSize";
 import { getActivePane, getTabDisplayName } from "@/lib/workspaceTabs";
-import type { HeaderStatusMode, SavedConnection, Tab } from "@/types/global";
+import type { AppearanceSettings, SavedConnection, Tab } from "@/types/global";
 import ImportDialog from "../dialog/connections/ImportDialog";
 import { resolveConnectionIcon } from "../icons";
 import NyaTermLogo from "../NyaTermLogo";
@@ -90,6 +99,19 @@ import {
   MenubarSubTrigger,
   MenubarTrigger,
 } from "../ui/menubar";
+
+function AscendIcon({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block h-[1em] w-[1em] bg-current ${className ?? ""}`}
+      style={{
+        WebkitMask: "url('/icons/brands/ascend.svg') center / contain no-repeat",
+        mask: "url('/icons/brands/ascend.svg') center / contain no-repeat",
+      }}
+    />
+  );
+}
 
 const iconMap: Record<string, React.ElementType> = {
   add: MdAdd,
@@ -109,6 +131,7 @@ const iconMap: Record<string, React.ElementType> = {
   menu: MdMenu,
   view_sidebar: MdViewSidebar,
   settings: MdSettings,
+  visibility: MdVisibility,
   file_export: BiExport,
   file_import: BiImport,
   splitscreen: MdSplitscreen,
@@ -117,11 +140,21 @@ const iconMap: Record<string, React.ElementType> = {
   swap_horiz: MdSwapHoriz,
   swap_vert: MdSwapVert,
   sync: MdSync,
+  upload: MdUpload,
+  download: MdDownload,
   cell_tower: MdCellTower,
   delete_sweep: MdDeleteSweep,
   fit_screen: MdFitScreen,
   terminal: MdTerminal,
+  computer: MdComputer,
   search: MdSearch,
+  memory: MdMemory,
+  speed: MdSpeed,
+  monitor_heart: MdOutlineMonitorHeart,
+  nvidia: SiNvidia,
+  ascend: AscendIcon,
+  list_alt: MdListAlt,
+  docker: SiDocker,
 };
 
 function DynamicIcon({ name, className }: { name: string; className?: string }) {
@@ -165,14 +198,6 @@ function HeaderStatusDivider() {
       -
     </span>
   );
-}
-
-const HEADER_STATUS_MODES: HeaderStatusMode[] = ["session", "resources", "host"];
-
-function normalizeHeaderStatusMode(value?: string): HeaderStatusMode {
-  return HEADER_STATUS_MODES.includes(value as HeaderStatusMode)
-    ? (value as HeaderStatusMode)
-    : "session";
 }
 
 function formatPct(value: number): string {
@@ -270,11 +295,13 @@ export default function Header({
   onRefitTerminals,
 }: HeaderProps) {
   const [appWindow] = useState(() => getCurrentWindow());
-  const { themeName, setTheme, themeNames } = useTheme();
+  const { themeName, setTheme, themeNames, terminalThemeName, setTerminalTheme } = useTheme();
   const { updateAppSettings, updateUi, appSettings, tabs } = useApp();
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [showHeaderStatusHideConfirm, setShowHeaderStatusHideConfirm] = useState(false);
+  const [currentMinute, setCurrentMinute] = useState(() => new Date());
   const { t, i18n } = useTranslation();
   const { handleExport, passwordAlert } = useConfigTransfer();
 
@@ -285,6 +312,7 @@ export default function Header({
   const activeDisplayName = activeTab ? getTabDisplayName(activeTab) : "NyaTerm";
   const terminalZoomEnabled = appSettings.interaction.terminal_zoom_enabled;
   const headerStatusMode = normalizeHeaderStatusMode(appSettings.ui.header_status_mode);
+  const headerStatusVisible = appSettings.ui.header_status_visible !== false;
 
   useEffect(() => {
     let mounted = true;
@@ -314,10 +342,44 @@ export default function Header({
     };
   }, [appWindow]);
 
+  useEffect(() => {
+    if (!headerStatusVisible || headerStatusMode !== "datetime") {
+      return;
+    }
+
+    const updateCurrentMinute = () => setCurrentMinute(new Date());
+    updateCurrentMinute();
+
+    const now = new Date();
+    const nextMinuteDelay = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const timeoutId = setTimeout(() => {
+      updateCurrentMinute();
+      intervalId = setInterval(updateCurrentMinute, 60_000);
+    }, nextMinuteDelay);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [headerStatusMode, headerStatusVisible]);
+
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng);
     updateUi({ language: lng });
     void invoke("save_app_language", { language: lng }).catch(() => {});
+  };
+
+  const updateAppearance = (patch: Partial<AppearanceSettings>) => {
+    updateAppSettings({
+      appearance: {
+        ...appSettings.appearance,
+        ...patch,
+      },
+    });
   };
 
   const handleZoom = (delta: number) => {
@@ -355,6 +417,45 @@ export default function Header({
 
   const dk = (id: string) => resolveDisplayKeys(id, appSettings.keybindings);
 
+  const toggleUi = <K extends keyof typeof appSettings.ui>(key: K, value: boolean) => {
+    updateUi({ [key]: value });
+  };
+
+  const monitorMenuItems: MenuItem[] = [
+    {
+      label: t("settings.showRemoteStats"),
+      icon: "monitor_heart",
+      checked: appSettings.ui.show_remote_stats ?? true,
+      action: () => toggleUi("show_remote_stats", !(appSettings.ui.show_remote_stats ?? true)),
+    },
+    {
+      label: t("settings.showGpuMonitor"),
+      icon: "nvidia",
+      checked: appSettings.ui.show_gpu_monitor ?? false,
+      action: () => toggleUi("show_gpu_monitor", !(appSettings.ui.show_gpu_monitor ?? false)),
+    },
+    {
+      label: t("settings.showAscendNpuMonitor"),
+      icon: "ascend",
+      checked: appSettings.ui.show_ascend_npu_monitor ?? false,
+      action: () =>
+        toggleUi("show_ascend_npu_monitor", !(appSettings.ui.show_ascend_npu_monitor ?? false)),
+    },
+    {
+      label: t("settings.showProcessManager"),
+      icon: "list_alt",
+      checked: appSettings.ui.show_process_manager ?? false,
+      action: () =>
+        toggleUi("show_process_manager", !(appSettings.ui.show_process_manager ?? false)),
+    },
+    {
+      label: t("settings.showDockerManager"),
+      icon: "docker",
+      checked: appSettings.ui.show_docker_manager ?? false,
+      action: () => toggleUi("show_docker_manager", !(appSettings.ui.show_docker_manager ?? false)),
+    },
+  ];
+
   const menus: Record<string, MenuItem[]> = {
     file: [
       {
@@ -386,6 +487,22 @@ export default function Header({
         })),
       },
       {
+        label: t("menu.terminalTheme"),
+        icon: "terminal",
+        submenu: [
+          {
+            label: t("settings.followUiTheme"),
+            checked: terminalThemeName === null,
+            action: () => setTerminalTheme(null),
+          },
+          ...themeNames.map((th) => ({
+            label: th.name,
+            checked: terminalThemeName === th.id,
+            action: () => setTerminalTheme(th.id),
+          })),
+        ],
+      },
+      {
         label: t("menu.language"),
         icon: "translate",
         submenu: AVAILABLE_LANGUAGES.map((l) => ({
@@ -393,6 +510,42 @@ export default function Header({
           checked: i18n.language === l.id,
           action: () => changeLanguage(l.id),
         })),
+      },
+      { label: "separator", separator: true },
+      {
+        label: t("menu.headerStatus"),
+        icon: "info",
+        submenu: [
+          {
+            label: t("headerStatus.hidden"),
+            checked: !headerStatusVisible,
+            action: () => setShowHeaderStatusHideConfirm(true),
+          },
+          ...HEADER_STATUS_MODES.map((mode) => ({
+            label: t(`headerStatus.${mode}`),
+            checked: headerStatusVisible && headerStatusMode === mode,
+            action: () =>
+              updateUi({
+                header_status_mode: mode,
+                header_status_visible: true,
+              }),
+          })),
+        ],
+      },
+      {
+        label: t("menu.panels"),
+        icon: "view_sidebar",
+        submenu: [
+          {
+            label: t("settings.panelMultiOpen"),
+            icon: "view_sidebar",
+            checked: appSettings.appearance.panel_multi_open,
+            action: () =>
+              updateAppearance({ panel_multi_open: !appSettings.appearance.panel_multi_open }),
+          },
+          { label: "separator", separator: true },
+          ...monitorMenuItems,
+        ],
       },
       { label: "separator", separator: true },
       {
@@ -423,6 +576,68 @@ export default function Header({
         icon: "search",
         action: () => onOpenCommandPalette?.(),
         shortcut: dk("tab.quickSwitch"),
+      },
+      { label: "separator", separator: true },
+      {
+        label: t("menu.terminalDisplay"),
+        icon: "visibility",
+        submenu: [
+          {
+            label: t("settings.showWorkspacePadding"),
+            checked: appSettings.terminal.show_workspace_padding ?? false,
+            action: () =>
+              updateAppSettings({
+                terminal: {
+                  ...appSettings.terminal,
+                  show_workspace_padding: !(appSettings.terminal.show_workspace_padding ?? false),
+                },
+              }),
+          },
+          {
+            label: t("settings.showLineNumbers"),
+            checked: appSettings.terminal.show_line_numbers,
+            action: () =>
+              updateAppSettings({
+                terminal: {
+                  ...appSettings.terminal,
+                  show_line_numbers: !appSettings.terminal.show_line_numbers,
+                },
+              }),
+          },
+          {
+            label: t("settings.showTimestamps"),
+            checked: appSettings.terminal.show_timestamps,
+            action: () =>
+              updateAppSettings({
+                terminal: {
+                  ...appSettings.terminal,
+                  show_timestamps: !appSettings.terminal.show_timestamps,
+                },
+              }),
+          },
+        ],
+      },
+      {
+        label: t("settings.actionLinks"),
+        checked: appSettings.terminal.action_links_enabled ?? false,
+        action: () =>
+          updateAppSettings({
+            terminal: {
+              ...appSettings.terminal,
+              action_links_enabled: !(appSettings.terminal.action_links_enabled ?? false),
+            },
+          }),
+      },
+      {
+        label: t("settings.terminalZoomEnabled"),
+        checked: terminalZoomEnabled,
+        action: () =>
+          updateAppSettings({
+            interaction: {
+              ...appSettings.interaction,
+              terminal_zoom_enabled: !terminalZoomEnabled,
+            },
+          }),
       },
       { label: "separator", separator: true },
       {
@@ -550,6 +765,9 @@ export default function Header({
             item.action?.();
           }}
         >
+          {item.icon && (
+            <DynamicIcon name={item.icon} className="text-[1rem] text-[var(--df-text-muted)]" />
+          )}
           <span className="flex-1">{item.label}</span>
           {item.shortcut && <MenubarShortcut>{item.shortcut}</MenubarShortcut>}
         </MenubarCheckboxItem>
@@ -604,6 +822,11 @@ export default function Header({
   const handleConfirmClose = () => {
     setShowCloseConfirm(false);
     appWindow.close().catch(() => {});
+  };
+
+  const handleConfirmHideHeaderStatus = () => {
+    setShowHeaderStatusHideConfirm(false);
+    updateUi({ header_status_visible: false });
   };
 
   const hasActiveStatsSession = Boolean(
@@ -685,6 +908,23 @@ export default function Header({
       };
     }
 
+    if (headerStatusMode === "datetime") {
+      const text = new Intl.DateTimeFormat(i18n.language, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(currentMinute);
+
+      return {
+        icon: <MdAccessTime />,
+        text,
+        title: text,
+      };
+    }
+
     const stats = remoteStats?.stats;
     if (remoteStatusFallback || !stats) {
       return {
@@ -741,8 +981,8 @@ export default function Header({
           <HeaderStatusDivider />
           <HeaderStatusPart icon={<MdMemory />} iconColor="#a78bfa">
             RAM{" "}
-            <span style={memoryColor ? { color: memoryColor } : undefined}>{memoryUsedText}</span>
-            /{memoryTotalText}
+            <span style={memoryColor ? { color: memoryColor } : undefined}>{memoryUsedText}</span>/
+            {memoryTotalText}
           </HeaderStatusPart>
           <HeaderStatusDivider />
           <HeaderStatusPart icon={<MdUpload />} iconColor="#f59e0b">
@@ -755,7 +995,15 @@ export default function Header({
       ),
       title: text,
     };
-  }, [headerStatusMode, remoteStats?.stats, remoteStatusFallback, sessionStatus, t]);
+  }, [
+    currentMinute,
+    headerStatusMode,
+    i18n.language,
+    remoteStats?.stats,
+    remoteStatusFallback,
+    sessionStatus,
+    t,
+  ]);
 
   return (
     <header
@@ -804,37 +1052,62 @@ export default function Header({
 
       <div className="flex-1 min-w-0 h-full flex items-center justify-center gap-2 px-2">
         <div className="h-full min-w-0 flex-1" data-tauri-drag-region />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="group flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-[color-mix(in_srgb,var(--df-text-muted)_10%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--df-primary)]"
-              style={{ color: "var(--df-text-muted)" }}
-              title={headerStatus.title}
-              aria-label={t("headerStatus.select")}
+        {headerStatusVisible && (
+          <div
+            className="flex max-w-full min-w-0 items-center gap-0.5 rounded-md text-xs font-medium"
+            style={{ color: "var(--df-text-muted)" }}
+            title={headerStatus.title}
+            data-tauri-drag-region
+          >
+            <div
+              className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap px-2 py-1"
+              data-tauri-drag-region
             >
-              {headerStatus.icon}
-              <span className="flex min-w-0 items-center overflow-hidden whitespace-nowrap">
+              <span className="pointer-events-none inline-flex shrink-0" data-tauri-drag-region>
+                {headerStatus.icon}
+              </span>
+              <span
+                className="pointer-events-none flex min-w-0 items-center overflow-hidden whitespace-nowrap"
+                data-tauri-drag-region
+              >
                 {headerStatus.text}
               </span>
-              <MdKeyboardArrowDown className="text-sm shrink-0 opacity-60 transition-opacity group-hover:opacity-100" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="min-w-[190px]">
-            <DropdownMenuRadioGroup
-              value={headerStatusMode}
-              onValueChange={(value) => {
-                updateUi({ header_status_mode: normalizeHeaderStatusMode(value) });
-              }}
-            >
-              {HEADER_STATUS_MODES.map((mode) => (
-                <DropdownMenuRadioItem key={mode} value={mode}>
-                  {t(`headerStatus.${mode}`)}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="group flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[color-mix(in_srgb,var(--df-text-muted)_10%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--df-primary)]"
+                  aria-label={t("headerStatus.select")}
+                >
+                  <MdKeyboardArrowDown className="text-sm opacity-60 transition-opacity group-hover:opacity-100" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="min-w-[190px]">
+                <DropdownMenuRadioGroup
+                  value={headerStatusMode}
+                  onValueChange={(value) => {
+                    updateUi({
+                      header_status_mode: normalizeHeaderStatusMode(value),
+                      header_status_visible: true,
+                    });
+                  }}
+                >
+                  {HEADER_STATUS_MODES.map((mode) => (
+                    <DropdownMenuRadioItem key={mode} value={mode}>
+                      {t(`headerStatus.${mode}`)}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowHeaderStatusHideConfirm(true)}>
+                  <MdVisibilityOff className="text-sm text-muted-foreground" />
+                  <span>{t("headerStatus.hide")}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
         <div className="h-full min-w-0 flex-1" data-tauri-drag-region />
       </div>
 
@@ -896,6 +1169,11 @@ export default function Header({
         open={showCloseConfirm}
         onOpenChange={setShowCloseConfirm}
         onConfirm={handleConfirmClose}
+      />
+      <HeaderStatusHideConfirmDialog
+        open={showHeaderStatusHideConfirm}
+        onOpenChange={setShowHeaderStatusHideConfirm}
+        onConfirm={handleConfirmHideHeaderStatus}
       />
     </header>
   );

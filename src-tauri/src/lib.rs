@@ -7,8 +7,10 @@ mod cmd;
 mod config;
 mod core;
 mod error;
+mod external_open;
 mod observability;
 mod platform;
+mod portable_updater;
 mod runtime;
 mod storage;
 mod tray;
@@ -28,6 +30,7 @@ use crate::core::{CloudSyncManager, QuickCommandsStore, RecordingManager, Sessio
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    portable_updater::schedule_cleanup_from_environment();
     let runtime = runtime::resolve().expect("failed to resolve runtime paths");
     runtime::prepare_webview_environment(&runtime);
 
@@ -45,15 +48,27 @@ pub fn run() {
     let transfer_duplicate_manager = Arc::new(TransferDuplicateManager::new());
     let docker_sudo_manager = Arc::new(DockerSudoManager::new());
     let app_lock_state = AppLockState::default();
+    let external_open_state = external_open::ExternalOpenState::default();
+    let portable_update_state = portable_updater::PortableUpdateState::default();
 
     let builder = tauri::Builder::default();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if external_open::handle_external_open_args(
+            app,
+            args,
+            external_open::ExternalOpenSource::SecondInstance,
+        ) {
+            return;
+        }
+
         if let Err(error) = app::create_additional_main_window(app) {
             tracing::warn!("Failed to create additional main window: {}", error);
             app::show_main_window(app);
         }
     }));
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
@@ -79,6 +94,8 @@ pub fn run() {
         .manage(transfer_duplicate_manager.clone())
         .manage(docker_sudo_manager.clone())
         .manage(app_lock_state)
+        .manage(external_open_state)
+        .manage(portable_update_state)
         .setup(move |a| {
             app::setup(
                 a,
@@ -101,8 +118,13 @@ pub fn run() {
             cmd::app::open_transfer_target_directory,
             cmd::app::resolve_local_drop_paths,
             cmd::app::read_background_image_data_url,
+            cmd::external_open::claim_external_open_requests,
+            cmd::updater::check_portable_update,
+            cmd::updater::download_portable_update,
+            cmd::updater::apply_portable_update,
             cmd::ai::start_ai_chat_stream,
             cmd::ai::list_ai_model_names,
+            cmd::ai::refresh_ai_model_settings,
             cmd::ai::cancel_ai_chat_stream,
             cmd::ai::detect_codex_cli,
             cmd::ai::get_codex_account_status,
@@ -318,4 +340,8 @@ pub fn run() {
                 app::show_main_window(_app);
             }
         });
+}
+
+pub fn run_portable_update_helper_if_requested() -> bool {
+    portable_updater::run_helper_if_requested()
 }

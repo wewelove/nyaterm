@@ -19,6 +19,7 @@ import i18n from "../i18n";
 import { invoke } from "../lib/invoke";
 import { logger, setLoggerLevel } from "../lib/logger";
 import { DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminalFontSize";
+import { signalChildWindowReady } from "../lib/windowManager";
 import { AppContext } from "./AppContext";
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -145,6 +146,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     quick_cmd_height: 180,
     quick_cmd_view_mode: "tile",
     quick_cmd_sort_mode: "created",
+    quick_cmd_selected_category: "all",
     active_left_panel: "fileExplorer",
     active_right_panel: "savedConnections",
     left_open_panels: [],
@@ -158,6 +160,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     zoom_level: 1.0,
     language: "en",
     header_status_mode: "session",
+    header_status_visible: true,
     show_remote_stats: true,
     remote_stats_interval: 3,
     show_gpu_monitor: false,
@@ -282,6 +285,16 @@ export function ChildAppProvider({ children }: { children: ReactNode }) {
       i18n.changeLanguage(appSettings.ui.language);
     }
   }, [appSettings.ui?.language]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !lockStateLoaded || !isLocked) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void signalChildWindowReady();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isLocked, lockStateLoaded, settingsLoaded]);
 
   useIdleLock(
     appSettings.security.enable_screen_lock ? appSettings.security.idle_lock_minutes : 0,
@@ -415,12 +428,13 @@ export function ChildAppProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const showContent = lockStateLoaded && !isLocked;
+  const appStateReady = settingsLoaded && lockStateLoaded;
+  const showContent = appStateReady && !isLocked;
 
   return (
     <AppContext.Provider value={contextValue}>
       {showContent ? children : null}
-      {lockStateLoaded && isLocked ? (
+      {appStateReady && isLocked ? (
         <LockScreen
           hasPassword={!!appSettings.security.master_password}
           onUnlock={() => setIsLocked(false)}
