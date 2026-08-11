@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 This changelog is inferred from release bump commits in git history (for example `chore: bump version to vX.Y.Z`) and grouped by Conventional Commit type.
 
+## [1.2.0] - 2026-08-04
+
+### Added
+
+- **gpu-npu-monitor:** Add remote GPU and NPU overviews to the application header/status area, with shared overview hooks and compact hardware cards for active SSH sessions.
+- **ui:** Add a Notes panel toggle to settings and include Notes in the default workspace configuration.
+- **file-explorer:** Support selecting multiple directories for uploads.
+- **terminal:** Show the saved-connection group path in TabBar tooltips.
+
+### Changed
+
+- **monitoring:** Integrate remote GPU/NPU overview data with the existing GPU and Ascend NPU monitor panels.
+- **i18n:** Add localization strings for GPU/NPU overviews, Notes, and saved-connection group labels across supported languages.
+
+## [1.1.19] - 2026-08-04
+
+### Added
+
+- **notes:** Add a Notes panel and note editor with autosave, toolbar/status UI, tree navigation, context menus, persistent storage, migrations, and sync/backup snapshot support.
+- **asset-monitoring:** Add an asset monitoring workspace with grouped connection views, breadcrumb navigation, table/card layouts, formatters, and resource/GPU monitor integration.
+- **sftp:** Enhance directory downloads and transfer handling, including improved pipeline behavior and SCP original-property handling.
+- **zmodem:** Add local path tracking for Zmodem transfers and reveal-in-file-manager support.
+- **quick-commands:** Add import preservation options for merging quick commands.
+- **ai:** Add native tool-call mode with error handling for agent workflows.
+- **import:** Improve WindTerm session import, including master-password prompts and merge handling.
+- **external-open:** Enhance SSH URL parsing and external connection handling.
+- **capabilities:** Allow hidden files in the temporary directory capability.
+
+### Changed
+
+- **monitoring:** Improve system information collection in the remote stats script.
+- **ui:** Simplify the Asset toolbar by removing unused title/count display.
+- **i18n:** Add and update localization for notes, asset monitoring, WindTerm master-password prompts, CPU sampling, and external inline-password guidance.
+
+### Fixed
+
+- **monitoring:** Handle `null` values in CPU usage and percentage formatting.
+- **terminal:** Refocus the search input when Find is triggered while the search bar is already open.
+
+### Performance
+
+- **notes:** Refactor the Notes panel and tree components for better performance and usability.
+
+### Documentation
+
+- **ssh:** Clarify SSH connection guidance around inline password usage.
+
 ## [1.1.18] - 2026-07-29
 
 ### Added

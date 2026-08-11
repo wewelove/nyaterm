@@ -1,5 +1,7 @@
 /** Type of terminal session. */
 export type SessionType = "SSH" | "Local" | "Telnet" | "Serial";
+export type WorkspaceSessionType = SessionType | "RDP";
+export type WorkspacePaneKind = "terminal" | "rdp";
 
 export interface AppRuntimeInfo {
   portable: boolean;
@@ -10,6 +12,12 @@ export interface AppRuntimeInfo {
   logDir: string;
   webviewDataDir: string;
   portableMarkerPath?: string | null;
+}
+
+export interface AppSupportInfo {
+  os: string;
+  architecture: string;
+  runtime: "portable" | "installed";
 }
 
 /** AI Agent command execution wrapper profile. */
@@ -30,13 +38,14 @@ export interface SyncGroup {
 export type PaneSplitDirection = "horizontal" | "vertical";
 
 /** Connection type discriminator matching Rust ConnectionType. */
-export type ConnectionTypeTag = "ssh" | "local_terminal" | "telnet" | "serial";
+export type ConnectionTypeTag = "ssh" | "local_terminal" | "telnet" | "serial" | "rdp";
 
 /** Metadata for a connected or disconnected session. */
 export interface SessionInfo {
   id: string;
   name: string;
-  session_type: SessionType;
+  session_type: WorkspaceSessionType;
+  connection_id?: string | null;
   connected: boolean;
   owner_window_label?: string | null;
   ai_execution_profile: AIExecutionProfile;
@@ -46,13 +55,14 @@ export interface SessionInfo {
   remote_file_browser_enabled: boolean;
 }
 
-/** Leaf node representing one terminal session inside a workspace tab. */
-export interface SessionPane {
+/** Shared fields for one session-like leaf inside a workspace tab. */
+export interface WorkspacePaneBase {
   id: string;
   kind: "leaf";
+  paneKind: WorkspacePaneKind;
   sessionId: string;
   name: string;
-  type: SessionType;
+  type: WorkspaceSessionType;
   connectionId?: string;
   /** True while the backend session is being established. XTerminal is not rendered yet. */
   connecting?: boolean;
@@ -61,6 +71,25 @@ export interface SessionPane {
   /** Populated when session creation failed and the pane should stay visible as an error state. */
   connectError?: string;
 }
+
+/** Leaf node representing one terminal session inside a workspace tab. */
+export interface TerminalSessionPane extends WorkspacePaneBase {
+  paneKind: "terminal";
+  type: SessionType;
+}
+
+/** Leaf node representing one graphical RDP session inside a workspace tab. */
+export interface RdpSessionPane extends WorkspacePaneBase {
+  paneKind: "rdp";
+  type: "RDP";
+  display?: {
+    remoteWidth: number;
+    remoteHeight: number;
+    scaleMode: "fit" | "actual" | "stretch";
+  };
+}
+
+export type SessionPane = TerminalSessionPane | RdpSessionPane;
 
 /** Split node containing two child panes. */
 export interface SplitPane {
@@ -115,7 +144,12 @@ export interface SshConfig {
 export type SshAuth =
   | { type: "none" }
   | { type: "password"; password?: string | null }
-  | { type: "key"; key_data: string; cert_data?: string | null; passphrase?: string };
+  | {
+      type: "key";
+      key_data: string;
+      cert_data?: string | null;
+      passphrase?: string;
+    };
 
 /** Group for organizing saved connections. Groups form a tree via parent_id. */
 export interface Group {
@@ -200,6 +234,52 @@ export interface ConnectionPostLogin {
   delay_ms: number;
 }
 
+export type AssetDeviceType =
+  | "physical"
+  | "virtual"
+  | "cloud"
+  | "network"
+  | "storage"
+  | "embedded"
+  | "other";
+
+export type AssetAcceleratorType = "gpu" | "npu" | "other";
+
+export interface AssetAccelerator {
+  type: AssetAcceleratorType;
+  vendor?: string;
+  model?: string;
+  count?: number;
+  memory_bytes?: number;
+}
+
+export interface AssetDisk {
+  kind?: "hdd" | "ssd" | "nvme" | "other";
+  model?: string;
+  capacity_bytes?: number;
+  count?: number;
+  purpose?: "system" | "data" | "cache" | "other";
+}
+
+export interface AssetMetadata {
+  device_type?: AssetDeviceType;
+  os_name?: string;
+  os_version?: string;
+  architecture?: string;
+  kernel_version?: string;
+  hostname?: string;
+  cpu_model?: string;
+  cpu_sockets?: number;
+  cpu_cores?: number;
+  cpu_threads?: number;
+  memory_bytes?: number;
+  accelerators?: AssetAccelerator[];
+  disks?: AssetDisk[];
+  tags?: string[];
+  notes?: string;
+  updated_at?: string;
+}
+
 export interface TelnetAutoLoginConfig {
   enabled?: boolean;
   send_wake_enter?: boolean;
@@ -226,6 +306,7 @@ export type SftpCwdFollowMode = "off" | "shell_integration" | "rc_file";
 export interface SftpSettings {
   enabled: boolean;
   cwd_follow_mode: SftpCwdFollowMode;
+  shell_detection_timeout_ms: number;
   filename_encoding?: string;
 }
 
@@ -267,8 +348,10 @@ export interface SavedConnection {
   auth?: ConnectionAuth;
   network?: ConnectionNetwork;
   post_login?: ConnectionPostLogin;
+  recording?: ConnectionRecordingSettings;
   ssh_algorithms?: SshAlgorithmPreferences;
   sftp?: SftpSettings;
+  asset?: AssetMetadata;
   /** SSH-specific fields (present when type === "ssh"). */
   host?: string;
   port?: number;
@@ -307,6 +390,83 @@ export interface SavedConnection {
   x11_forwarding?: boolean;
   /** Per-connection encoding override. Empty string means follow global setting. */
   encoding?: string;
+  /** RDP-only: optional Windows/domain part for authentication. */
+  domain?: string;
+  /** RDP-only security options. */
+  security?: RdpSecuritySettings;
+  /** RDP-only display options. */
+  display?: RdpDisplaySettings;
+  /** RDP-only clipboard options. */
+  clipboard?: RdpClipboardSettings;
+  /** RDP-only reconnect options. */
+  reconnect?: RdpReconnectSettings;
+}
+
+export type RdpCertificatePolicy = "strict" | "prompt" | "accept-temporarily";
+export type RdpDisplayMode = "fit-window" | "fixed" | "native";
+export type RdpClipboardMode = "disabled" | "text-only";
+
+export interface RdpSecuritySettings {
+  use_nla: boolean;
+  certificate_policy: RdpCertificatePolicy;
+}
+
+export interface RdpDisplaySettings {
+  mode: RdpDisplayMode;
+  width: number;
+  height: number;
+  color_depth: 16 | 24 | 32;
+}
+
+export interface RdpClipboardSettings {
+  mode: RdpClipboardMode;
+}
+
+export interface RdpReconnectSettings {
+  enabled: boolean;
+  max_attempts: number;
+}
+
+export type RecordingMode = "transcript" | "raw";
+export type RecordingState = "starting" | "recording" | "degraded" | "failed" | "stopping";
+export type ExistingFileBehavior = "unique" | "append" | "overwrite";
+export type RotationPolicy =
+  | { type: "session" }
+  | { type: "daily" }
+  | { type: "size"; max_bytes: number };
+
+export interface RecordingSettings {
+  auto_start: boolean;
+  default_mode: RecordingMode;
+  base_path: string;
+  path_template: string;
+  include_timestamps: boolean;
+  include_io_labels: boolean;
+  include_session_metadata: boolean;
+  rotation: RotationPolicy;
+  existing_file_behavior: ExistingFileBehavior;
+  memory_limit_bytes: number;
+  include_binary_transfer_payloads: boolean;
+}
+
+export interface ConnectionRecordingSettings {
+  auto_start?: boolean | null;
+  mode?: RecordingMode | null;
+  path_template?: string | null;
+  include_timestamps?: boolean | null;
+  rotation?: RotationPolicy | null;
+}
+
+export interface RecordingStatus {
+  sessionId: string;
+  state: RecordingState;
+  mode: RecordingMode;
+  filePath: string;
+  startedAt: string;
+  writtenBytes: number;
+  queuedBytes: number;
+  droppedBytes: number;
+  lastError?: string | null;
 }
 
 /** Stored OTP entry for two-factor authentication. */
@@ -338,8 +498,9 @@ export interface OtpCodeResult {
 export interface RestorableSessionPane {
   id?: string;
   kind: "leaf";
+  pane_kind?: WorkspacePaneKind;
   title: string;
-  session_type: SessionType | "local";
+  session_type: WorkspaceSessionType | "local";
   connection_id?: string;
 }
 
@@ -369,7 +530,12 @@ export interface RestorableTab {
   locked?: boolean;
 }
 
-export type LeftPanelId = "fileExplorer" | "network" | "securityAuth" | "syncBackupHistory";
+export type LeftPanelId =
+  | "fileExplorer"
+  | "notes"
+  | "network"
+  | "securityAuth"
+  | "syncBackupHistory";
 
 export type RightPanelId =
   | "savedConnections"
@@ -398,7 +564,7 @@ export interface ActivityBarLayout {
 /** Layout preferences: panel widths, active panels, theme. */
 export type QuickCommandViewMode = "list" | "compact" | "tile";
 export type QuickCommandSortMode = "created" | "name" | "useCount";
-export type HeaderStatusMode = "session" | "resources" | "host" | "datetime";
+export type HeaderStatusMode = "session" | "resources" | "host" | "datetime" | "gpu" | "npu";
 
 export type RestorableTerminalWindowNode =
   | {
@@ -417,9 +583,11 @@ export type RestorableTerminalWindowNode =
 export interface UiConfig {
   open_tabs: RestorableTab[];
   terminal_window_layout: RestorableTerminalWindowNode | null;
+  start_workspace_mode?: "workbench" | "assets";
   left_width: number;
   right_width: number;
   quick_cmd_height: number;
+  quick_cmd_category_width?: number;
   quick_cmd_view_mode: QuickCommandViewMode;
   quick_cmd_sort_mode?: QuickCommandSortMode;
   quick_cmd_selected_category?: string;
@@ -442,6 +610,7 @@ export interface UiConfig {
   language?: string;
   header_status_mode?: HeaderStatusMode;
   header_status_visible?: boolean;
+  show_notes_panel: boolean;
   show_remote_stats: boolean;
   remote_stats_interval: number;
   show_gpu_monitor: boolean;
@@ -453,12 +622,14 @@ export interface UiConfig {
   show_docker_manager: boolean;
   docker_manager_interval: number;
   saved_connections_sort_mode?: string;
-  saved_connections_last_opened_connection_id?: string | null;
+  saved_connections_expanded_group_ids?: string[];
   recent_connection_ids: string[];
   transfer_height: number;
   file_explorer_show_hidden_files: boolean;
   file_explorer_auto_sync_cwd_connection_ids: string[];
   file_explorer_favorite_dirs_by_connection_id: Record<string, string[]>;
+  notes_expanded_folder_ids: string[];
+  notes_last_selected_node_id: string | null;
   activity_bar_layout: ActivityBarLayout;
 }
 
@@ -479,8 +650,10 @@ export interface RemoteStatsLoad {
 export interface RemoteStatsCpu {
   model: string;
   cores: number;
-  usage: number;
-  per_core: number[];
+  usage: number | null;
+  per_core: { id: number; usage: number }[];
+  sample_window_ms: number | null;
+  usage_source: "warming_up" | "aggregate" | "core_weighted_fallback";
 }
 
 export interface RemoteStatsMemory {
@@ -707,6 +880,8 @@ export interface RemoteNpuOverview {
 export interface QuickCommandCategory {
   id: string;
   name: string;
+  parent_id?: string;
+  sort_order?: number;
 }
 
 export interface QuickCommand {
@@ -1313,6 +1488,7 @@ export interface AppSettings {
   security: SecuritySettings;
   terminal: TerminalSettings;
   interaction: InteractionSettings;
+  recording: RecordingSettings;
   transfer: TransferSettings;
   diagnostics: DiagnosticsSettings;
   ai: AISettings;
@@ -1407,6 +1583,7 @@ export interface CloudSyncSettings {
   device_name: string;
   auto_check_on_startup: boolean;
   auto_push_on_change: boolean;
+  auto_pull_remote_changes: boolean;
   sync_debounce_seconds: number;
   webdav: WebdavSyncSettings;
   s3: S3SyncSettings;

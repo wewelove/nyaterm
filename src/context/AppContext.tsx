@@ -46,10 +46,10 @@ import type {
   PaneSplitDirection,
   SavedConnection,
   SessionPane,
-  SessionType,
   SyncGroup,
   Tab,
   UiConfig,
+  WorkspaceSessionType,
 } from "@/types/global";
 import { invoke } from "../lib/invoke";
 import { logger, setLoggerLevel } from "../lib/logger";
@@ -64,7 +64,7 @@ interface AppContextType {
   addTab: (
     sessionId: string,
     name: string,
-    type: SessionType,
+    type: WorkspaceSessionType,
     connectionId?: string,
     extra?: Partial<Pick<Tab, "customName" | "tabColor">>,
     options?: { afterTabId?: string },
@@ -72,7 +72,7 @@ interface AppContextType {
   /** Immediately add a "connecting" tab and make it active. Returns the new tabId. */
   addPendingTab: (
     name: string,
-    type: SessionType,
+    type: WorkspaceSessionType,
     connectionId?: string,
     extra?: Partial<Pick<Tab, "customName" | "tabColor">>,
     options?: { afterTabId?: string },
@@ -284,6 +284,19 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     tab_middle_click_action: DEFAULT_TAB_MIDDLE_CLICK_ACTION,
     tab_right_click_action: DEFAULT_TAB_RIGHT_CLICK_ACTION,
   },
+  recording: {
+    auto_start: false,
+    default_mode: "transcript",
+    base_path: "",
+    path_template: "{group}/{session}/{yyyy}-{MM}-{dd}/{HH}-{mm}-{ss}-{SSS}-{session_short_id}.log",
+    include_timestamps: true,
+    include_io_labels: true,
+    include_session_metadata: true,
+    rotation: { type: "session" },
+    existing_file_behavior: "unique",
+    memory_limit_bytes: 5 * 1024 * 1024,
+    include_binary_transfer_payloads: false,
+  },
   transfer: {
     editor_type: "external",
     download_threads: 3,
@@ -314,9 +327,11 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   ui: {
     open_tabs: [],
     terminal_window_layout: null,
+    start_workspace_mode: "workbench",
     left_width: 256,
     right_width: 288,
     quick_cmd_height: 180,
+    quick_cmd_category_width: 176,
     quick_cmd_view_mode: "tile",
     quick_cmd_sort_mode: "created",
     quick_cmd_selected_category: "all",
@@ -334,6 +349,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     language: "en",
     header_status_mode: "session",
     header_status_visible: true,
+    show_notes_panel: true,
     show_remote_stats: true,
     remote_stats_interval: 3,
     show_gpu_monitor: false,
@@ -345,14 +361,16 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     show_docker_manager: false,
     docker_manager_interval: 10,
     saved_connections_sort_mode: "default",
-    saved_connections_last_opened_connection_id: null,
+    saved_connections_expanded_group_ids: [],
     recent_connection_ids: [],
     transfer_height: 180,
     file_explorer_show_hidden_files: true,
     file_explorer_auto_sync_cwd_connection_ids: [],
     file_explorer_favorite_dirs_by_connection_id: {},
+    notes_expanded_folder_ids: [],
+    notes_last_selected_node_id: null,
     activity_bar_layout: {
-      left_top: ["fileExplorer", "network", "securityAuth"],
+      left_top: ["fileExplorer", "notes", "network", "securityAuth"],
       left_bottom: ["syncBackupHistory", "settings"],
       right_top: [
         "savedConnections",
@@ -561,7 +579,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setLoggerLevel(cfg.diagnostics.level);
         appSettingsLoaded.current = true;
         setSettingsLoaded(true);
-        if (cfg.security?.enable_screen_lock) {
+        if (isPrimaryMainWindow() && cfg.security?.enable_screen_lock) {
           setIsLocked(true);
         }
       })
@@ -732,7 +750,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (
       sessionId: string,
       name: string,
-      type: SessionType,
+      type: WorkspaceSessionType,
       connectionId?: string,
       extra?: Partial<Pick<Tab, "customName" | "tabColor">>,
       options?: { afterTabId?: string },
@@ -756,7 +774,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addPendingTab = useCallback(
     (
       name: string,
-      type: SessionType,
+      type: WorkspaceSessionType,
       connectionId?: string,
       extra?: Partial<Pick<Tab, "customName" | "tabColor">>,
       options?: { afterTabId?: string },
@@ -1101,7 +1119,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (
       tabId: string,
       paneId: string,
-      sessionType: SessionType,
+      sessionType: WorkspaceSessionType,
       connectionId: string | undefined,
       error: unknown,
     ) => {
@@ -1192,6 +1210,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId))
                 .catch((e) =>
                   handleRestoredSessionFailed(tab.id, pane.id, "Serial", pane.connectionId, e),
+                );
+              break;
+            case "RDP":
+              if (!cid) {
+                markPaneConnectionFailed(tab.id, pane.id, "Missing RDP connection id");
+                return;
+              }
+              invoke<string>("create_rdp_session", {
+                connectionId: cid,
+                createRequestId: pane.createRequestId,
+              })
+                .then((sessionId) => handleRestoredSessionCreated(tab.id, pane.id, sessionId, cid))
+                .catch((e) =>
+                  handleRestoredSessionFailed(tab.id, pane.id, "RDP", pane.connectionId, e),
                 );
               break;
           }

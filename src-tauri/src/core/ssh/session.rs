@@ -6,7 +6,8 @@ use super::client::{
 use super::io::{open_shell_channel, ssh_io_loop};
 use crate::config::AiExecutionProfile;
 use crate::core::{
-    SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionType, SharedCwd,
+    SessionCommand, SessionHandle, SessionInfo, SessionManager, SessionReadyHook, SessionType,
+    SharedCwd,
 };
 use crate::error::{AppError, AppResult};
 use std::future::Future;
@@ -224,10 +225,11 @@ pub async fn create_ssh_session(
     owner_window_label: Option<String>,
     cancel_rx: Option<oneshot::Receiver<()>>,
     startup_command: Option<SshStartupCommand>,
+    session_ready_hook: Option<SessionReadyHook>,
 ) -> AppResult<String> {
     if let Some(mut cancel_rx) = cancel_rx {
         return tokio::select! {
-            result = create_ssh_session_inner(app, manager, config, connection_id, owner_window_label, startup_command) => result,
+            result = create_ssh_session_inner(app, manager, config, connection_id, owner_window_label, startup_command, session_ready_hook) => result,
             _ = &mut cancel_rx => Err(AppError::Cancelled("Session creation cancelled".to_string())),
         };
     }
@@ -239,6 +241,7 @@ pub async fn create_ssh_session(
         connection_id,
         owner_window_label,
         startup_command,
+        session_ready_hook,
     )
     .await
 }
@@ -250,6 +253,7 @@ async fn create_ssh_session_inner(
     connection_id: Option<String>,
     owner_window_label: Option<String>,
     startup_command: Option<SshStartupCommand>,
+    session_ready_hook: Option<SessionReadyHook>,
 ) -> AppResult<String> {
     set_owner_window_label(&mut config, owner_window_label.clone());
     tracing::info!(
@@ -277,6 +281,7 @@ async fn create_ssh_session_inner(
             &session_id,
             x11_config.as_ref().map(|cfg| cfg.fake_cookie_hex.as_str()),
             config.sftp.cwd_follow_mode.clone(),
+            config.sftp.shell_detection_timeout_ms,
         )
         .await?;
     drop(handle);
@@ -290,6 +295,7 @@ async fn create_ssh_session_inner(
         id: session_id.clone(),
         name: config.name.clone(),
         session_type: SessionType::SSH,
+        connection_id: connection_id.clone(),
         connected: true,
         owner_window_label,
         ai_execution_profile: AiExecutionProfile::Posix,
@@ -303,7 +309,7 @@ async fn create_ssh_session_inner(
     let output_control_tx = cmd_tx.clone();
 
     let session_handle = SessionHandle {
-        info: session_info,
+        info: session_info.clone(),
         cmd_tx,
         ssh_config: Some(ssh_config_arc),
         ssh_handle: Some(ssh_handle_arc),
@@ -311,6 +317,9 @@ async fn create_ssh_session_inner(
         remote_fs: None,
     };
     manager.add_session(session_handle).await;
+    if let Some(hook) = session_ready_hook.as_ref() {
+        hook(&session_info);
+    }
 
     if let Some(ref conn_id) = connection_id {
         if let Some(tunnel_mgr) = app.try_state::<Arc<super::TunnelManager>>() {
@@ -366,6 +375,7 @@ pub async fn create_multiplexed_ssh_session(
     manager: Arc<SessionManager>,
     source_session_id: &str,
     startup_command: Option<SshStartupCommand>,
+    session_ready_hook: Option<SessionReadyHook>,
 ) -> AppResult<String> {
     let (config, ssh_connection, owner_window_label) = {
         let sessions = manager.sessions.lock().await;
@@ -424,6 +434,7 @@ pub async fn create_multiplexed_ssh_session(
             owner_window_label,
             None,
             startup_command,
+            session_ready_hook,
         )
         .await;
     }
@@ -436,6 +447,7 @@ pub async fn create_multiplexed_ssh_session(
             &session_id,
             None,
             config.sftp.cwd_follow_mode.clone(),
+            config.sftp.shell_detection_timeout_ms,
         )
         .await?;
     drop(handle);
@@ -445,6 +457,7 @@ pub async fn create_multiplexed_ssh_session(
         id: session_id.clone(),
         name: config.name.clone(),
         session_type: SessionType::SSH,
+        connection_id: config.connection_id.clone(),
         connected: true,
         owner_window_label,
         ai_execution_profile: AiExecutionProfile::Posix,
@@ -458,7 +471,7 @@ pub async fn create_multiplexed_ssh_session(
     let output_control_tx = cmd_tx.clone();
 
     let session_handle = SessionHandle {
-        info: session_info,
+        info: session_info.clone(),
         cmd_tx,
         ssh_config: Some(ssh_config_arc),
         ssh_handle: Some(ssh_handle_arc),
@@ -466,6 +479,9 @@ pub async fn create_multiplexed_ssh_session(
         remote_fs: None,
     };
     manager.add_session(session_handle).await;
+    if let Some(hook) = session_ready_hook.as_ref() {
+        hook(&session_info);
+    }
 
     let io_session_id = session_id.clone();
     let io_manager = manager.clone();

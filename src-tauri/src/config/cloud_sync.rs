@@ -171,6 +171,8 @@ pub struct CloudSyncSettings {
     pub auto_check_on_startup: bool,
     #[serde(default = "default_true")]
     pub auto_push_on_change: bool,
+    #[serde(default = "default_true")]
+    pub auto_pull_remote_changes: bool,
     #[serde(default = "default_sync_debounce_seconds")]
     pub sync_debounce_seconds: u64,
     #[serde(default)]
@@ -198,6 +200,7 @@ impl Default for CloudSyncSettings {
             device_name: default_device_name(),
             auto_check_on_startup: true,
             auto_push_on_change: true,
+            auto_pull_remote_changes: true,
             sync_debounce_seconds: default_sync_debounce_seconds(),
             webdav: WebdavSyncSettings::default(),
             s3: S3SyncSettings::default(),

@@ -41,6 +41,8 @@ pub struct PortableSnapshot {
     pub master_key_token: Option<String>,
     #[serde(default)]
     pub known_hosts: String,
+    #[serde(default)]
+    pub notes: config::NotesSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +86,7 @@ struct SnapshotHashInput<'a> {
     history: &'a [crate::core::history::HistoryEntry],
     master_key_token: &'a Option<String>,
     known_hosts: &'a str,
+    notes: &'a config::NotesSnapshot,
 }
 
 #[derive(Serialize)]
@@ -102,6 +105,25 @@ struct SnapshotRawHashInput<'a> {
     history: &'a RawValue,
     master_key_token: &'a RawValue,
     known_hosts: &'a RawValue,
+}
+
+#[derive(Serialize)]
+struct SnapshotRawHashInputWithNotes<'a> {
+    settings: &'a RawValue,
+    sessions: &'a RawValue,
+    keys: &'a RawValue,
+    passwords: &'a RawValue,
+    credentials: &'a RawValue,
+    otp: &'a RawValue,
+    proxies: &'a RawValue,
+    proxy_groups: &'a RawValue,
+    tunnels: &'a RawValue,
+    tunnel_groups: &'a RawValue,
+    quick_commands: &'a RawValue,
+    history: &'a RawValue,
+    master_key_token: &'a RawValue,
+    known_hosts: &'a RawValue,
+    notes: &'a RawValue,
 }
 
 #[derive(Serialize)]
@@ -275,6 +297,7 @@ impl PortableAppSettings {
         current.ui.left_width = ui_state.left_width;
         current.ui.right_width = ui_state.right_width;
         current.ui.quick_cmd_height = ui_state.quick_cmd_height;
+        current.ui.quick_cmd_category_width = ui_state.quick_cmd_category_width;
         current.ui.quick_cmd_selected_category = ui_state.quick_cmd_selected_category;
         current.ui.active_left_panel = ui_state.active_left_panel;
         current.ui.active_right_panel = ui_state.active_right_panel;
@@ -283,6 +306,8 @@ impl PortableAppSettings {
         current.ui.serial_send_height = ui_state.serial_send_height;
         current.ui.zoom_level = ui_state.zoom_level;
         current.ui.transfer_height = ui_state.transfer_height;
+        current.ui.notes_expanded_folder_ids = ui_state.notes_expanded_folder_ids;
+        current.ui.notes_last_selected_node_id = ui_state.notes_last_selected_node_id;
         current
     }
 }
@@ -330,7 +355,9 @@ pub fn strip_device_local_sessions(sessions: &mut config::SessionsConfig) {
             config::ConnectionType::Serial { port_name, .. } => {
                 port_name.clear();
             }
-            config::ConnectionType::Ssh { .. } | config::ConnectionType::Telnet { .. } => {}
+            config::ConnectionType::Ssh { .. }
+            | config::ConnectionType::Telnet { .. }
+            | config::ConnectionType::Rdp { .. } => {}
         }
     }
 }

@@ -2579,6 +2579,7 @@ mod tests {
                     id: "ssh-disabled-files".to_string(),
                     name: "ssh-disabled-files".to_string(),
                     session_type: SessionType::SSH,
+                    connection_id: None,
                     connected: true,
                     owner_window_label: None,
                     ai_execution_profile: AiExecutionProfile::Posix,

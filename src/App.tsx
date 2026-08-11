@@ -33,6 +33,8 @@ import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useIdleLock } from "./hooks/useIdleLock";
 import { useMacSelectionGuard } from "./hooks/useMacSelectionGuard";
 import { useModalChildWindows } from "./hooks/useModalChildWindows";
+import { useRemoteGpuOverview } from "./hooks/useRemoteGpuOverview";
+import { useRemoteNpuOverview } from "./hooks/useRemoteNpuOverview";
 import { useRemoteStats } from "./hooks/useRemoteStats";
 import { resolveDisplayKeys } from "./hooks/useShortcutMap";
 import { useTerminalZoom } from "./hooks/useTerminalZoom";
@@ -52,6 +54,13 @@ import {
   NON_PANEL_IDS,
   type TrayAction,
 } from "./lib/appWorkspace";
+import {
+  type AssetMonitoringCacheEntry,
+  buildAssetPatchFromGpuOverview,
+  buildAssetPatchFromNpuOverview,
+  buildAssetPatchFromRemoteStats,
+  recordAssetMonitoringPatch,
+} from "./lib/assetMonitoring";
 import { updateConnectionAutoIconAfterSessionStart } from "./lib/connectionAutoIcon";
 import { getErrorMessage, shouldPromptConnectionEditOnFailure } from "./lib/errors";
 import {
@@ -59,6 +68,7 @@ import {
   findExternalConnectionMatches,
   parseExternalOpenUrl,
 } from "./lib/externalOpen";
+import { normalizeHeaderStatusMode } from "./lib/headerStatus";
 import { invoke } from "./lib/invoke";
 import { logger } from "./lib/logger";
 import {
@@ -116,25 +126,30 @@ import {
 } from "./lib/workspaceTabs";
 import type {
   AppSettings,
+  AssetMetadata,
   CloudConflictPreview,
   PaneSplitDirection,
+  RecordingMode,
+  RecordingStatus,
   SavedConnection,
   SessionInfo,
   SessionPane,
   SessionType,
   Tab,
+  WorkspaceSessionType,
 } from "./types/global";
 
-const CONNECTION_SESSION_TYPES: Record<SavedConnection["type"], SessionType> = {
+const CONNECTION_SESSION_TYPES: Record<SavedConnection["type"], WorkspaceSessionType> = {
   ssh: "SSH",
   local_terminal: "Local",
   telnet: "Telnet",
   serial: "Serial",
+  rdp: "RDP",
 };
 
 function getConnectionSessionType(
   connection: Pick<SavedConnection, "type"> | null | undefined,
-): SessionType {
+): WorkspaceSessionType {
   return connection ? CONNECTION_SESSION_TYPES[connection.type] : "SSH";
 }
 
@@ -214,6 +229,11 @@ async function createSessionForConnection(
         connectionId: connection.id,
         createRequestId,
       });
+    case "rdp":
+      return invoke<string>("create_rdp_session", {
+        connectionId: connection.id,
+        createRequestId,
+      });
     default:
       return invoke<string>("create_ssh_session", {
         connectionId: connection.id,
@@ -282,6 +302,7 @@ async function sendStartupCommandToSession(
   await sendSessionInput(sessionId, buildTerminalCommandInput(startupCommand.command), {
     preview: { kind: "reset" },
     registerSubmission: startupCommand.command,
+    origin: "startup_command",
   });
 }
 
@@ -408,14 +429,20 @@ function App() {
     });
   }, [updateUi]);
 
-  // Recording state: tracks which sessions are currently being recorded
-  const [recordingSessions, setRecordingSessions] = useState<Set<string>>(new Set());
+  // Recording state: active file recording statuses reported by the backend.
+  const [recordingStatuses, setRecordingStatuses] = useState<RecordingStatus[]>([]);
+  const recordingSessions = useMemo(
+    () => new Set(recordingStatuses.map((status) => status.sessionId)),
+    [recordingStatuses],
+  );
   const [liveSessionIds, setLiveSessionIds] = useState<Set<string> | null>(null);
+  const assetMonitoringCacheRef = useRef<Map<string, AssetMonitoringCacheEntry>>(new Map());
+  const assetMonitoringFlushesRef = useRef<Set<string>>(new Set());
 
-  const refreshRecordingSessions = useCallback(async () => {
+  const refreshRecordingStatuses = useCallback(async () => {
     try {
-      const sessionIds = await invoke<string[]>("list_recording_sessions");
-      setRecordingSessions(new Set(sessionIds));
+      const statuses = await invoke<RecordingStatus[]>("list_recording_statuses");
+      setRecordingStatuses(statuses);
     } catch (error) {
       logger.error({
         domain: "session.lifecycle",
@@ -427,14 +454,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void refreshRecordingSessions();
-    const unlisten = listen("sessions-changed", () => {
-      void refreshRecordingSessions();
+    void refreshRecordingStatuses();
+    const unlistenSessions = listen("sessions-changed", () => {
+      void refreshRecordingStatuses();
+    });
+    const unlistenRecording = listen<RecordingStatus>("recording-status-changed", () => {
+      void refreshRecordingStatuses();
     });
     return () => {
-      unlisten.then((dispose) => dispose());
+      unlistenSessions.then((dispose) => dispose());
+      unlistenRecording.then((dispose) => dispose());
     };
-  }, [refreshRecordingSessions]);
+  }, [refreshRecordingStatuses]);
 
   useEffect(() => {
     let disposed = false;
@@ -469,7 +500,7 @@ function App() {
   useEffect(() => {
     if (!settingsLoaded) return;
     void invoke("set_recording_memory_limit", {
-      maxBytes: Math.max(1, appSettings.transfer.recording_memory_limit_bytes || 5 * 1024 * 1024),
+      maxBytes: Math.max(1, appSettings.recording.memory_limit_bytes || 5 * 1024 * 1024),
     }).catch((error) => {
       logger.error({
         domain: "settings.persistence",
@@ -478,7 +509,7 @@ function App() {
         error,
       });
     });
-  }, [appSettings.transfer.recording_memory_limit_bytes, settingsLoaded]);
+  }, [appSettings.recording.memory_limit_bytes, settingsLoaded]);
 
   // OTP / 2FA dialog state
   const [otpRequest, setOtpRequest] = useState<OtpRequest | null>(null);
@@ -538,7 +569,7 @@ function App() {
       listen<{
         sessionId: string;
         name: string;
-        type: "SSH" | "Local" | "Telnet" | "Serial";
+        type: WorkspaceSessionType;
         targetLeafId?: string;
         anchorTabId?: string | null;
         targetWindowLabel?: string | null;
@@ -816,6 +847,81 @@ function App() {
   );
   const tabsRef = useRef(tabs);
   const tabsById = useMemo(() => new Map(tabs.map((tab) => [tab.id, tab])), [tabs]);
+  const savedSshConnectionIdBySessionId = useMemo(() => {
+    const sshConnectionIds = new Set(
+      savedConnections
+        .filter((connection) => connection.type === "ssh")
+        .map((connection) => connection.id),
+    );
+    const result = new Map<string, string>();
+
+    for (const tab of tabs) {
+      for (const pane of collectSessionPanes(tab.root)) {
+        if (
+          !pane.connecting &&
+          !pane.connectError &&
+          pane.type === "SSH" &&
+          pane.connectionId &&
+          sshConnectionIds.has(pane.connectionId)
+        ) {
+          result.set(pane.sessionId, pane.connectionId);
+        }
+      }
+    }
+
+    return result;
+  }, [savedConnections, tabs]);
+
+  const handleAssetMonitoringPatch = useCallback(
+    (sessionId: string, patch: AssetMetadata) => {
+      const connectionId = savedSshConnectionIdBySessionId.get(sessionId);
+      if (!connectionId) return;
+
+      recordAssetMonitoringPatch(assetMonitoringCacheRef.current, sessionId, connectionId, patch);
+    },
+    [savedSshConnectionIdBySessionId],
+  );
+
+  const flushAssetMonitoringCache = useCallback(async (sessionId: string) => {
+    const entry = assetMonitoringCacheRef.current.get(sessionId);
+    if (!entry || assetMonitoringFlushesRef.current.has(sessionId)) return;
+
+    assetMonitoringFlushesRef.current.add(sessionId);
+    try {
+      await invoke("update_connection_asset_from_monitoring", {
+        connectionId: entry.connectionId,
+        assetPatch: {
+          ...entry.lastAssetPatch,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      assetMonitoringCacheRef.current.delete(sessionId);
+    } catch (error) {
+      const message = getErrorMessage(error).toLowerCase();
+      if (message.includes("not found")) {
+        assetMonitoringCacheRef.current.delete(sessionId);
+      }
+      logger.error({
+        domain: "session.lifecycle",
+        event: "asset.flush_failed",
+        message: "Failed to save monitored asset snapshot",
+        ids: { connection_id: entry.connectionId, session_id: sessionId },
+        error,
+      });
+    } finally {
+      assetMonitoringFlushesRef.current.delete(sessionId);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (liveSessionIds === null) return;
+
+    for (const sessionId of assetMonitoringCacheRef.current.keys()) {
+      if (!liveSessionIds.has(sessionId)) {
+        void flushAssetMonitoringCache(sessionId);
+      }
+    }
+  }, [flushAssetMonitoringCache, liveSessionIds]);
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -895,7 +1001,6 @@ function App() {
         updateTabSession(tabId, sessionId);
         focusTerminalSession(sessionId);
         recordRecentConnection(connection.id);
-        updateUi({ saved_connections_last_opened_connection_id: connection.id });
         updateAutoIconForSessionStart(connection.id, sessionId);
       } catch (error) {
         if (isSessionCreationCancelled(error) || !hasTab(tabId)) {
@@ -923,7 +1028,6 @@ function App() {
       t,
       updateAutoIconForSessionStart,
       updateTabSession,
-      updateUi,
     ],
   );
 
@@ -1390,6 +1494,12 @@ function App() {
             connectionId: pane.connectionId,
             createRequestId,
           });
+        case "RDP":
+          if (!pane.connectionId) throw new Error("Missing RDP connection id");
+          return invoke<string>("create_rdp_session", {
+            connectionId: pane.connectionId,
+            createRequestId,
+          });
         default:
           if (!pane.connectionId) throw new Error("Missing SSH connection id");
           return invoke<string>("create_ssh_session", {
@@ -1404,9 +1514,16 @@ function App() {
 
   const closePaneBackendSession = useCallback(
     async (
-      pane: Pick<SessionPane, "connecting" | "connectError" | "sessionId" | "createRequestId">,
+      pane: Pick<
+        SessionPane,
+        "connecting" | "connectError" | "sessionId" | "createRequestId" | "type"
+      >,
     ) => {
       if (pane.connecting) {
+        if (pane.type === "RDP") {
+          await invoke("close_rdp_session", { sessionId: pane.sessionId }).catch(() => {});
+          return true;
+        }
         if (pane.createRequestId) {
           try {
             await invoke("cancel_session_creation", { createRequestId: pane.createRequestId });
@@ -1428,6 +1545,11 @@ function App() {
       }
 
       try {
+        if (pane.type === "RDP") {
+          await invoke("close_rdp_session", { sessionId: pane.sessionId });
+          return true;
+        }
+        await flushAssetMonitoringCache(pane.sessionId);
         await attachSessionBeforeClose(pane.sessionId);
         await invoke("close_session", { sessionId: pane.sessionId });
         clearSessionCommandHistory(pane.sessionId);
@@ -1444,7 +1566,7 @@ function App() {
         return false;
       }
     },
-    [setSyncGroups],
+    [flushAssetMonitoringCache, setSyncGroups],
   );
 
   const closeWorkspaceTabSessions = useCallback(
@@ -2647,26 +2769,22 @@ function App() {
 
   const buildRecordingFilePath = useCallback(
     async (prefix: "recording" | "session", sessionName: string) => {
-      const dir = appSettings.transfer.recording_path || (await downloadDir());
+      const dir = appSettings.recording.base_path || (await downloadDir());
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
       return joinPath(dir, `${prefix}-${safeRecordingName(sessionName)}-${timestamp}.log`);
     },
-    [appSettings.transfer.recording_path],
+    [appSettings.recording.base_path],
   );
 
   const handleToggleSessionRecording = useCallback(
-    async (session: SessionInfo) => {
+    async (session: SessionInfo, mode: RecordingMode = "transcript") => {
       const sessionId = session.id;
       const isActive = recordingSessions.has(sessionId);
 
       if (isActive) {
         try {
           const savedPath = await invoke<string>("stop_recording", { sessionId });
-          setRecordingSessions((prev) => {
-            const next = new Set(prev);
-            next.delete(sessionId);
-            return next;
-          });
+          await refreshRecordingStatuses();
           toast.success(t("recording.saved", { path: savedPath }));
         } catch (error) {
           logger.error({
@@ -2682,18 +2800,14 @@ function App() {
       }
 
       try {
-        const filePath = await buildRecordingFilePath("recording", session.name);
-        await invoke("start_recording", {
-          sessionId,
-          filePath,
-          includeIoLabels: appSettings.transfer.recording_include_io_labels,
-          includeTimestamps: appSettings.transfer.recording_include_timestamps ?? true,
+        await invoke<string>("start_recording", {
+          request: {
+            sessionId,
+            mode,
+            explicitPath: null,
+          },
         });
-        setRecordingSessions((prev) => {
-          const next = new Set(prev);
-          next.add(sessionId);
-          return next;
-        });
+        await refreshRecordingStatuses();
         toast.success(t("recording.started"));
       } catch (error) {
         logger.error({
@@ -2706,13 +2820,7 @@ function App() {
         toast.error(t("recording.startFailed"));
       }
     },
-    [
-      appSettings.transfer.recording_include_io_labels,
-      appSettings.transfer.recording_include_timestamps,
-      buildRecordingFilePath,
-      recordingSessions,
-      t,
-    ],
+    [refreshRecordingStatuses, recordingSessions, t],
   );
 
   const handleSaveSessionTranscript = useCallback(
@@ -2722,8 +2830,8 @@ function App() {
         const savedPath = await invoke<string>("save_session_transcript", {
           sessionId: session.id,
           filePath,
-          includeIoLabels: appSettings.transfer.recording_include_io_labels,
-          includeTimestamps: appSettings.transfer.recording_include_timestamps ?? true,
+          includeIoLabels: appSettings.recording.include_io_labels,
+          includeTimestamps: appSettings.recording.include_timestamps ?? true,
         });
         toast.success(t("recording.transcriptSaved", { path: savedPath }));
       } catch (error) {
@@ -2738,8 +2846,8 @@ function App() {
       }
     },
     [
-      appSettings.transfer.recording_include_io_labels,
-      appSettings.transfer.recording_include_timestamps,
+      appSettings.recording.include_io_labels,
+      appSettings.recording.include_timestamps,
       buildRecordingFilePath,
       t,
     ],
@@ -2819,6 +2927,49 @@ function App() {
     remoteStatsEnabled,
     uiConfig.remote_stats_interval ?? 3,
   );
+  const headerStatusMode = normalizeHeaderStatusMode(uiConfig.header_status_mode);
+  const headerStatusVisible = uiConfig.header_status_visible !== false;
+  const gpuOverviewEnabled =
+    (uiConfig.show_gpu_monitor ?? false) || (headerStatusVisible && headerStatusMode === "gpu");
+  const npuOverviewEnabled =
+    (uiConfig.show_ascend_npu_monitor ?? false) ||
+    (headerStatusVisible && headerStatusMode === "npu");
+  const gpuOverviewState = useRemoteGpuOverview(
+    activeLiveSshSessionId,
+    gpuOverviewEnabled,
+    uiConfig.gpu_monitor_interval ?? 3,
+  );
+  const npuOverviewState = useRemoteNpuOverview(
+    activeLiveSshSessionId,
+    npuOverviewEnabled,
+    uiConfig.ascend_npu_monitor_interval ?? 3,
+  );
+
+  useEffect(() => {
+    if (!activeLiveSshSessionId || !remoteStats.stats) return;
+
+    const patch = buildAssetPatchFromRemoteStats(remoteStats.stats);
+    if (patch) {
+      handleAssetMonitoringPatch(activeLiveSshSessionId, patch);
+    }
+  }, [activeLiveSshSessionId, handleAssetMonitoringPatch, remoteStats.stats]);
+  useEffect(() => {
+    if (!activeLiveSshSessionId || !gpuOverviewState.overview) return;
+
+    const patch = buildAssetPatchFromGpuOverview(gpuOverviewState.overview);
+    if (patch) {
+      handleAssetMonitoringPatch(activeLiveSshSessionId, patch);
+    }
+  }, [activeLiveSshSessionId, gpuOverviewState.overview, handleAssetMonitoringPatch]);
+  useEffect(() => {
+    if (!activeLiveSshSessionId || !npuOverviewState.overview) return;
+
+    const patch = buildAssetPatchFromNpuOverview(npuOverviewState.overview);
+    if (patch) {
+      handleAssetMonitoringPatch(activeLiveSshSessionId, patch);
+    }
+  }, [activeLiveSshSessionId, handleAssetMonitoringPatch, npuOverviewState.overview]);
+
   const activeSerialSessionId =
     activePane && !activePane.connecting && !activePane.connectError && activePane.type === "Serial"
       ? activePane.sessionId
@@ -2852,7 +3003,9 @@ function App() {
         if (!tab) continue;
 
         for (const pane of collectSessionPanes(tab.root)) {
-          if (!hasLiveSession(pane) || seen.has(pane.sessionId)) continue;
+          if (pane.paneKind !== "terminal" || !hasLiveSession(pane) || seen.has(pane.sessionId)) {
+            continue;
+          }
           seen.add(pane.sessionId);
           targets.push({
             id: pane.sessionId,
@@ -2885,6 +3038,7 @@ function App() {
     const sessions: QuickSwitcherSession[] = [];
     for (const tab of tabs) {
       for (const pane of collectSessionPanes(tab.root)) {
+        if (pane.paneKind !== "terminal") continue;
         const connection = pane.connectionId ? connectionsById.get(pane.connectionId) : undefined;
         sessions.push({
           id: pane.sessionId,
@@ -3026,7 +3180,11 @@ function App() {
         activeSshSessionId={activeLiveSshSessionId}
         remoteStatsEnabled={remoteStatsEnabled}
         remoteStats={remoteStats}
-        recordingSessions={recordingSessions}
+        gpuMonitorEnabled={uiConfig.show_gpu_monitor ?? false}
+        gpuOverviewState={gpuOverviewState}
+        npuMonitorEnabled={uiConfig.show_ascend_npu_monitor ?? false}
+        npuOverviewState={npuOverviewState}
+        recordingStatuses={recordingStatuses}
         aiIntent={aiIntent}
         transferHeight={uiConfig.transfer_height || 180}
         onTransferResize={handleTransferResize}
@@ -3052,6 +3210,8 @@ function App() {
       canReconnectSessionById,
       remoteStats,
       remoteStatsEnabled,
+      gpuOverviewState,
+      npuOverviewState,
       handleSaveSessionTranscript,
       handleDisconnectSessionById,
       handleEditConnection,
@@ -3063,7 +3223,9 @@ function App() {
       handleToggleSessionRecording,
       handleTransferResize,
       connectSavedConnection,
-      recordingSessions,
+      recordingStatuses,
+      uiConfig.show_ascend_npu_monitor,
+      uiConfig.show_gpu_monitor,
       uiConfig.transfer_height,
     ],
   );
@@ -3122,6 +3284,8 @@ function App() {
           savedConnections,
           remoteStatsEnabled,
           remoteStats,
+          gpuOverviewState,
+          npuOverviewState,
           onSmartSplit: handleSmartSplit,
           onUnsplit: handleUnsplit,
           canUnsplit: terminalWindows?.kind === "split",
@@ -3132,6 +3296,8 @@ function App() {
           onClearTerminal: () => window.dispatchEvent(new CustomEvent("nyaterm:clear-terminal")),
           onRefitTerminals: () =>
             window.dispatchEvent(new CustomEvent("nyaterm:refresh-terminals")),
+          locked: isLocked,
+          onRequestQuit: handleRequestQuit,
         }}
         mobile={{
           leftOpen: mobileLeftOpen,
@@ -3216,6 +3382,8 @@ function App() {
           onOpenChat: handleOpenChat,
           onShowCommands: handleShowAllCommands,
           onSwitchTerminal: handleOpenSessionSwitcher,
+          onConnectConnection: connectSavedConnection,
+          onEditConnection: handleEditConnection,
         }}
         bottomPanel={{
           activePanel: activeBottomPanel,

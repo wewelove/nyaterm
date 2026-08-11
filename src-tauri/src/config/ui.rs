@@ -180,6 +180,7 @@ impl Default for ActivityBarLayout {
 fn default_left_top() -> Vec<String> {
     vec![
         "fileExplorer".to_string(),
+        "notes".to_string(),
         "network".to_string(),
         "securityAuth".to_string(),
     ]
@@ -219,12 +220,16 @@ pub struct UiConfig {
     pub open_tabs: Vec<RestorableTab>,
     #[serde(default)]
     pub terminal_window_layout: Option<RestorableTerminalWindowNode>,
+    #[serde(default = "default_start_workspace_mode")]
+    pub start_workspace_mode: String,
     #[serde(default = "default_left_width")]
     pub left_width: f64,
     #[serde(default = "default_right_width")]
     pub right_width: f64,
     #[serde(default = "default_quick_cmd_height")]
     pub quick_cmd_height: f64,
+    #[serde(default = "default_quick_cmd_category_width")]
+    pub quick_cmd_category_width: f64,
     #[serde(default = "default_quick_cmd_view_mode")]
     pub quick_cmd_view_mode: String,
     #[serde(default = "default_quick_cmd_sort_mode")]
@@ -260,6 +265,8 @@ pub struct UiConfig {
     #[serde(default = "default_true_fn")]
     pub header_status_visible: bool,
     #[serde(default = "default_true_fn")]
+    pub show_notes_panel: bool,
+    #[serde(default = "default_true_fn")]
     pub show_remote_stats: bool,
     #[serde(default = "default_remote_stats_interval")]
     pub remote_stats_interval: u32,
@@ -282,7 +289,7 @@ pub struct UiConfig {
     #[serde(default = "default_sort_mode")]
     pub saved_connections_sort_mode: String,
     #[serde(default)]
-    pub saved_connections_last_opened_connection_id: Option<String>,
+    pub saved_connections_expanded_group_ids: Vec<String>,
     #[serde(default)]
     pub recent_connection_ids: Vec<String>,
     #[serde(default = "default_transfer_height")]
@@ -293,6 +300,10 @@ pub struct UiConfig {
     pub file_explorer_auto_sync_cwd_connection_ids: Vec<String>,
     #[serde(default)]
     pub file_explorer_favorite_dirs_by_connection_id: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub notes_expanded_folder_ids: Vec<String>,
+    #[serde(default)]
+    pub notes_last_selected_node_id: Option<String>,
     #[serde(default)]
     pub activity_bar_layout: ActivityBarLayout,
 }
@@ -309,6 +320,10 @@ fn default_quick_cmd_height() -> f64 {
     180.0
 }
 
+fn default_quick_cmd_category_width() -> f64 {
+    176.0
+}
+
 fn default_quick_cmd_view_mode() -> String {
     "tile".to_string()
 }
@@ -319,6 +334,10 @@ fn default_quick_cmd_sort_mode() -> String {
 
 fn default_quick_cmd_selected_category() -> String {
     "all".to_string()
+}
+
+fn default_start_workspace_mode() -> String {
+    "workbench".to_string()
 }
 
 fn default_active_left_panel() -> Option<String> {
@@ -390,9 +409,11 @@ impl Default for UiConfig {
         Self {
             open_tabs: vec![],
             terminal_window_layout: None,
+            start_workspace_mode: default_start_workspace_mode(),
             left_width: default_left_width(),
             right_width: default_right_width(),
             quick_cmd_height: default_quick_cmd_height(),
+            quick_cmd_category_width: default_quick_cmd_category_width(),
             quick_cmd_view_mode: default_quick_cmd_view_mode(),
             quick_cmd_sort_mode: default_quick_cmd_sort_mode(),
             quick_cmd_selected_category: default_quick_cmd_selected_category(),
@@ -410,6 +431,7 @@ impl Default for UiConfig {
             language: default_language(),
             header_status_mode: default_header_status_mode(),
             header_status_visible: true,
+            show_notes_panel: true,
             show_remote_stats: true,
             remote_stats_interval: default_remote_stats_interval(),
             show_gpu_monitor: false,
@@ -421,12 +443,14 @@ impl Default for UiConfig {
             show_docker_manager: false,
             docker_manager_interval: default_docker_manager_interval(),
             saved_connections_sort_mode: default_sort_mode(),
-            saved_connections_last_opened_connection_id: None,
+            saved_connections_expanded_group_ids: vec![],
             recent_connection_ids: vec![],
             transfer_height: default_transfer_height(),
             file_explorer_show_hidden_files: true,
             file_explorer_auto_sync_cwd_connection_ids: vec![],
             file_explorer_favorite_dirs_by_connection_id: HashMap::new(),
+            notes_expanded_folder_ids: vec![],
+            notes_last_selected_node_id: None,
             activity_bar_layout: ActivityBarLayout::default(),
         }
     }

@@ -28,7 +28,10 @@ const SUPPRESSED_VISIBLE_FALLBACK_MAX_BYTES: usize = 64 * 1024;
 /// Returns the detected [`ShellKind`], or `None` when the exec channel
 /// fails / returns empty output — which is the normal behaviour of
 /// non-standard "shells" such as JumpServer (koko).
-async fn detect_shell_type(handle: &mut client::Handle<SshHandler>) -> Option<ShellKind> {
+async fn detect_shell_type(
+    handle: &mut client::Handle<SshHandler>,
+    timeout_ms: u64,
+) -> Option<ShellKind> {
     let fut = async {
         let mut ch = handle.channel_open_session().await.ok()?;
         ch.exec(
@@ -53,7 +56,7 @@ async fn detect_shell_type(handle: &mut client::Handle<SshHandler>) -> Option<Sh
         }
     };
 
-    timeout(Duration::from_millis(1200), fut)
+    timeout(Duration::from_millis(timeout_ms), fut)
         .await
         .ok()
         .flatten()
@@ -206,6 +209,7 @@ pub(super) async fn open_shell_channel(
     session_id: &str,
     x11_fake_cookie_hex: Option<&str>,
     cwd_follow_mode: SftpCwdFollowMode,
+    shell_detection_timeout_ms: u64,
 ) -> AppResult<(
     russh::Channel<client::Msg>,
     Option<String>,
@@ -255,7 +259,7 @@ pub(super) async fn open_shell_channel(
             None
         }
         SftpCwdFollowMode::ShellIntegration | SftpCwdFollowMode::RcFile => {
-            match detect_shell_type(handle).await {
+            match detect_shell_type(handle, shell_detection_timeout_ms).await {
                 Some(shell_kind) => {
                     detected_shell = Some(shell_kind);
                     let script = if cwd_follow_mode == SftpCwdFollowMode::RcFile {
@@ -629,9 +633,6 @@ pub(super) async fn ssh_io_loop(
                         if backspace_as_bs {
                             remap_del_to_bs(&mut data);
                         }
-                        if let Some(ref recorder) = recording_mgr {
-                            recorder.write_input(&session_id, &data);
-                        }
                         let send_data = encode_terminal_input(&data, &encoding);
                         let _ = channel.data(&send_data[..]).await;
                     }
@@ -738,6 +739,9 @@ pub(super) async fn ssh_io_loop(
                                 ZmodemDetectResult::Detected { direction, passthrough, initial_bytes } => {
                                     // Forward any pre-header bytes to the terminal.
                                     if !passthrough.is_empty() {
+                                        if let Some(ref recorder) = recording_mgr {
+                                            recorder.write_raw_output(&session_id, &passthrough);
+                                        }
                                         let pre = output_decoder.decode(&passthrough);
                                         if !pre.is_empty() {
                                             output.push_owned(pre);
@@ -770,6 +774,9 @@ pub(super) async fn ssh_io_loop(
                                     continue;
                                 }
                                 ZmodemDetectResult::NoMatch { passthrough } => {
+                                    if let Some(ref recorder) = recording_mgr {
+                                        recorder.write_raw_output(&session_id, &passthrough);
+                                    }
                                     let text = output_decoder.decode(&passthrough);
                                     let mut result = stripper.push(&text);
 
@@ -803,6 +810,9 @@ pub(super) async fn ssh_io_loop(
                             }
                     }
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
+                        if let Some(ref recorder) = recording_mgr {
+                            recorder.write_raw_output(&session_id, data);
+                        }
                         let text = output_decoder.decode(data);
                         if let Some(ref recorder) = recording_mgr {
                             recorder.write_output(&session_id, &text);
@@ -901,9 +911,6 @@ pub(super) async fn ssh_io_loop(
                     continue;
                 }
                 if let Some(pending) = pending_post_login.take() {
-                    if let Some(ref recorder) = recording_mgr {
-                        recorder.write_input(&session_id, &pending.input);
-                    }
                     let _ = channel.data(&pending.input[..]).await;
                     tracing::info!(
                         session_id = %session_id,
@@ -918,9 +925,6 @@ pub(super) async fn ssh_io_loop(
                     continue;
                 }
                 if let Some(pending) = pending_startup_command.take() {
-                    if let Some(ref recorder) = recording_mgr {
-                        recorder.write_input(&session_id, &pending.input);
-                    }
                     let _ = channel.data(&pending.input[..]).await;
                     tracing::info!(
                         session_id = %session_id,

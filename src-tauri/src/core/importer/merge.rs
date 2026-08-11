@@ -110,8 +110,10 @@ fn import_legacy_sessions(
             }),
             network: None,
             post_login: None,
+            recording: None,
             ssh_algorithms: None,
             sftp: config::SftpSettings::default(),
+            asset: None,
             created_at_ms: None,
             updated_at_ms: None,
             last_used_at_ms: None,
@@ -156,8 +158,10 @@ fn import_prepared_nyaterm_json(
             auth: conn.auth,
             network: None,
             post_login: None,
+            recording: None,
             ssh_algorithms: None,
             sftp: config::SftpSettings::default(),
+            asset: None,
             created_at_ms: None,
             updated_at_ms: None,
             last_used_at_ms: None,
@@ -217,7 +221,11 @@ fn is_nyaterm_json_import(value: &serde_json::Value) -> bool {
 
 // ── Tauri Command ───────────────────────────────────────────────────────────
 
-pub fn import_sessions(app: tauri::AppHandle, file_path: String) -> AppResult<usize> {
+pub fn import_sessions(
+    app: tauri::AppHandle,
+    file_path: String,
+    windterm_master_password: Option<String>,
+) -> AppResult<usize> {
     let path = Path::new(&file_path);
     if path.is_dir() {
         let count = import_legacy_sessions(&app, parse_finalshell(&file_path)?)?;
@@ -233,7 +241,10 @@ pub fn import_sessions(app: tauri::AppHandle, file_path: String) -> AppResult<us
     } else if lower.ends_with(".mxtsessions") {
         import_legacy_sessions(&app, parse_mobaxterm(&file_path)?)?
     } else if lower.ends_with(".sessions") {
-        import_legacy_sessions(&app, parse_windterm(&file_path)?)?
+        import_prepared_nyaterm_json(
+            &app,
+            parse_windterm(&file_path, windterm_master_password.as_deref())?,
+        )?
     } else if lower.ends_with(".xml") {
         import_legacy_sessions(&app, parse_securecrt(&file_path)?)?
     } else if lower.ends_with(".json") {

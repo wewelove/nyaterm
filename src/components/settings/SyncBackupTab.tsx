@@ -984,6 +984,16 @@ export function SyncBackupTab({ onNavigateSecurity }: SyncBackupTabProps) {
             onChange={(auto_push_on_change) => updateCloudSync({ auto_push_on_change })}
           />
         </SettingRow>
+        <SettingRow
+          label={t("settings.autoPullRemoteChanges")}
+          desc={t("settings.autoPullRemoteChangesDesc")}
+        >
+          <SettingSwitch
+            checked={settings.auto_pull_remote_changes}
+            disabled={autoSyncSectionDisabled}
+            onChange={(auto_pull_remote_changes) => updateCloudSync({ auto_pull_remote_changes })}
+          />
+        </SettingRow>
         <SettingNumberInput
           label={t("settings.syncDebounceSeconds")}
           desc={t("settings.syncDebounceSecondsDesc")}

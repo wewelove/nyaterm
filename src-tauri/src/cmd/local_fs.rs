@@ -675,6 +675,7 @@ mod tests {
                     id: "ssh-1".to_string(),
                     name: "SSH".to_string(),
                     session_type: SessionType::SSH,
+                    connection_id: None,
                     connected: true,
                     owner_window_label: None,
                     ai_execution_profile: AiExecutionProfile::default(),

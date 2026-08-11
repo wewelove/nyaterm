@@ -22,11 +22,14 @@ use std::sync::Arc;
 use crate::cmd::app::AppLockState;
 use crate::cmd::docker::DockerSudoManager;
 use crate::core::ai::AgentApprovalManager;
+use crate::core::monitoring::stats::RemoteStatsSampler;
 use crate::core::sftp::TransferDuplicateManager;
 use crate::core::ssh::{
     HostKeyVerifyManager, PendingAuthManager, PendingSshAuthManager, TunnelManager,
 };
-use crate::core::{CloudSyncManager, QuickCommandsStore, RecordingManager, SessionManager};
+use crate::core::{
+    CloudSyncManager, QuickCommandsStore, RdpSessionManager, RecordingManager, SessionManager,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -35,6 +38,7 @@ pub fn run() {
     runtime::prepare_webview_environment(&runtime);
 
     let session_manager = Arc::new(SessionManager::new());
+    let rdp_session_manager = Arc::new(RdpSessionManager::new());
     let tunnel_manager = Arc::new(TunnelManager::new());
     let recording_manager = Arc::new(RecordingManager::new());
     let pending_auth_manager = Arc::new(PendingAuthManager::new());
@@ -47,6 +51,7 @@ pub fn run() {
     let claude_code_runtime = Arc::new(core::ai::ClaudeCodeRuntime::new());
     let transfer_duplicate_manager = Arc::new(TransferDuplicateManager::new());
     let docker_sudo_manager = Arc::new(DockerSudoManager::new());
+    let remote_stats_sampler = Arc::new(RemoteStatsSampler::default());
     let app_lock_state = AppLockState::default();
     let external_open_state = external_open::ExternalOpenState::default();
     let portable_update_state = portable_updater::PortableUpdateState::default();
@@ -81,6 +86,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(session_manager.clone())
+        .manage(rdp_session_manager.clone())
         .manage(tunnel_manager.clone())
         .manage(recording_manager.clone())
         .manage(pending_auth_manager.clone())
@@ -93,13 +99,16 @@ pub fn run() {
         .manage(claude_code_runtime.clone())
         .manage(transfer_duplicate_manager.clone())
         .manage(docker_sudo_manager.clone())
+        .manage(remote_stats_sampler.clone())
         .manage(app_lock_state)
         .manage(external_open_state)
         .manage(portable_update_state)
+        .on_menu_event(cmd::macos_menu::handle_menu_event)
         .setup(move |a| {
             app::setup(
                 a,
                 session_manager,
+                recording_manager,
                 quick_commands_store,
                 cloud_sync_manager,
                 runtime_for_setup.clone(),
@@ -112,12 +121,14 @@ pub fn run() {
             cmd::app::open_download_dir,
             cmd::app::open_log_dir,
             cmd::app::get_app_runtime_info,
+            cmd::app::get_support_info,
             cmd::app::get_app_lock_state,
             cmd::app::set_app_lock_state,
             cmd::app::open_child_window,
             cmd::app::open_transfer_target_directory,
             cmd::app::resolve_local_drop_paths,
             cmd::app::read_background_image_data_url,
+            cmd::macos_menu::set_macos_app_menu,
             cmd::external_open::claim_external_open_requests,
             cmd::updater::check_portable_update,
             cmd::updater::download_portable_update,
@@ -147,6 +158,14 @@ pub fn run() {
             cmd::clipboard::upload_clipboard_image_to_ssh,
             cmd::log::append_frontend_logs,
             cmd::log::export_diagnostics,
+            cmd::note::list_note_tree,
+            cmd::note::get_note,
+            cmd::note::create_note_folder,
+            cmd::note::create_note,
+            cmd::note::update_note,
+            cmd::note::rename_note_node,
+            cmd::note::move_note_node,
+            cmd::note::delete_note_node,
             cmd::settings::get_system_fonts,
             cmd::settings::get_system_font_infos,
             cmd::cloud_sync::test_cloud_sync_connection,
@@ -164,6 +183,14 @@ pub fn run() {
             cmd::session::create_local_session,
             cmd::session::create_telnet_session,
             cmd::session::create_serial_session,
+            cmd::rdp::create_rdp_session,
+            cmd::rdp::rdp_attach_frame_channel,
+            cmd::rdp::rdp_input_batch,
+            cmd::rdp::rdp_resize,
+            cmd::rdp::rdp_set_clipboard_text,
+            cmd::rdp::rdp_reconnect,
+            cmd::rdp::close_rdp_session,
+            cmd::rdp::respond_rdp_certificate,
             cmd::session::cancel_session_creation,
             cmd::session::list_serial_ports,
             cmd::session::write_to_session,
@@ -187,6 +214,10 @@ pub fn run() {
             cmd::session::save_session_transcript,
             cmd::session::terminal_history_search,
             cmd::session::list_recording_sessions,
+            cmd::session::get_recording_status,
+            cmd::session::list_recording_statuses,
+            cmd::session::open_recording_file,
+            cmd::session::show_recording_in_folder,
             cmd::session::set_recording_memory_limit,
             cmd::session::submit_otp_response,
             cmd::session::cancel_otp_request,
@@ -235,6 +266,7 @@ pub fn run() {
             cmd::connection::get_supported_ssh_algorithms,
             cmd::connection::save_connection,
             cmd::connection::update_connection_icon,
+            cmd::connection::update_connection_asset_from_monitoring,
             cmd::connection::delete_connection,
             cmd::connection::get_connection_password_value,
             cmd::connection::reorder_items,
@@ -248,6 +280,7 @@ pub fn run() {
             cmd::connection::delete_group,
             cmd::connection::clear_all_connections,
             cmd::connection::get_quick_commands,
+            cmd::connection::export_quick_commands,
             cmd::connection::save_quick_commands,
             cmd::connection::upsert_quick_command,
             cmd::connection::increment_quick_command_use_count,

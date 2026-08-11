@@ -83,6 +83,7 @@ import type {
   FileExplorerProps,
   SavedConnection,
   SessionInfo,
+  SessionType,
 } from "@/types/global";
 import { FileExplorerDialogs } from "./FileExplorerDialogs";
 import {
@@ -169,6 +170,12 @@ function isFileBrowsableSession(session: SessionInfo) {
     (session.session_type === "Local" ||
       (session.session_type === "SSH" && session.remote_file_browser_enabled))
   );
+}
+
+function toFileExplorerSessionType(session: SessionInfo): SessionType | null {
+  return session.session_type === "Local" || session.session_type === "SSH"
+    ? session.session_type
+    : null;
 }
 
 function getSessionExplorerKind(session: SessionInfo): FileExplorerBackendKind {
@@ -545,7 +552,7 @@ function FileExplorer(props: FileExplorerProps) {
           >
             <FileExplorerPane
               activeSessionId={selectedTarget.id}
-              activeSessionType={selectedTarget.session_type}
+              activeSessionType={toFileExplorerSessionType(selectedTarget)}
               activeConnectionId={null}
               activeSessionName={selectedTarget.name}
               headerMeta={`${selectedTarget.name} · ${
@@ -2414,9 +2421,18 @@ function FileExplorerPane({
     if (!target) return;
 
     try {
-      const localDir = await openDialog({ directory: true });
-      if (!localDir || typeof localDir !== "string") return;
-      await uploadLocalEntriesToTarget(target, [{ path: localDir, isDir: true }]);
+      const localDirs = await openDialog({ directory: true, multiple: true });
+      if (!localDirs) return;
+      const pathList = (Array.isArray(localDirs) ? localDirs : [localDirs]).filter(
+        (localDir): localDir is string => typeof localDir === "string",
+      );
+      await uploadLocalEntriesToTarget(
+        target,
+        pathList.map((path) => ({
+          path,
+          isDir: true,
+        })),
+      );
     } catch (error) {
       logger.error({
         domain: "transfer.lifecycle",
